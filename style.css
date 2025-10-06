@@ -1,0 +1,113 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: #ffffff;
+    min-height: 100vh;
+    position: relative;
+}
+
+h1 {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    color: #333;
+    font-size: 1.5em;
+    font-weight: normal;
+}
+
+.lightbutton {
+    position: absolute;
+    right: 35%;
+    top: 50%;
+    transform: translate(50%, -50%);
+    padding: 15px 30px;
+    font-size: 1.1em;
+    font-weight: normal;
+    color: white;
+    background: #667eea;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.lightbutton:hover {
+    transform: translate(50%, -50%) translateY(-2px);
+    box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+}
+
+.lightbutton:active {
+    transform: translate(50%, -50%) translateY(0);
+}
+
+.light {
+    position: absolute;
+    left: 35%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 150px;
+    height: 150px;
+    border-radius: 50%;
+    background: #e0e0e0;
+    box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.2);
+    transition: all 0.3s ease;
+}
+
+.light.on {
+    background: radial-gradient(circle, #ffeb3b 0%, #ffc107 100%);
+    box-shadow:
+        0 0 40px rgba(255, 235, 59, 0.8),
+        0 0 80px rgba(255, 235, 59, 0.5),
+        inset 0 0 20px rgba(255, 255, 255, 0.3);
+}
+
+.input-container {
+    position: absolute;
+    bottom: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 10px;
+    width: 60%;
+    max-width: 600px;
+}
+
+.text-input {
+    flex: 1;
+    padding: 15px;
+    font-size: 1em;
+    border: 2px solid #ddd;
+    border-radius: 10px;
+    transition: border-color 0.3s;
+}
+
+.text-input:focus {
+    outline: none;
+    border-color: #667eea;
+}
+
+.send-button {
+    padding: 15px 30px;
+    font-size: 1em;
+    font-weight: bold;
+    color: white;
+    background: #667eea;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.send-button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+}
+
+.send-button:active {
+    transform: translateY(0);
+}
