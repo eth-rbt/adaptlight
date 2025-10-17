@@ -5,6 +5,7 @@ Parse the user's input into rule objects with these fields:
 - state1: The current/starting state name (string)
 - state1Param: Parameters for state1 (null if none)
 - transition: The trigger/event that causes the transition (string)
+  Available transitions: "button_click", "button_double_click", "button_hold"
 - state2: The next/destination state name (string)
 - state2Param: Parameters for state2 (object, array, or null)
 
@@ -31,26 +32,26 @@ Return ONLY a JSON array of rule objects in this exact format:
 ]
 
 Examples:
-- Input: "When button is pressed in off state, go to on state"
-  Output: [{"state1": "off", "state1Param": null, "transition": "button_press", "state2": "on", "state2Param": null}]
+- Input: "When button is clicked in off state, go to on state"
+  Output: [{"state1": "off", "state1Param": null, "transition": "button_click", "state2": "on", "state2Param": null}]
 
 - Input: "Click button to turn on blue light"
   Output: [
-    {"state1": "off", "state1Param": null, "transition": "button_press", "state2": "color", "state2Param": {"r": 0, "g": 0, "b": 255}},
-    {"state1": "color", "state1Param": null, "transition": "button_press", "state2": "off", "state2Param": null}
+    {"state1": "off", "state1Param": null, "transition": "button_click", "state2": "color", "state2Param": {"r": 0, "g": 0, "b": 255}},
+    {"state1": "color", "state1Param": null, "transition": "button_click", "state2": "off", "state2Param": null}
   ]
 
-- Input: "Button toggles red light"
+- Input: "Double click to toggle red light"
   Output: [
-    {"state1": "off", "state1Param": null, "transition": "button_press", "state2": "color", "state2Param": {"r": 255, "g": 0, "b": 0}},
-    {"state1": "color", "state1Param": null, "transition": "button_press", "state2": "off", "state2Param": null}
+    {"state1": "off", "state1Param": null, "transition": "button_double_click", "state2": "color", "state2Param": {"r": 255, "g": 0, "b": 0}},
+    {"state1": "color", "state1Param": null, "transition": "button_double_click", "state2": "off", "state2Param": null}
   ]
 
-- Input: "When on, fade to green light"
-  Output: [{"state1": "on", "state1Param": null, "transition": "fade", "state2": "color", "state2Param": {"r": 0, "g": 255, "b": 0}}]
+- Input: "Hold button to turn on green"
+  Output: [{"state1": "off", "state1Param": null, "transition": "button_hold", "state2": "color", "state2Param": {"r": 0, "g": 255, "b": 0}}]
 
-- Input: "From color, press button to turn off"
-  Output: [{"state1": "color", "state1Param": null, "transition": "button_press", "state2": "off", "state2Param": null}]
+- Input: "Single click turns off from color"
+  Output: [{"state1": "color", "state1Param": null, "transition": "button_click", "state2": "off", "state2Param": null}]
 
 Return ONLY the JSON array, no explanations, no markdown, no code blocks. Make sure to only use the states in the available states list as below:`,
 
