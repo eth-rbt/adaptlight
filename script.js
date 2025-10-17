@@ -55,7 +55,8 @@ sendButton.addEventListener('click', async () => {
     if (!userInput) return;
 
     try {
-        const response = await fetch('http://localhost:3000/generate-code', {
+        // Parse the text into [activating condition, action, post condition]
+        const response = await fetch('http://localhost:3000/parse-text', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -65,18 +66,16 @@ sendButton.addEventListener('click', async () => {
 
         const data = await response.json();
 
-        if (data.updated) {
-            // Reload the statemachine.js script
-            const oldScript = document.querySelector('script[src="statemachine.js"]');
-            if (oldScript) {
-                oldScript.remove();
-            }
+        if (data.success) {
+            console.log('Parsed array:', data.parsedArray);
 
-            const newScript = document.createElement('script');
-            newScript.src = 'statemachine.js?' + new Date().getTime(); // Cache bust
-            document.body.appendChild(newScript);
+            // Add the rule to the global state machine
+            window.stateMachine.addRule(data.parsedArray);
 
-            console.log('State machine updated:', data.code);
+            console.log('Current rules:', window.stateMachine.getRules());
+
+            // Clear the text box after successful parse
+            textBox.value = '';
         }
     } catch (error) {
         console.error('Error:', error);
@@ -90,17 +89,19 @@ textBox.addEventListener('keypress', (e) => {
     }
 });
 
-// Run button click handler - reload and execute statemachine.js
+// Run button click handler - display state machine summary
 runButton.addEventListener('click', () => {
-    // Reload the statemachine.js script
-    const oldScript = document.querySelector('script[src^="statemachine.js"]');
-    if (oldScript) {
-        oldScript.remove();
-    }
+    const summary = window.stateMachine.getSummary();
+    console.log('=== State Machine Summary ===');
+    console.log('Rules:', window.stateMachine.getRules());
+    console.log('Current State:', summary.currentState);
+    console.log('State Data:', summary.stateData);
+    console.log('Is Running:', summary.isRunning);
+    console.log('============================');
 
-    const newScript = document.createElement('script');
-    newScript.src = 'statemachine.js?' + new Date().getTime(); // Cache bust
-    document.body.appendChild(newScript);
-
-    console.log('State machine reloaded and running');
+    // Display an alert with the summary
+    alert(`State Machine Summary:\n\n` +
+          `Rules: ${summary.rulesCount}\n` +
+          `Current State: ${summary.currentState}\n` +
+          `Is Running: ${summary.isRunning}`);
 });
