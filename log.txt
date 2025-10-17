@@ -1,1 +1,13 @@
 10/06 : realize that it think toggling it on and off each spereately means "blink once" 
+
+To implement:
+1. getting a rule to go back
+2. get input options
+3. 
+
+Some tasks:
+1. everytime I press a button it changes to a random color.
+2. hold button that will continuously change color until I let go. 
+
+-> give the AI more room to do stuff so it can actually be expressive. 
+-> more freedom, more structure, so it is accurate. 
