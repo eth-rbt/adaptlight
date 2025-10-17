@@ -9,6 +9,16 @@
 <body>
     <h1>AdaptLight Simulator</h1>
 
+    <div class="rules-panel">
+        <div class="rules-header" id="rulesToggle">
+            <span>Rules</span>
+            <span class="toggle-icon">▼</span>
+        </div>
+        <div class="rules-content" id="rulesContent">
+            <div id="rulesList"></div>
+        </div>
+    </div>
+
     <button id="button" class="lightbutton">Button</button>
 
     <div id="light" class="light"></div>
@@ -16,10 +26,10 @@
     <div class="input-container">
         <input type="text" id="textBox" class="text-input" placeholder="Enter text here...">
         <button id="sendButton" class="send-button">Send</button>
-        <button id="runButton" class="run-button">Run</button>
     </div>
     <script src="StateMachine.js"></script>
     <script src="statefunctions.js"></script>
+    <script src="transitions.js"></script>
     <script src="init.js"></script>
     <script src="script.js"></script>
 </body>

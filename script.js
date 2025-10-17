@@ -3,15 +3,47 @@ const light = document.getElementById('light');
 const toggleButton = document.getElementById('button');
 const textBox = document.getElementById('textBox');
 const sendButton = document.getElementById('sendButton');
-const runButton = document.getElementById('runButton');
+const rulesToggle = document.getElementById('rulesToggle');
+const rulesContent = document.getElementById('rulesContent');
+const rulesList = document.getElementById('rulesList');
 let isLightOn = false;
 
-// Toggle light on button click - now integrated with state machine
-button.addEventListener('click', () => {
-    // Execute the transition based on button_press action
-    // The state's onEnter function will automatically be called
-    window.stateMachine.executeTransition('button_press');
+// Toggle rules panel
+rulesToggle.addEventListener('click', () => {
+    rulesContent.classList.toggle('hidden');
+    const toggleIcon = rulesToggle.querySelector('.toggle-icon');
+    toggleIcon.classList.toggle('collapsed');
 });
+
+// Function to update the rules display
+function updateRulesDisplay() {
+    const rules = window.stateMachine.getRules();
+
+    if (rules.length === 0) {
+        rulesList.innerHTML = '<div class="no-rules">No rules yet</div>';
+        return;
+    }
+
+    let html = '';
+    rules.forEach((rule, index) => {
+        const state1Param = rule.state1Param ?
+            `<span class="rule-param">(${JSON.stringify(rule.state1Param)})</span>` : '';
+        const state2Param = rule.state2Param ?
+            `<span class="rule-param">(${JSON.stringify(rule.state2Param)})</span>` : '';
+
+        html += `
+            <div class="rule-item">
+                <span class="rule-state">${rule.state1}</span>${state1Param}
+                →
+                <span class="rule-transition">${rule.transition}</span>
+                →
+                <span class="rule-state">${rule.state2}</span>${state2Param}
+            </div>
+        `;
+    });
+
+    rulesList.innerHTML = html;
+}
 
 // Send button click handler
 sendButton.addEventListener('click', async () => {
@@ -43,6 +75,9 @@ sendButton.addEventListener('click', async () => {
 
             console.log('Current rules:', window.stateMachine.getRules());
 
+            // Update the rules display
+            updateRulesDisplay();
+
             // Clear the text box after successful parse
             textBox.value = '';
         }
@@ -56,28 +91,4 @@ textBox.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') {
         sendButton.click();
     }
-});
-
-// Run button click handler - display state machine summary
-runButton.addEventListener('click', () => {
-    const summary = window.stateMachine.getSummary();
-    const stateList = window.stateMachine.getStateList();
-
-    console.log('=== State Machine Summary ===');
-    console.log('Rules:', window.stateMachine.getRules());
-    console.log('Current State:', summary.currentState);
-    console.log('State Data:', summary.stateData);
-    console.log('Is Running:', summary.isRunning);
-    console.log('States:', stateList);
-    console.log('============================');
-
-    // Build state list string
-    let stateListStr = stateList.map(s => `  ${s.name}: ${s.description}`).join('\n');
-
-    // Display an alert with the summary
-    alert(`State Machine Summary:\n\n` +
-          `Rules: ${summary.rulesCount}\n` +
-          `Current State: ${summary.currentState}\n` +
-          `Is Running: ${summary.isRunning}\n\n` +
-          `States:\n${stateListStr}`);
 });
