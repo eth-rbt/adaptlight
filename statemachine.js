@@ -179,6 +179,7 @@ class StateMachine {
 
     /**
      * Add a new rule to the state machine
+     * If a rule with the same state1 and transition exists, it will be replaced
      * @param {Array|Object|Rule} rule - Can be:
      *   - Legacy array: [state1, action, state2]
      *   - Object: {state1, state1Param, transition, state2, state2Param}
@@ -207,8 +208,20 @@ class StateMachine {
             return;
         }
 
-        this.rules.push(ruleObj);
-        console.log('Rule added:', ruleObj.toObject());
+        // Check if a rule with the same state1 and transition already exists
+        const existingIndex = this.rules.findIndex(r =>
+            r.state1 === ruleObj.state1 && r.transition === ruleObj.transition
+        );
+
+        if (existingIndex !== -1) {
+            // Replace the existing rule
+            this.rules[existingIndex] = ruleObj;
+            console.log('Rule replaced:', ruleObj.toObject());
+        } else {
+            // Add new rule
+            this.rules.push(ruleObj);
+            console.log('Rule added:', ruleObj.toObject());
+        }
     }
 
     /**

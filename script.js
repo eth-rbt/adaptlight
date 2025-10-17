@@ -34,10 +34,12 @@ sendButton.addEventListener('click', async () => {
         const data = await response.json();
 
         if (data.success) {
-            console.log('Parsed array:', data.parsedArray);
+            console.log('Parsed rules:', data.parsedRules);
 
-            // Add the rule to the global state machine
-            window.stateMachine.addRule(data.parsedArray);
+            // Add all rules to the global state machine
+            for (const rule of data.parsedRules) {
+                window.stateMachine.addRule(rule);
+            }
 
             console.log('Current rules:', window.stateMachine.getRules());
 

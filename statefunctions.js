@@ -9,7 +9,8 @@ function turnLightOn() {
 function turnLightOff() {
     isLightOn = false;
     light.classList.remove('on');
-    light.style.backgroundColor = ''; // Reset background color
+    light.style.background = ''; // Reset background
+    light.style.boxShadow = ''; // Reset box shadow
 }
 
 // Set light color based on RGB values
@@ -45,7 +46,17 @@ function setColor(params) {
     isLightOn = true;
     light.classList.add('on');
 
-    // Set the color
-    light.style.backgroundColor = `rgb(${r}, ${g}, ${b})`;
+    // Set the color with gradient for depth and glow effect
+    const rgbColor = `rgb(${r}, ${g}, ${b})`;
+    const rgbaGlow = `rgba(${r}, ${g}, ${b}, 0.8)`;
+    const rgbaGlowOuter = `rgba(${r}, ${g}, ${b}, 0.5)`;
+
+    light.style.background = `radial-gradient(circle, ${rgbColor} 0%, ${rgbColor} 100%)`;
+    light.style.boxShadow = `
+        0 0 40px ${rgbaGlow},
+        0 0 80px ${rgbaGlowOuter},
+        inset 0 0 20px rgba(255, 255, 255, 0.3)
+    `;
+
     console.log(`Light color set to: rgb(${r}, ${g}, ${b})`);
 }
