@@ -4,49 +4,13 @@ const toggleButton = document.getElementById('button');
 const textBox = document.getElementById('textBox');
 const sendButton = document.getElementById('sendButton');
 const runButton = document.getElementById('runButton');
-
-// Track light state
 let isLightOn = false;
 
-// Global state machine variables
-window.state = 'idle';
-window.stateData = {};
-window.stateMachineInterval = null;
-
-// Helper functions for LLM-generated code
-function turnLightOn() {
-    isLightOn = true;
-    light.classList.add('on');
-}
-
-function turnLightOff() {
-    isLightOn = false;
-    light.classList.remove('on');
-}
-
-function toggleLight() {
-    isLightOn = !isLightOn;
-    if (isLightOn) {
-        light.classList.add('on');
-    } else {
-        light.classList.remove('on');
-    }
-}
-
-function blinkLight(times, interval = 500) {
-    let count = 0;
-    const blinkInterval = setInterval(() => {
-        toggleLight();
-        count++;
-        if (count >= times * 2) {
-            clearInterval(blinkInterval);
-        }
-    }, interval);
-}
-
-// Toggle light on button click
+// Toggle light on button click - now integrated with state machine
 button.addEventListener('click', () => {
-    toggleLight();
+    // Execute the transition based on button_press action
+    // The state's onEnter function will automatically be called
+    window.stateMachine.executeTransition('button_press');
 });
 
 // Send button click handler
@@ -55,13 +19,16 @@ sendButton.addEventListener('click', async () => {
     if (!userInput) return;
 
     try {
+        // Get available states for the prompt
+        const availableStates = window.stateMachine.states.getStatesForPrompt();
+
         // Parse the text into [activating condition, action, post condition]
         const response = await fetch('http://localhost:3000/parse-text', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ userInput })
+            body: JSON.stringify({ userInput, availableStates })
         });
 
         const data = await response.json();
@@ -92,16 +59,23 @@ textBox.addEventListener('keypress', (e) => {
 // Run button click handler - display state machine summary
 runButton.addEventListener('click', () => {
     const summary = window.stateMachine.getSummary();
+    const stateList = window.stateMachine.getStateList();
+
     console.log('=== State Machine Summary ===');
     console.log('Rules:', window.stateMachine.getRules());
     console.log('Current State:', summary.currentState);
     console.log('State Data:', summary.stateData);
     console.log('Is Running:', summary.isRunning);
+    console.log('States:', stateList);
     console.log('============================');
+
+    // Build state list string
+    let stateListStr = stateList.map(s => `  ${s.name}: ${s.description}`).join('\n');
 
     // Display an alert with the summary
     alert(`State Machine Summary:\n\n` +
           `Rules: ${summary.rulesCount}\n` +
           `Current State: ${summary.currentState}\n` +
-          `Is Running: ${summary.isRunning}`);
+          `Is Running: ${summary.isRunning}\n\n` +
+          `States:\n${stateListStr}`);
 });

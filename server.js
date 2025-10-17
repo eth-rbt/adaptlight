@@ -25,14 +25,21 @@ app.use(express.static('.'));
 // API endpoint to parse text into state machine array
 app.post('/parse-text', async (req, res) => {
     try {
-        const { userInput } = req.body;
+        const { userInput, availableStates } = req.body;
+
+        // Build the system prompt with available states
+        let systemPrompt = parsingPrompt.systemPrompt;
+
+        if (availableStates) {
+            systemPrompt += `\n\nAvailable states in the system:\n${availableStates}`;
+        }
 
         const completion = await openai.chat.completions.create({
             model: "gpt-4o-mini",
             messages: [
                 {
                     role: "system",
-                    content: parsingPrompt.systemPrompt
+                    content: systemPrompt
                 },
                 {
                     role: "user",
