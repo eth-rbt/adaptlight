@@ -10,12 +10,54 @@ class State {
 
     /**
      * Execute the onEnter function for this state
+     * @param {*} params - Parameters to pass to the onEnter function
      */
-    enter() {
+    enter(params = null) {
         if (this.onEnter && typeof this.onEnter === 'function') {
-            console.log(`Entering state: ${this.name}`);
-            this.onEnter();
+            console.log(`Entering state: ${this.name}`, params ? `with params: ${JSON.stringify(params)}` : '');
+
+            // If params exist, pass them to the onEnter function
+            if (params) {
+                this.onEnter(params);
+            } else {
+                this.onEnter();
+            }
         }
+    }
+}
+
+/**
+ * Rule class - represents a state transition rule with parameters
+ */
+class Rule {
+    constructor(state1, state1Param, transition, state2, state2Param) {
+        this.state1 = state1;
+        this.state1Param = state1Param || null;
+        this.transition = transition;
+        this.state2 = state2;
+        this.state2Param = state2Param || null;
+        this.timestamp = new Date().toISOString();
+    }
+
+    /**
+     * Check if this rule matches the current state and action
+     */
+    matches(currentState, action) {
+        return this.state1 === currentState && this.transition === action;
+    }
+
+    /**
+     * Convert to a simple object representation
+     */
+    toObject() {
+        return {
+            state1: this.state1,
+            state1Param: this.state1Param,
+            transition: this.transition,
+            state2: this.state2,
+            state2Param: this.state2Param,
+            timestamp: this.timestamp
+        };
     }
 }
 
@@ -103,10 +145,6 @@ class StateMachine {
         this.states = new States(); // States collection
         this.stateData = {};
         this.interval = null;
-
-        // Add default rules
-        this.addRule(['off', 'button_press', 'on']); // from off, button press goes to on
-        this.addRule(['on', 'button_press', 'off']); // from on, button press goes to off
     }
 
     /**
@@ -141,20 +179,36 @@ class StateMachine {
 
     /**
      * Add a new rule to the state machine
-     * @param {Array} rule - [state1, action, state2]
+     * @param {Array|Object|Rule} rule - Can be:
+     *   - Legacy array: [state1, action, state2]
+     *   - Object: {state1, state1Param, transition, state2, state2Param}
+     *   - Rule instance
      */
     addRule(rule) {
-        if (Array.isArray(rule) && rule.length === 3) {
-            this.rules.push({
-                state1: rule[0],
-                action: rule[1],
-                state2: rule[2],
-                timestamp: new Date().toISOString()
-            });
-            console.log('Rule added:', rule);
+        let ruleObj;
+
+        if (rule instanceof Rule) {
+            // Already a Rule instance
+            ruleObj = rule;
+        } else if (Array.isArray(rule) && rule.length === 3) {
+            // Legacy format: [state1, action, state2]
+            ruleObj = new Rule(rule[0], null, rule[1], rule[2], null);
+        } else if (typeof rule === 'object' && rule.state1 && rule.transition && rule.state2) {
+            // New object format
+            ruleObj = new Rule(
+                rule.state1,
+                rule.state1Param,
+                rule.transition,
+                rule.state2,
+                rule.state2Param
+            );
         } else {
-            console.error('Invalid rule format. Expected [state1, action, state2]');
+            console.error('Invalid rule format. Expected [state1, action, state2] or {state1, state1Param, transition, state2, state2Param}');
+            return;
         }
+
+        this.rules.push(ruleObj);
+        console.log('Rule added:', ruleObj.toObject());
     }
 
     /**
@@ -185,17 +239,18 @@ class StateMachine {
     }
 
     /**
-     * Set the current state
+     * Set the current state with optional parameters
      * @param {string} stateName - The new state name
+     * @param {*} params - Optional parameters to pass to the state's onEnter function
      */
-    setState(stateName) {
+    setState(stateName, params = null) {
         this.currentState = stateName;
         console.log('State changed to:', stateName);
 
         // Execute the onEnter function for this state if it exists
         const stateObject = this.getStateObject(stateName);
         if (stateObject) {
-            stateObject.enter();
+            stateObject.enter(params);
         }
     }
 
@@ -206,12 +261,14 @@ class StateMachine {
      */
     executeTransition(action) {
         const matchingRule = this.rules.find(rule => {
-            return rule.state1 === this.currentState && rule.action === action;
+            return rule.matches(this.currentState, action);
         });
 
         if (matchingRule) {
-            console.log(`Transition: state ${matchingRule.state1} --[${action}]--> state ${matchingRule.state2}`);
-            this.setState(matchingRule.state2);
+            console.log(`Transition: state ${matchingRule.state1} --[${matchingRule.transition}]--> state ${matchingRule.state2}`);
+
+            // Pass state2Param to the setState function
+            this.setState(matchingRule.state2, matchingRule.state2Param);
             return true;
         } else {
             console.log(`No transition found for action "${action}" in state ${this.currentState}`);

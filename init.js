@@ -15,3 +15,14 @@ defaultStates = [
 for (const state of defaultStates) {
     window.stateMachine.registerState(state.name, state.description, state.onEnter);
 }
+
+// Add default transition rules
+window.stateMachine.addRule(new Rule('off', null, 'button_press', 'on', null));
+window.stateMachine.addRule(new Rule('on', null, 'button_press', 'off', null));
+
+// Initialize: set initial state to trigger onEnter function
+window.addEventListener('DOMContentLoaded', () => {
+    // Set the initial state (this will call the onEnter function)
+    window.stateMachine.setState('off');
+    console.log('State machine initialized. Current state:', window.stateMachine.getState());
+});

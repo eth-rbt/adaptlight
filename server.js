@@ -51,21 +51,22 @@ app.post('/parse-text', async (req, res) => {
 
         const parsedResult = completion.choices[0].message.content.trim();
 
-        // Parse the JSON array from the response
-        let parsedArray;
+        // Parse the JSON from the response (could be object or array)
+        let parsedRule;
         try {
-            parsedArray = JSON.parse(parsedResult);
+            parsedRule = JSON.parse(parsedResult);
         } catch (e) {
-            // If parsing fails, try to extract array from response
-            const arrayMatch = parsedResult.match(/\[.*\]/);
-            if (arrayMatch) {
-                parsedArray = JSON.parse(arrayMatch[0]);
+            // If parsing fails, try to extract JSON from response
+            const jsonMatch = parsedResult.match(/\{.*\}|\[.*\]/s);
+            if (jsonMatch) {
+                parsedRule = JSON.parse(jsonMatch[0]);
             } else {
-                throw new Error('Failed to parse response as array');
+                throw new Error('Failed to parse response as JSON');
             }
         }
 
-        res.json({ parsedArray, success: true });
+        // Return the parsed rule (backward compatible - returns as parsedArray)
+        res.json({ parsedArray: parsedRule, success: true });
     } catch (error) {
         console.error('Error:', error);
         res.status(500).json({ error: 'Failed to parse text' });
