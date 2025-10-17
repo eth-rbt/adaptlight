@@ -3,9 +3,15 @@ const light = document.getElementById('light');
 const toggleButton = document.getElementById('button');
 const textBox = document.getElementById('textBox');
 const sendButton = document.getElementById('sendButton');
+const runButton = document.getElementById('runButton');
 
 // Track light state
 let isLightOn = false;
+
+// Global state machine variables
+window.state = 'idle';
+window.stateData = {};
+window.stateMachineInterval = null;
 
 // Helper functions for LLM-generated code
 function turnLightOn() {
@@ -59,10 +65,18 @@ sendButton.addEventListener('click', async () => {
 
         const data = await response.json();
 
-        if (data.code) {
-            // Execute the generated code
-            eval(data.code);
-            console.log('Executed code:', data.code);
+        if (data.updated) {
+            // Reload the statemachine.js script
+            const oldScript = document.querySelector('script[src="statemachine.js"]');
+            if (oldScript) {
+                oldScript.remove();
+            }
+
+            const newScript = document.createElement('script');
+            newScript.src = 'statemachine.js?' + new Date().getTime(); // Cache bust
+            document.body.appendChild(newScript);
+
+            console.log('State machine updated:', data.code);
         }
     } catch (error) {
         console.error('Error:', error);
@@ -74,4 +88,19 @@ textBox.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') {
         sendButton.click();
     }
+});
+
+// Run button click handler - reload and execute statemachine.js
+runButton.addEventListener('click', () => {
+    // Reload the statemachine.js script
+    const oldScript = document.querySelector('script[src^="statemachine.js"]');
+    if (oldScript) {
+        oldScript.remove();
+    }
+
+    const newScript = document.createElement('script');
+    newScript.src = 'statemachine.js?' + new Date().getTime(); // Cache bust
+    document.body.appendChild(newScript);
+
+    console.log('State machine reloaded and running');
 });
