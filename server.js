@@ -25,14 +25,38 @@ app.use(express.static('.'));
 // API endpoint to parse text into state machine array
 app.post('/parse-text', async (req, res) => {
     try {
-        const { userInput, availableStates } = req.body;
+        const { userInput, availableStates, availableTransitions, availableParamGenerators, currentRules } = req.body;
 
-        // Build the system prompt with available states
-        let systemPrompt = parsingPrompt.systemPrompt;
+        // Build the dynamic content section
+        let dynamicContent = '\n\n';
 
         if (availableStates) {
-            systemPrompt += `\n\nAvailable states in the system:\n${availableStates}`;
+            dynamicContent += `### Available States\n${availableStates}\n\n`;
         }
+
+        if (availableTransitions && availableTransitions.length > 0) {
+            dynamicContent += `### Available Transitions\n${availableTransitions.map(t => `- ${t}`).join('\n')}\n\n`;
+        }
+
+        if (availableParamGenerators) {
+            dynamicContent += `### ${availableParamGenerators}\n\n`;
+        }
+
+        if (currentRules && currentRules.length > 0) {
+            dynamicContent += `### Current Rules\n`;
+            dynamicContent += currentRules.map(rule =>
+                `- ${rule.state1} --[${rule.transition}]--> ${rule.state2}${rule.state2Param ? ` (with params: ${JSON.stringify(rule.state2Param)})` : ''}`
+            ).join('\n');
+            dynamicContent += '\n\n';
+        } else {
+            dynamicContent += `### Current Rules\nNo rules defined yet.\n\n`;
+        }
+
+        // Insert dynamic content into the system prompt
+        let systemPrompt = parsingPrompt.systemPrompt.replace(
+            '---DYNAMIC CONTENT WILL BE INSERTED HERE---',
+            dynamicContent
+        );
 
         const completion = await openai.chat.completions.create({
             model: "gpt-4o-mini",

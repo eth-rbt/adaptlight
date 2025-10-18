@@ -51,16 +51,25 @@ sendButton.addEventListener('click', async () => {
     if (!userInput) return;
 
     try {
-        // Get available states for the prompt
+        // Gather current system state for the prompt
         const availableStates = window.stateMachine.states.getStatesForPrompt();
+        const availableTransitions = ['button_click', 'button_double_click', 'button_hold'];
+        const availableParamGenerators = window.paramGenerators.getGeneratorsForPrompt();
+        const currentRules = window.stateMachine.getRules().map(rule => rule.toObject());
 
-        // Parse the text into [activating condition, action, post condition]
+        // Parse the text into rules
         const response = await fetch('http://localhost:3000/parse-text', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ userInput, availableStates })
+            body: JSON.stringify({
+                userInput,
+                availableStates,
+                availableTransitions,
+                availableParamGenerators,
+                currentRules
+            })
         });
 
         const data = await response.json();
