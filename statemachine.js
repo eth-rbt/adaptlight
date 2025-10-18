@@ -1,137 +1,6 @@
 /**
  * State class - represents a single state with a name, description, and onEnter function
  */
-class State {
-    constructor(name, description = '', onEnter = null) {
-        this.name = name;
-        this.description = description;
-        this.onEnter = onEnter; // Function to execute when entering this state
-    }
-
-    /**
-     * Execute the onEnter function for this state
-     * @param {*} params - Parameters to pass to the onEnter function
-     */
-    enter(params = null) {
-        if (this.onEnter && typeof this.onEnter === 'function') {
-            console.log(`Entering state: ${this.name}`, params ? `with params: ${JSON.stringify(params)}` : '');
-
-            // If params exist, pass them to the onEnter function
-            if (params) {
-                this.onEnter(params);
-            } else {
-                this.onEnter();
-            }
-        }
-    }
-}
-
-/**
- * Rule class - represents a state transition rule with parameters
- */
-class Rule {
-    constructor(state1, state1Param, transition, state2, state2Param) {
-        this.state1 = state1;
-        this.state1Param = state1Param || null;
-        this.transition = transition;
-        this.state2 = state2;
-        this.state2Param = state2Param || null;
-        this.timestamp = new Date().toISOString();
-    }
-
-    /**
-     * Check if this rule matches the current state and action
-     */
-    matches(currentState, action) {
-        return this.state1 === currentState && this.transition === action;
-    }
-
-    /**
-     * Convert to a simple object representation
-     */
-    toObject() {
-        return {
-            state1: this.state1,
-            state1Param: this.state1Param,
-            transition: this.transition,
-            state2: this.state2,
-            state2Param: this.state2Param,
-            timestamp: this.timestamp
-        };
-    }
-}
-
-/**
- * States class - manages a collection of states
- */
-class States {
-    constructor() {
-        this.states = [];
-    }
-
-    /**
-     * Add a state to the collection
-     * @param {State} state - The state object to add
-     */
-    addState(state) {
-        if (state instanceof State) {
-            this.states.push(state);
-            console.log(`State added to collection: ${state.name}`);
-        } else {
-            console.error('Can only add State objects');
-        }
-    }
-
-    /**
-     * Get all states as an array
-     * @returns {Array} Array of State objects
-     */
-    getStates() {
-        return this.states;
-    }
-
-    /**
-     * Get a list of state names and descriptions
-     * @returns {Array} Array of {name, description} objects
-     */
-    getStateList() {
-        return this.states.map(state => ({
-            name: state.name,
-            description: state.description
-        }));
-    }
-
-    /**
-     * Get a state by name
-     * @param {string} name - The state name
-     * @returns {State|undefined} The state object or undefined
-     */
-    getStateByName(name) {
-        return this.states.find(state => state.name === name);
-    }
-
-    /**
-     * Clear all states
-     */
-    clearStates() {
-        this.states = [];
-        console.log('All states cleared');
-    }
-
-    /**
-     * Get formatted state information for OpenAI API calls
-     * @returns {string} Formatted string with state names and descriptions
-     */
-    getStatesForPrompt() {
-        if (this.states.length === 0) {
-            return 'No states registered.';
-        }
-
-        return this.states
-            .map(state => `- ${state.name}: ${state.description}`)
-            .join('\n');
-    }
-}
 
 /**
  * StateMachine class for managing state logic
@@ -255,15 +124,26 @@ class StateMachine {
      * Set the current state with optional parameters
      * @param {string} stateName - The new state name
      * @param {*} params - Optional parameters to pass to the state's onEnter function
+     *                     Can be a parameter generator name (string) or actual parameter value
      */
     setState(stateName, params = null) {
         this.currentState = stateName;
         console.log('State changed to:', stateName);
 
+        // Check if params is a parameter generator name
+        let actualParams = params;
+        if (typeof params === 'string' && window.paramGenerators) {
+            const generator = window.paramGenerators.getGenerator(params);
+            if (generator) {
+                actualParams = generator.generate();
+                console.log(`Parameter generator "${params}" executed, result:`, actualParams);
+            }
+        }
+
         // Execute the onEnter function for this state if it exists
         const stateObject = this.getStateObject(stateName);
         if (stateObject) {
-            stateObject.enter(params);
+            stateObject.enter(actualParams);
         }
     }
 

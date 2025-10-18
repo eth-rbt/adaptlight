@@ -3,7 +3,8 @@
 To implement:
 1. getting a rule to go back
 2. get input options
-3. 
+3. do some algorithmic stuff on states (i.e. random, count)
+4. time
 
 Some tasks:
 1. everytime I press a button it changes to a random color.
@@ -21,3 +22,5 @@ note to self, transition is hard coded
 maybe the easiert way is to just tell the lamp like, hey this is what the code is doing, these are the things you see and can do,go do it.. ? 
 
 What problem am i actually solving by using the statemachine structure as an intemediatary? 
+
+Note: paramgenerators are reading the states internally, which is fine 
