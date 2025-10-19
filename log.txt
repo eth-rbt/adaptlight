@@ -24,3 +24,13 @@ maybe the easiert way is to just tell the lamp like, hey this is what the code i
 What problem am i actually solving by using the statemachine structure as an intemediatary? 
 
 Note: paramgenerators are reading the states internally, which is fine 
+
+Next: 
+werid dynamic lightings
+external triggers (time)
+transitions based on not buttons 
+
+-> new branch
+ability to have llms do stuff themself: new states/new paramGens/new transitions  
+
+fix the param gen equation shit

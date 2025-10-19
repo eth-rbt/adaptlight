@@ -124,26 +124,15 @@ class StateMachine {
      * Set the current state with optional parameters
      * @param {string} stateName - The new state name
      * @param {*} params - Optional parameters to pass to the state's onEnter function
-     *                     Can be a parameter generator name (string) or actual parameter value
      */
     setState(stateName, params = null) {
         this.currentState = stateName;
         console.log('State changed to:', stateName);
 
-        // Check if params is a parameter generator name
-        let actualParams = params;
-        if (typeof params === 'string' && window.paramGenerators) {
-            const generator = window.paramGenerators.getGenerator(params);
-            if (generator) {
-                actualParams = generator.generate();
-                console.log(`Parameter generator "${params}" executed, result:`, actualParams);
-            }
-        }
-
         // Execute the onEnter function for this state if it exists
         const stateObject = this.getStateObject(stateName);
         if (stateObject) {
-            stateObject.enter(actualParams);
+            stateObject.enter(params);
         }
     }
 
