@@ -11,7 +11,7 @@ class Transitions {
         this.isHolding = false;
 
         // Configuration thresholds (in milliseconds)
-        this.DOUBLE_CLICK_THRESHOLD = 300; // Time window for double click
+        this.DOUBLE_CLICK_THRESHOLD = 200; // Time window for double click
         this.HOLD_THRESHOLD = 500; // Time before a hold is registered
 
         // Store bound event handlers for cleanup
@@ -85,10 +85,9 @@ class Transitions {
             this.holdTimer = null;
         }
 
-        // If this was a hold, optionally emit release event
+        // If this was a hold, emit release event
         if (this.isHolding) {
-            // Uncomment if you want a button_release transition:
-            // this.emitTransition('button_release');
+            this.emitTransition('button_release');
             this.isHolding = false;
         }
 
@@ -167,6 +166,31 @@ class Transitions {
             doubleClickThreshold: this.DOUBLE_CLICK_THRESHOLD,
             holdThreshold: this.HOLD_THRESHOLD
         };
+    }
+
+    /**
+     * Get available transitions with descriptions
+     * @returns {Array} Array of transition objects with name and description
+     */
+    getAvailableTransitions() {
+        return [
+            {
+                name: 'button_click',
+                description: `Single click on the button (after waiting ${this.DOUBLE_CLICK_THRESHOLD}ms to confirm it's not a double click)`
+            },
+            {
+                name: 'button_double_click',
+                description: `Two quick clicks on the button within ${this.DOUBLE_CLICK_THRESHOLD}ms`
+            },
+            {
+                name: 'button_hold',
+                description: `Hold the button down for ${this.HOLD_THRESHOLD}ms or longer`
+            },
+            {
+                name: 'button_release',
+                description: 'Release the button after a hold (only fires after button_hold)'
+            }
+        ];
     }
 
     /**

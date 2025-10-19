@@ -53,8 +53,7 @@ sendButton.addEventListener('click', async () => {
     try {
         // Gather current system state for the prompt
         const availableStates = window.stateMachine.states.getStatesForPrompt();
-        const availableTransitions = ['button_click', 'button_double_click', 'button_hold'];
-        const availableParamGenerators = window.paramGenerators.getGeneratorsForPrompt();
+        const availableTransitions = window.transitions.getAvailableTransitions();
         const currentRules = window.stateMachine.getRules().map(rule => rule.toObject());
 
         // Parse the text into rules
@@ -67,7 +66,6 @@ sendButton.addEventListener('click', async () => {
                 userInput,
                 availableStates,
                 availableTransitions,
-                availableParamGenerators,
                 currentRules
             })
         });

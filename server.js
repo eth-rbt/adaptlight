@@ -25,7 +25,7 @@ app.use(express.static('.'));
 // API endpoint to parse text into state machine array
 app.post('/parse-text', async (req, res) => {
     try {
-        const { userInput, availableStates, availableTransitions, availableParamGenerators, currentRules } = req.body;
+        const { userInput, availableStates, availableTransitions, currentRules } = req.body;
 
         // Build the dynamic content section
         let dynamicContent = '\n\n';
@@ -35,11 +35,11 @@ app.post('/parse-text', async (req, res) => {
         }
 
         if (availableTransitions && availableTransitions.length > 0) {
-            dynamicContent += `### Available Transitions\n${availableTransitions.map(t => `- ${t}`).join('\n')}\n\n`;
-        }
-
-        if (availableParamGenerators) {
-            dynamicContent += `### ${availableParamGenerators}\n\n`;
+            dynamicContent += `### Available Transitions\n`;
+            dynamicContent += availableTransitions.map(t =>
+                typeof t === 'string' ? `- ${t}` : `- ${t.name}: ${t.description}`
+            ).join('\n');
+            dynamicContent += '\n\n';
         }
 
         if (currentRules && currentRules.length > 0) {
