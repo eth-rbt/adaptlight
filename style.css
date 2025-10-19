@@ -201,3 +201,24 @@ h1 {
 .send-button:active {
     transform: translateY(0);
 }
+
+.reset-button {
+    padding: 15px 30px;
+    font-size: 1em;
+    font-weight: bold;
+    color: white;
+    background: #dc3545;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.reset-button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 20px rgba(220, 53, 69, 0.4);
+}
+
+.reset-button:active {
+    transform: translateY(0);
+}

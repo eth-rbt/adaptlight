@@ -1,11 +1,13 @@
 // Default rules for AdaptLight state machine
 class Rule {
-    constructor(state1, state1Param, transition, state2, state2Param) {
+    constructor(state1, state1Param, transition, state2, state2Param, condition = null, action = null) {
         this.state1 = state1;
         this.state1Param = state1Param || null;
         this.transition = transition;
         this.state2 = state2;
         this.state2Param = state2Param || null;
+        this.condition = condition || null;  // Optional condition expression (must evaluate to true for rule to match)
+        this.action = action || null;  // Optional action expression (executed after transition)
         this.timestamp = new Date().toISOString();
     }
 
@@ -26,6 +28,8 @@ class Rule {
             transition: this.transition,
             state2: this.state2,
             state2Param: this.state2Param,
+            condition: this.condition,
+            action: this.action,
             timestamp: this.timestamp
         };
     }
