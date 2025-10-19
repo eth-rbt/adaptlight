@@ -62,7 +62,7 @@ class StateMachine {
             ruleObj = rule;
         } else if (Array.isArray(rule) && rule.length === 3) {
             // Legacy format: [state1, action, state2]
-            ruleObj = new Rule(rule[0], null, rule[1], rule[2], null);
+            ruleObj = new Rule(rule[0], null, rule[1], rule[2], null, null, null);
         } else if (typeof rule === 'object' && rule.state1 && rule.transition && rule.state2) {
             // New object format
             ruleObj = new Rule(
@@ -70,10 +70,12 @@ class StateMachine {
                 rule.state1Param,
                 rule.transition,
                 rule.state2,
-                rule.state2Param
+                rule.state2Param,
+                rule.condition,
+                rule.action
             );
         } else {
-            console.error('Invalid rule format. Expected [state1, action, state2] or {state1, state1Param, transition, state2, state2Param}');
+            console.error('Invalid rule format. Expected [state1, action, state2] or {state1, state1Param, transition, state2, state2Param, condition?, action?}');
             return;
         }
 
@@ -137,23 +139,92 @@ class StateMachine {
     }
 
     /**
+     * Evaluate a condition or action expression
+     * @param {string} expr - The expression to evaluate
+     * @param {string} type - 'condition' or 'action'
+     * @returns {*} Result of evaluation (boolean for conditions, void for actions)
+     */
+    evaluateRuleExpression(expr, type = 'condition') {
+        if (!expr) return type === 'condition' ? true : undefined;
+
+        try {
+            // Create context with access to getData, setData, getTime
+            const getData = this.getData.bind(this);
+            const setData = this.setData.bind(this);
+            const getTime = this.getTime.bind(this);
+            const time = this.getTime();
+
+            // Whitelist of allowed Math functions
+            const safeMath = {
+                sin: Math.sin,
+                cos: Math.cos,
+                abs: Math.abs,
+                min: Math.min,
+                max: Math.max,
+                floor: Math.floor,
+                ceil: Math.ceil,
+                round: Math.round,
+                sqrt: Math.sqrt,
+                pow: Math.pow,
+                PI: Math.PI,
+                E: Math.E
+            };
+
+            const fn = new Function(
+                'getData',
+                'setData',
+                'getTime',
+                'time',
+                'safeMath',
+                `
+                const { sin, cos, abs, min, max, floor, ceil, round, sqrt, pow, PI, E } = safeMath;
+                ${type === 'condition' ? 'return' : ''} ${expr};
+                `
+            );
+
+            return fn(getData, setData, getTime, time, safeMath);
+        } catch (error) {
+            console.error(`Error evaluating ${type} expression "${expr}":`, error.message);
+            return type === 'condition' ? false : undefined;
+        }
+    }
+
+    /**
      * Execute a transition based on an action
      * @param {string} action - The action to execute
      * @returns {boolean} True if transition was executed, false otherwise
      */
     executeTransition(action) {
-        const matchingRule = this.rules.find(rule => {
+        // Find all matching rules (state + transition match)
+        const candidateRules = this.rules.filter(rule => {
             return rule.matches(this.currentState, action);
         });
 
+        // Filter by conditions - find first rule whose condition is true
+        const matchingRule = candidateRules.find(rule => {
+            if (!rule.condition) return true;  // No condition means always match
+            const conditionResult = this.evaluateRuleExpression(rule.condition, 'condition');
+            return conditionResult === true;
+        });
+
         if (matchingRule) {
-            console.log(`Transition: state ${matchingRule.state1} --[${matchingRule.transition}]--> state ${matchingRule.state2}`);
+            console.log(`Transition: state ${matchingRule.state1} --[${matchingRule.transition}]--> state ${matchingRule.state2}${matchingRule.condition ? ` (condition: ${matchingRule.condition})` : ''}`);
+
+            // Execute action if present (before state transition)
+            if (matchingRule.action) {
+                console.log(`Executing action: ${matchingRule.action}`);
+                this.evaluateRuleExpression(matchingRule.action, 'action');
+            }
 
             // Pass state2Param to the setState function
             this.setState(matchingRule.state2, matchingRule.state2Param);
             return true;
         } else {
-            console.log(`No transition found for action "${action}" in state ${this.currentState}`);
+            if (candidateRules.length > 0) {
+                console.log(`Rules found for action "${action}" in state ${this.currentState}, but no conditions matched`);
+            } else {
+                console.log(`No transition found for action "${action}" in state ${this.currentState}`);
+            }
             return false;
         }
     }
@@ -182,6 +253,21 @@ class StateMachine {
      */
     getData(key) {
         return this.stateData[key];
+    }
+
+    /**
+     * Get current time information
+     * @returns {Object} Object with hour, minute, second, dayOfWeek (0=Sunday)
+     */
+    getTime() {
+        const now = new Date();
+        return {
+            hour: now.getHours(),           // 0-23
+            minute: now.getMinutes(),       // 0-59
+            second: now.getSeconds(),       // 0-59
+            dayOfWeek: now.getDay(),        // 0=Sunday, 1=Monday, etc.
+            timestamp: now.getTime()        // milliseconds since epoch
+        };
     }
 
     /**

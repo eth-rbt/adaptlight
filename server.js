@@ -25,7 +25,7 @@ app.use(express.static('.'));
 // API endpoint to parse text into state machine array
 app.post('/parse-text', async (req, res) => {
     try {
-        const { userInput, availableStates, availableTransitions, currentRules } = req.body;
+        const { userInput, conversationHistory, availableStates, availableTransitions, currentRules } = req.body;
 
         // Build the dynamic content section
         let dynamicContent = '\n\n';
@@ -38,6 +38,14 @@ app.post('/parse-text', async (req, res) => {
             dynamicContent += `### Available Transitions\n`;
             dynamicContent += availableTransitions.map(t =>
                 typeof t === 'string' ? `- ${t}` : `- ${t.name}: ${t.description}`
+            ).join('\n');
+            dynamicContent += '\n\n';
+        }
+
+        if (conversationHistory && conversationHistory.length > 0) {
+            dynamicContent += `### Past User Inputs\n`;
+            dynamicContent += conversationHistory.map((msg, idx) =>
+                `${idx + 1}. "${msg}"`
             ).join('\n');
             dynamicContent += '\n\n';
         }
@@ -59,7 +67,8 @@ app.post('/parse-text', async (req, res) => {
         );
 
         const completion = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
+            model: "gpt-5",
+            //effort: "low",
             messages: [
                 {
                     role: "system",
@@ -70,7 +79,7 @@ app.post('/parse-text', async (req, res) => {
                     content: userInput
                 }
             ],
-            temperature: parsingPrompt.temperature,
+            //temperature: parsingPrompt.temperature,
         });
 
         const parsedResult = completion.choices[0].message.content.trim();
@@ -99,6 +108,21 @@ app.post('/parse-text', async (req, res) => {
     } catch (error) {
         console.error('Error:', error);
         res.status(500).json({ error: 'Failed to parse text' });
+    }
+});
+
+// API endpoint to reset rules
+app.post('/reset-rules', async (req, res) => {
+    try {
+        const stateMachineTxtPath = path.join(__dirname, 'statemachine.txt');
+
+        // Clear the file by writing an empty string
+        fs.writeFileSync(stateMachineTxtPath, '');
+
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error:', error);
+        res.status(500).json({ error: 'Failed to reset rules' });
     }
 });
 

@@ -3,10 +3,14 @@ const light = document.getElementById('light');
 const toggleButton = document.getElementById('button');
 const textBox = document.getElementById('textBox');
 const sendButton = document.getElementById('sendButton');
+const resetButton = document.getElementById('resetButton');
 const rulesToggle = document.getElementById('rulesToggle');
 const rulesContent = document.getElementById('rulesContent');
 const rulesList = document.getElementById('rulesList');
 let isLightOn = false;
+
+// Conversation history
+let conversationHistory = [];
 
 // Toggle rules panel
 rulesToggle.addEventListener('click', () => {
@@ -64,6 +68,7 @@ sendButton.addEventListener('click', async () => {
             },
             body: JSON.stringify({
                 userInput,
+                conversationHistory,
                 availableStates,
                 availableTransitions,
                 currentRules
@@ -85,6 +90,13 @@ sendButton.addEventListener('click', async () => {
             // Update the rules display
             updateRulesDisplay();
 
+            // Add to conversation history
+            conversationHistory.push(userInput);
+            // Keep only last 10 messages to avoid token bloat
+            if (conversationHistory.length > 10) {
+                conversationHistory.shift();
+            }
+
             // Clear the text box after successful parse
             textBox.value = '';
         }
@@ -97,5 +109,35 @@ sendButton.addEventListener('click', async () => {
 textBox.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') {
         sendButton.click();
+    }
+});
+
+// Reset button click handler
+resetButton.addEventListener('click', async () => {
+    try {
+        // Clear rules on the server
+        const response = await fetch('http://localhost:3000/reset-rules', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            // Clear the local state machine rules
+            window.stateMachine.clearRules();
+
+            // Clear conversation history
+            conversationHistory = [];
+
+            // Update the rules display
+            updateRulesDisplay();
+
+            console.log('Rules reset to default');
+        }
+    } catch (error) {
+        console.error('Error resetting rules:', error);
     }
 });

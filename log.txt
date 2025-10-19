@@ -33,4 +33,8 @@ transitions based on not buttons
 -> new branch
 ability to have llms do stuff themself: new states/new paramGens/new transitions  
 
-fix the param gen equation shit
+fix the param gen equation shit -> theres two parsers now
+add conversation id as past stuff
+
+
+
