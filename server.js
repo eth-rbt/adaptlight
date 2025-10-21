@@ -66,23 +66,14 @@ app.post('/parse-text', async (req, res) => {
             dynamicContent
         );
 
-        const completion = await openai.chat.completions.create({
+        const result = await openai.responses.create({
             model: "gpt-5",
-            //effort: "low",
-            messages: [
-                {
-                    role: "system",
-                    content: systemPrompt
-                },
-                {
-                    role: "user",
-                    content: userInput
-                }
-            ],
-            //temperature: parsingPrompt.temperature,
+            input: `${systemPrompt}\n\nUser: ${userInput}`,
+            reasoning: { effort: "low" },
+            text: { verbosity: "low" },
         });
 
-        const parsedResult = completion.choices[0].message.content.trim();
+        const parsedResult = result.output_text.trim();
 
         // Parse the JSON from the response (should be an array of rules)
         let parsedRules;

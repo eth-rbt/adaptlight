@@ -3,7 +3,7 @@ class Rule {
     constructor(state1, state1Param, transition, state2, state2Param, condition = null, action = null) {
         this.state1 = state1;
         this.state1Param = state1Param || null;
-        this.transition = transition;
+        this.transition = transition || null;
         this.state2 = state2;
         this.state2Param = state2Param || null;
         this.condition = condition || null;  // Optional condition expression (must evaluate to true for rule to match)

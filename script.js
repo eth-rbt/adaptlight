@@ -35,6 +35,11 @@ function updateRulesDisplay() {
         const state2Param = rule.state2Param ?
             `<span class="rule-param">(${JSON.stringify(rule.state2Param)})</span>` : '';
 
+        const condition = rule.condition ?
+            `<div class="rule-condition">if: ${rule.condition}</div>` : '';
+        const action = rule.action ?
+            `<div class="rule-action">do: ${rule.action}</div>` : '';
+
         html += `
             <div class="rule-item">
                 <span class="rule-state">${rule.state1}</span>${state1Param}
@@ -42,6 +47,8 @@ function updateRulesDisplay() {
                 <span class="rule-transition">${rule.transition}</span>
                 →
                 <span class="rule-state">${rule.state2}</span>${state2Param}
+                ${condition}
+                ${action}
             </div>
         `;
     });
@@ -53,6 +60,17 @@ function updateRulesDisplay() {
 sendButton.addEventListener('click', async () => {
     const userInput = textBox.value.trim();
     if (!userInput) return;
+
+    // Show loading animation
+    let dotCount = 0;
+    textBox.value = 'Processing';
+    textBox.disabled = true;
+    sendButton.disabled = true;
+
+    const loadingInterval = setInterval(() => {
+        dotCount = (dotCount + 1) % 4;
+        textBox.value = 'Processing' + '.'.repeat(dotCount);
+    }, 300);
 
     try {
         // Gather current system state for the prompt
@@ -102,6 +120,13 @@ sendButton.addEventListener('click', async () => {
         }
     } catch (error) {
         console.error('Error:', error);
+        textBox.value = '';
+    } finally {
+        // Clear loading animation and re-enable inputs
+        clearInterval(loadingInterval);
+        textBox.disabled = false;
+        sendButton.disabled = false;
+        textBox.focus();
     }
 });
 
