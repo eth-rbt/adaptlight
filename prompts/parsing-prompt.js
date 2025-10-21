@@ -127,7 +127,8 @@ Examples:
 ## RULE BEHAVIOR
 
 - When you create a new rule, it will be ADDED to the existing rules
-- If a rule with the SAME state1 AND transition already exists, it will be REPLACED
+- If a rule with the SAME state1, transition, AND condition already exists, it will be REPLACED
+- Rules with different conditions are treated as separate rules, even if state1 and transition match
 - For toggle behaviors (like "click to turn on X"), create TWO rules:
   1. From current state to the new state
   2. From the new state back to the previous state (usually "off")

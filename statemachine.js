@@ -48,10 +48,10 @@ class StateMachine {
 
     /**
      * Add a new rule to the state machine
-     * If a rule with the same state1 and transition exists, it will be replaced
+     * If a rule with the same state1, transition, and condition exists, it will be replaced
      * @param {Array|Object|Rule} rule - Can be:
      *   - Legacy array: [state1, action, state2]
-     *   - Object: {state1, state1Param, transition, state2, state2Param}
+     *   - Object: {state1, state1Param, transition, state2, state2Param, condition?, action?}
      *   - Rule instance
      */
     addRule(rule) {
@@ -79,9 +79,11 @@ class StateMachine {
             return;
         }
 
-        // Check if a rule with the same state1 and transition already exists
+        // Check if a rule with the same state1, transition, and condition already exists
         const existingIndex = this.rules.findIndex(r =>
-            r.state1 === ruleObj.state1 && r.transition === ruleObj.transition
+            r.state1 === ruleObj.state1 &&
+            r.transition === ruleObj.transition &&
+            r.condition === ruleObj.condition
         );
 
         if (existingIndex !== -1) {

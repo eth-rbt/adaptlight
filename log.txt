@@ -38,3 +38,9 @@ add conversation id as past stuff
 
 
 
+10/20 -> give it full rules so it can delete rules... lets do tool calls.. 
+add
+delete
+set state
+set global param
+get time.. 
