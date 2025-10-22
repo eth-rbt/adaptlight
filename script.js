@@ -7,7 +7,8 @@ const resetButton = document.getElementById('resetButton');
 const rulesToggle = document.getElementById('rulesToggle');
 const rulesContent = document.getElementById('rulesContent');
 const rulesList = document.getElementById('rulesList');
-let isLightOn = false;
+const arduinoConnect = document.getElementById('arduinoConnect');
+const arduinoStatus = document.getElementById('arduinoStatus');
 
 // Conversation history
 let conversationHistory = [];
@@ -154,6 +155,12 @@ resetButton.addEventListener('click', async () => {
             // Clear the local state machine rules
             window.stateMachine.clearRules();
 
+            // Restore default rules
+            initializeDefaultRules();
+
+            // Set state back to 'off'
+            window.stateMachine.setState('off');
+
             // Clear conversation history
             conversationHistory = [];
 
@@ -164,5 +171,28 @@ resetButton.addEventListener('click', async () => {
         }
     } catch (error) {
         console.error('Error resetting rules:', error);
+    }
+});
+
+// Arduino connect button handler
+arduinoConnect.addEventListener('click', async () => {
+    if (window.arduinoController.isConnected) {
+        // Disconnect
+        await window.arduinoController.disconnect();
+        arduinoConnect.textContent = 'Connect Arduino';
+        arduinoStatus.textContent = 'Not connected';
+        arduinoStatus.style.color = '#999';
+    } else {
+        // Connect
+        try {
+            await window.arduinoController.connect();
+            arduinoConnect.textContent = 'Disconnect Arduino';
+            arduinoStatus.textContent = 'Connected';
+            arduinoStatus.style.color = '#4CAF50';
+        } catch (error) {
+            arduinoStatus.textContent = 'Connection failed';
+            arduinoStatus.style.color = '#f44336';
+            console.error('Failed to connect to Arduino:', error);
+        }
     }
 });

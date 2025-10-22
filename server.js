@@ -69,7 +69,7 @@ app.post('/parse-text', async (req, res) => {
         const result = await openai.responses.create({
             model: "gpt-5",
             input: `${systemPrompt}\n\nUser: ${userInput}`,
-            reasoning: { effort: "low" },
+            reasoning: { effort: "minimal" },
             text: { verbosity: "low" },
         });
 
