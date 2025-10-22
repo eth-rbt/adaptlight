@@ -44,3 +44,5 @@ delete
 set state
 set global param
 get time.. 
+
+Also add window serials 

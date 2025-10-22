@@ -9,6 +9,7 @@ class Transitions {
         this.holdTimer = null;
         this.mousedownTime = null;
         this.isHolding = false;
+        this.justReleasedFromHold = false;
 
         // Configuration thresholds (in milliseconds)
         this.DOUBLE_CLICK_THRESHOLD = 200; // Time window for double click
@@ -63,6 +64,7 @@ class Transitions {
     handleMouseDown(event) {
         this.mousedownTime = Date.now();
         this.isHolding = false;
+        this.justReleasedFromHold = false;
 
         // Start hold timer
         this.holdTimer = setTimeout(() => {
@@ -89,6 +91,7 @@ class Transitions {
         if (this.isHolding) {
             this.emitTransition('button_release');
             this.isHolding = false;
+            this.justReleasedFromHold = true;
         }
 
         this.mousedownTime = null;
@@ -99,7 +102,8 @@ class Transitions {
      */
     handleClick(event) {
         // Ignore clicks that were part of a hold gesture
-        if (this.isHolding) {
+        if (this.isHolding || this.justReleasedFromHold) {
+            this.justReleasedFromHold = false;
             return;
         }
 
