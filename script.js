@@ -79,7 +79,7 @@ sendButton.addEventListener('click', async () => {
         const availableTransitions = window.transitions.getAvailableTransitions();
         const currentRules = window.stateMachine.getRules().map(rule => rule.toObject());
 
-        // Parse the text into rules
+        // Send request to server with tool calling
         const response = await fetch('http://localhost:3000/parse-text', {
             method: 'POST',
             headers: {
@@ -97,14 +97,31 @@ sendButton.addEventListener('click', async () => {
         const data = await response.json();
 
         if (data.success) {
-            console.log('Parsed rules:', data.parsedRules);
+            console.log('Server response:', data);
 
-            // Add all rules to the global state machine
-            for (const rule of data.parsedRules) {
+            // Clear current rules and set new ones
+            window.stateMachine.clearRules();
+
+            // Add all rules from the response
+            for (const rule of data.rules) {
                 window.stateMachine.addRule(rule);
             }
 
-            console.log('Current rules:', window.stateMachine.getRules());
+            // Apply state changes if any
+            if (data.stateChanges && data.stateChanges.length > 0) {
+                for (const change of data.stateChanges) {
+                    console.log(`Setting state to: ${change.state}`);
+                    window.stateMachine.setState(change.state, change.params);
+                }
+            }
+
+            // Apply data changes if any
+            if (data.dataChanges && data.dataChanges.length > 0) {
+                for (const change of data.dataChanges) {
+                    console.log(`Setting data: ${change.key} = ${JSON.stringify(change.value)}`);
+                    window.stateMachine.setData(change.key, change.value);
+                }
+            }
 
             // Update the rules display
             updateRulesDisplay();
@@ -116,12 +133,23 @@ sendButton.addEventListener('click', async () => {
                 conversationHistory.shift();
             }
 
-            // Clear the text box after successful parse
-            textBox.value = '';
+            // Show the LLM's response message briefly
+            textBox.value = data.message || 'Done!';
+            setTimeout(() => {
+                textBox.value = '';
+            }, 2000);
+        } else {
+            textBox.value = 'Error: ' + (data.error || 'Unknown error');
+            setTimeout(() => {
+                textBox.value = '';
+            }, 3000);
         }
     } catch (error) {
         console.error('Error:', error);
-        textBox.value = '';
+        textBox.value = 'Error: ' + error.message;
+        setTimeout(() => {
+            textBox.value = '';
+        }, 3000);
     } finally {
         // Clear loading animation and re-enable inputs
         clearInterval(loadingInterval);
