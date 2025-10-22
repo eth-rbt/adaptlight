@@ -19,6 +19,11 @@
         </div>
     </div>
 
+    <div class="arduino-controls">
+        <button id="arduinoConnect" class="arduino-button">Connect Arduino</button>
+        <span id="arduinoStatus" class="arduino-status">Not connected</span>
+    </div>
+
     <button id="button" class="lightbutton">Button</button>
 
     <div id="light" class="light"></div>
@@ -32,6 +37,7 @@
     <script src="rules.js"></script>
     <script src="StateMachine.js"></script>
     <script src="transitions.js"></script>
+    <script src="arduinoController.js"></script>
     <script src="paramGenerators.js"></script>
     <script src="init.js"></script>
     <script src="script.js"></script>

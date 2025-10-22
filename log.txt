@@ -46,3 +46,6 @@ set global param
 get time.. 
 
 Also add window serials 
+
+
+when prompted like: click to hold color, it cant change the previous command

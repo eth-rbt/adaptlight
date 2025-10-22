@@ -99,24 +99,22 @@ class States {
 // ===== State Behavior Functions =====
 
 /**
- * Turn light on (yellow/white light)
+ * Turn light on (pure white light)
  */
 function turnLightOn() {
-    isLightOn = true;
-    light.classList.add('on');
+    // Pure white
+    updateColorDisplay(255, 255, 255);
 }
 
 /**
  * Turn light off
  */
 function turnLightOff() {
-    isLightOn = false;
-    light.classList.remove('on');
-    light.style.background = ''; // Reset background
-    light.style.boxShadow = ''; // Reset box shadow
-
-    // Stop any running animations
+    // Stop any running animations first
     window.stateMachine.stopInterval();
+
+    // Turn off by setting color to black (0, 0, 0)
+    updateColorDisplay(0, 0, 0);
 }
 
 /**
@@ -131,27 +129,35 @@ function updateColorDisplay(r, g, b) {
     g = Math.max(0, Math.min(255, g));
     b = Math.max(0, Math.min(255, b));
 
-    // Turn the light on if it's not already
-    isLightOn = true;
-    light.classList.add('on');
+    // Check if this is the "off" state (all channels at 0)
+    if (r === 0 && g === 0 && b === 0) {
+        // Light off - clear all styles
+        light.style.background = '';
+        light.style.boxShadow = '';
+    } else {
+        // Light on - set the color with gradient for depth and glow effect
+        const rgbColor = `rgb(${r}, ${g}, ${b})`;
+        const rgbaGlow = `rgba(${r}, ${g}, ${b}, 0.8)`;
+        const rgbaGlowOuter = `rgba(${r}, ${g}, ${b}, 0.5)`;
 
-    // Set the color with gradient for depth and glow effect
-    const rgbColor = `rgb(${r}, ${g}, ${b})`;
-    const rgbaGlow = `rgba(${r}, ${g}, ${b}, 0.8)`;
-    const rgbaGlowOuter = `rgba(${r}, ${g}, ${b}, 0.5)`;
-
-    light.style.background = `radial-gradient(circle, ${rgbColor} 0%, ${rgbColor} 100%)`;
-    light.style.boxShadow = `
-        0 0 40px ${rgbaGlow},
-        0 0 80px ${rgbaGlowOuter},
-        inset 0 0 20px rgba(255, 255, 255, 0.3)
-    `;
+        light.style.background = `radial-gradient(circle, ${rgbColor} 0%, ${rgbColor} 100%)`;
+        light.style.boxShadow = `
+            0 0 40px ${rgbaGlow},
+            0 0 80px ${rgbaGlowOuter},
+            inset 0 0 20px rgba(255, 255, 255, 0.3)
+        `;
+    }
 
     // Store current color values in state machine data
     if (window.stateMachine) {
         window.stateMachine.setData('color_r', r);
         window.stateMachine.setData('color_g', g);
         window.stateMachine.setData('color_b', b);
+    }
+
+    // Send color to Arduino if connected
+    if (window.arduinoController && window.arduinoController.isConnected) {
+        window.arduinoController.sendColor(r, g, b);
     }
 }
 
