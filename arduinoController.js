@@ -214,6 +214,42 @@ class ArduinoController {
     }
 
     /**
+     * Send loading command to Arduino
+     */
+    async sendLoading() {
+        if (!this.isConnected || !this.writer) {
+            console.warn('Cannot send loading: not connected to Arduino');
+            return;
+        }
+
+        try {
+            const command = 'LOADING\n';
+            await this.writer.write(command);
+            console.log('Sent to Arduino:', command.trim());
+        } catch (error) {
+            console.error('Error sending loading to Arduino:', error);
+        }
+    }
+
+    /**
+     * Send finished command to Arduino
+     */
+    async sendFinished() {
+        if (!this.isConnected || !this.writer) {
+            console.warn('Cannot send finished: not connected to Arduino');
+            return;
+        }
+
+        try {
+            const command = 'FINISHED\n';
+            await this.writer.write(command);
+            console.log('Sent to Arduino:', command.trim());
+        } catch (error) {
+            console.error('Error sending finished to Arduino:', error);
+        }
+    }
+
+    /**
      * Get connection status
      */
     getStatus() {

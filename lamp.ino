@@ -32,6 +32,12 @@ const unsigned long DOUBLE_CLICK_THRESHOLD = 300; // Increased for easier detect
 uint8_t currentR = 0, currentG = 0, currentB = 0;
 uint8_t currentBrightness = 30;
 
+// Loading animation state
+bool isLoading = false;
+int loadingPosition = 0;
+unsigned long lastLoadingUpdate = 0;
+const unsigned long LOADING_SPEED = 100; // milliseconds per LED
+
 void setup() {
   pinMode(BUTTON_PIN, INPUT_PULLUP); // button to GND, so LOW = pressed
   Serial.begin(115200);
@@ -43,6 +49,7 @@ void setup() {
 void loop() {
   handleButton();
   handleSerial();
+  handleLoadingAnimation();
 }
 
 void handleButton() {
@@ -158,6 +165,15 @@ void handleSerial() {
       currentBrightness = command.substring(11).toInt();
       strip.setBrightness(currentBrightness);
       strip.show();
+    } else if (command == "LOADING") {
+      // Start loading animation
+      isLoading = true;
+      loadingPosition = 0;
+      lastLoadingUpdate = millis();
+    } else if (command == "FINISHED") {
+      // Stop loading animation and restore current color
+      isLoading = false;
+      setAllPixels(currentR, currentG, currentB);
     }
   }
 }
@@ -167,4 +183,28 @@ void setAllPixels(uint8_t r, uint8_t g, uint8_t b) {
     strip.setPixelColor(i, strip.Color(r, g, b));
   }
   strip.show();
+}
+
+void handleLoadingAnimation() {
+  if (!isLoading) {
+    return;
+  }
+
+  // Check if it's time to update the loading position
+  unsigned long currentTime = millis();
+  if (currentTime - lastLoadingUpdate >= LOADING_SPEED) {
+    lastLoadingUpdate = currentTime;
+
+    // Clear all pixels
+    for (int i = 0; i < LED_COUNT; i++) {
+      strip.setPixelColor(i, strip.Color(0, 0, 0));
+    }
+
+    // Light up only the current position with white
+    strip.setPixelColor(loadingPosition, strip.Color(255, 255, 255));
+    strip.show();
+
+    // Move to next position (cycle through 0-15)
+    loadingPosition = (loadingPosition + 1) % LED_COUNT;
+  }
 }

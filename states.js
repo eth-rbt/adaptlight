@@ -103,7 +103,7 @@ class States {
  */
 function turnLightOn() {
     // Pure white
-    updateColorDisplay(255, 255, 255);
+    updateColorDisplay(255, 255, 200);
 }
 
 /**

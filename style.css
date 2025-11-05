@@ -6,7 +6,7 @@
 
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background: #f5f5f5;
+    background: #ffffff;
     min-height: 100vh;
     position: relative;
 }
@@ -29,7 +29,7 @@ h1 {
     border-radius: 10px;
     overflow: hidden;
     max-width: 350px;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
 }
 
 .rules-header {
@@ -116,8 +116,8 @@ h1 {
     top: 50%;
     transform: translate(50%, -50%);
     padding: 15px 30px;
-    font-size: 1.1em;
-    font-weight: normal;
+    font-size: 1em;
+    font-weight: bold;
     color: white;
     background: #667eea;
     border: none;
@@ -270,3 +270,26 @@ h1 {
     font-size: 0.9em;
     margin-top: 2px;
 }
+
+/* Film mode - hide UI elements and shift to left */
+body.film-mode .rules-panel,
+body.film-mode .arduino-controls,
+body.film-mode .reset-button {
+    display: none;
+}
+
+body.film-mode .light {
+    left: 25%;
+}
+
+body.film-mode .lightbutton {
+    right: 55%;
+}
+
+body.film-mode .input-container {
+    left: 19%;
+    transform: none;
+    width: 30%;
+    max-width: none;
+}
+

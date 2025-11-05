@@ -73,6 +73,11 @@ sendButton.addEventListener('click', async () => {
         textBox.value = 'Processing' + '.'.repeat(dotCount);
     }, 300);
 
+    // Send loading command to Arduino
+    if (window.arduinoController && window.arduinoController.isConnected) {
+        await window.arduinoController.sendLoading();
+    }
+
     try {
         // Gather current system state for the prompt
         const availableStates = window.stateMachine.states.getStatesForPrompt();
@@ -123,6 +128,11 @@ sendButton.addEventListener('click', async () => {
         console.error('Error:', error);
         textBox.value = '';
     } finally {
+        // Send finished command to Arduino
+        if (window.arduinoController && window.arduinoController.isConnected) {
+            await window.arduinoController.sendFinished();
+        }
+
         // Clear loading animation and re-enable inputs
         clearInterval(loadingInterval);
         textBox.disabled = false;
@@ -135,6 +145,15 @@ sendButton.addEventListener('click', async () => {
 textBox.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') {
         sendButton.click();
+    }
+});
+
+// Film mode toggle (press 'f' key)
+document.addEventListener('keydown', (e) => {
+    // Only toggle if not focused on an input
+    if (e.key === 'f' && document.activeElement !== textBox) {
+        document.body.classList.toggle('film-mode');
+        console.log('Film mode:', document.body.classList.contains('film-mode') ? 'ON' : 'OFF');
     }
 });
 
