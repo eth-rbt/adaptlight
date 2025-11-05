@@ -1,0 +1,12 @@
+# AWS Configuration
+aws:
+  access_key_id: 
+  secret_access_key: 
+  region: us-east-1
+  s3_bucket: adapt-lamp
+
+# Logging Configuration
+logging:
+  enabled: true
+  log_prefix: button-logs/
+  timezone: UTC

@@ -1,0 +1,5 @@
+adafruit-circuitpython-neopixel
+rpi_ws281x
+gpiozero
+boto3
+pyyaml

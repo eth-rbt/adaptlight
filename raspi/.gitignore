@@ -1,0 +1,14 @@
+# AWS credentials - DO NOT commit!
+config.yaml
+config.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual environment
+venv/
+env/
