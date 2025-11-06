@@ -57,6 +57,122 @@ function updateRulesDisplay() {
     rulesList.innerHTML = html;
 }
 
+/**
+ * Execute a tool call from the AI
+ * @param {string} toolName - Name of the tool to execute
+ * @param {Object} args - Arguments for the tool
+ */
+function executeTool(toolName, args) {
+    console.log(`%c🔧 Action: ${toolName}`, 'color: #4CAF50; font-weight: bold');
+    console.log('Arguments:', args);
+
+    switch (toolName) {
+        case 'append_rules':
+            // Add new rules to the state machine
+            if (args.rules && Array.isArray(args.rules)) {
+                console.log(`%c➕ Adding ${args.rules.length} rule(s):`, 'color: #2196F3; font-weight: bold');
+                for (const rule of args.rules) {
+                    window.stateMachine.addRule(rule);
+                    console.log(`  → ${rule.state1} --[${rule.transition}]--> ${rule.state2}`);
+                }
+            }
+            break;
+
+        case 'delete_rules':
+            // Delete rules based on criteria
+            const rulesToDelete = [];
+            const allRules = window.stateMachine.getRules();
+
+            if (args.delete_all) {
+                // Delete all rules
+                const count = allRules.length;
+                window.stateMachine.clearRules();
+                console.log(`%c🗑️ Deleted all ${count} rule(s)`, 'color: #f44336; font-weight: bold');
+            } else if (args.indices && Array.isArray(args.indices)) {
+                // Delete by specific indices (sort descending to avoid index shifting)
+                console.log(`%c🗑️ Deleting rules at indices: ${args.indices.join(', ')}`, 'color: #f44336; font-weight: bold');
+                const sortedIndices = args.indices.sort((a, b) => b - a);
+                for (const index of sortedIndices) {
+                    const rule = allRules[index];
+                    if (rule) {
+                        console.log(`  → [${index}] ${rule.state1} --[${rule.transition}]--> ${rule.state2}`);
+                    }
+                    window.stateMachine.removeRule(index);
+                }
+            } else {
+                // Delete by criteria (state1, transition, state2)
+                const criteria = [];
+                if (args.state1) criteria.push(`state1=${args.state1}`);
+                if (args.transition) criteria.push(`transition=${args.transition}`);
+                if (args.state2) criteria.push(`state2=${args.state2}`);
+
+                console.log(`%c🗑️ Deleting rules matching: ${criteria.join(', ')}`, 'color: #f44336; font-weight: bold');
+
+                for (let i = allRules.length - 1; i >= 0; i--) {
+                    const rule = allRules[i];
+                    let shouldDelete = false;
+
+                    if (args.state1 && rule.state1 === args.state1) {
+                        shouldDelete = true;
+                    }
+                    if (args.transition && rule.transition === args.transition) {
+                        shouldDelete = true;
+                    }
+                    if (args.state2 && rule.state2 === args.state2) {
+                        shouldDelete = true;
+                    }
+
+                    if (shouldDelete) {
+                        rulesToDelete.push(i);
+                        console.log(`  → [${i}] ${rule.state1} --[${rule.transition}]--> ${rule.state2}`);
+                    }
+                }
+
+                // Delete the matching rules
+                for (const index of rulesToDelete) {
+                    window.stateMachine.removeRule(index);
+                }
+            }
+            break;
+
+        case 'set_state':
+            // Change the current state
+            if (args.state) {
+                const paramsStr = args.params ? JSON.stringify(args.params) : 'none';
+                console.log(`%c🔄 Changing state to: ${args.state}`, 'color: #FF9800; font-weight: bold');
+                console.log(`  → Parameters: ${paramsStr}`);
+                window.stateMachine.setState(args.state, args.params || null);
+            }
+            break;
+
+        case 'manage_variables':
+            // Manage global variables
+            if (args.action === 'set' && args.variables) {
+                // Set/update variables
+                console.log(`%c💾 Setting ${Object.keys(args.variables).length} variable(s):`, 'color: #9C27B0; font-weight: bold');
+                for (const [key, value] of Object.entries(args.variables)) {
+                    window.stateMachine.setData(key, value);
+                    console.log(`  → ${key} = ${JSON.stringify(value)}`);
+                }
+            } else if (args.action === 'delete' && args.keys) {
+                // Delete specific variables
+                console.log(`%c💾 Deleting ${args.keys.length} variable(s):`, 'color: #9C27B0; font-weight: bold');
+                for (const key of args.keys) {
+                    console.log(`  → ${key}`);
+                    window.stateMachine.setData(key, undefined);
+                }
+            } else if (args.action === 'clear_all') {
+                // Clear all variables
+                console.log(`%c💾 Clearing all variables`, 'color: #9C27B0; font-weight: bold');
+                window.stateMachine.clearData();
+            }
+            break;
+
+        default:
+            console.warn(`❌ Unknown tool: ${toolName}`);
+    }
+}
+
 // Send button click handler
 sendButton.addEventListener('click', async () => {
     const userInput = textBox.value.trim();
@@ -83,6 +199,8 @@ sendButton.addEventListener('click', async () => {
         const availableStates = window.stateMachine.states.getStatesForPrompt();
         const availableTransitions = window.transitions.getAvailableTransitions();
         const currentRules = window.stateMachine.getRules().map(rule => rule.toObject());
+        const currentState = window.stateMachine.getState();
+        const globalVariables = window.stateMachine.stateData;
 
         // Parse the text into rules
         const response = await fetch('http://localhost:3000/parse-text', {
@@ -95,21 +213,38 @@ sendButton.addEventListener('click', async () => {
                 conversationHistory,
                 availableStates,
                 availableTransitions,
-                currentRules
+                currentRules,
+                currentState,
+                globalVariables
             })
         });
 
         const data = await response.json();
 
         if (data.success) {
-            console.log('Parsed rules:', data.parsedRules);
+            console.log('%c═══════════════════════════════════════', 'color: #666');
+            console.log('%c👤 User:', 'color: #9E9E9E; font-weight: bold');
+            console.log(`%c"${userInput}"`, 'color: #9E9E9E');
 
-            // Add all rules to the global state machine
-            for (const rule of data.parsedRules) {
-                window.stateMachine.addRule(rule);
+            // Log AI message if present
+            if (data.message) {
+                console.log('%c\n💬 AI Response:', 'color: #00BCD4; font-weight: bold; font-size: 14px');
+                console.log(`%c${data.message}`, 'color: #00BCD4; font-style: italic');
             }
 
-            console.log('Current rules:', window.stateMachine.getRules());
+            // Execute tool calls if present
+            if (data.toolCalls && data.toolCalls.length > 0) {
+                console.log(`%c\n⚡ Executing ${data.toolCalls.length} action(s):`, 'color: #4CAF50; font-weight: bold; font-size: 14px');
+
+                // Execute each tool call
+                for (let i = 0; i < data.toolCalls.length; i++) {
+                    const toolCall = data.toolCalls[i];
+                    console.log(`\n[${i + 1}/${data.toolCalls.length}]`);
+                    executeTool(toolCall.name, toolCall.arguments);
+                }
+            }
+
+            console.log('%c═══════════════════════════════════════\n', 'color: #666');
 
             // Update the rules display
             updateRulesDisplay();
