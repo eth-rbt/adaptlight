@@ -116,7 +116,93 @@ class LEDController:
         """Get the current LED color."""
         return self.current_color
 
+    def set_pixel(self, index: int, r: int, g: int, b: int):
+        """
+        Set a specific pixel to an RGB color.
+
+        Args:
+            index: Pixel index (0 to led_count-1)
+            r: Red value (0-255)
+            g: Green value (0-255)
+            b: Blue value (0-255)
+        """
+        if index < 0 or index >= self.led_count:
+            return
+
+        # Clamp values to 0-255
+        r = max(0, min(255, int(r)))
+        g = max(0, min(255, int(g)))
+        b = max(0, min(255, int(b)))
+
+        if self.pixels:
+            if USE_NEOPIXEL_SPI:
+                self.pixels[index] = (r, g, b)
+        else:
+            # Simulation mode - show which pixel changed
+            print(f"LED[{index}]: RGB({r}, {g}, {b})")
+
+    def show(self):
+        """Update the LED display with current pixel values."""
+        if self.pixels:
+            if USE_NEOPIXEL_SPI:
+                self.pixels.show()
+
+    def start_loading_animation(self, color=(0, 100, 255), speed=0.05):
+        """
+        Start a circular loading animation (reverse order).
+
+        Args:
+            color: RGB tuple for the loading pixel
+            speed: Time in seconds between pixel updates
+        """
+        import threading
+        import time
+
+        # Stop any existing animation
+        self.stop_loading_animation()
+
+        self.loading_active = True
+
+        def loading_loop():
+            """Run the loading animation in reverse order."""
+            # Clear all pixels first
+            if self.pixels:
+                for i in range(self.led_count):
+                    self.set_pixel(i, 0, 0, 0)
+                self.show()
+
+            while self.loading_active:
+                # Go in reverse order: 15, 14, 13... 0
+                for i in range(self.led_count - 1, -1, -1):
+                    if not self.loading_active:
+                        break
+
+                    # Clear all pixels
+                    if self.pixels:
+                        for j in range(self.led_count):
+                            self.set_pixel(j, 0, 0, 0)
+
+                    # Light up current pixel
+                    self.set_pixel(i, *color)
+                    self.show()
+
+                    time.sleep(speed)
+
+        # Start the loading thread
+        self.loading_thread = threading.Thread(target=loading_loop, daemon=True)
+        self.loading_thread.start()
+
+    def stop_loading_animation(self):
+        """Stop the loading animation."""
+        if hasattr(self, 'loading_active'):
+            self.loading_active = False
+            if hasattr(self, 'loading_thread') and self.loading_thread.is_alive():
+                self.loading_thread.join(timeout=0.5)
+            # Clear all pixels after stopping
+            self.clear()
+
     def cleanup(self):
         """Cleanup resources and turn off LEDs."""
+        self.stop_loading_animation()
         self.clear()
         print("LED controller cleanup complete")

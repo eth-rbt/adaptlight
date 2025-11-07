@@ -175,7 +175,7 @@ def start_animation(params):
 
     # Start the interval
     if state_machine_ref:
-        state_machine_ref.start_interval(animation_fn, speed / 1000.0)  # Convert to seconds
+        state_machine_ref.start_interval(animation_fn, speed)  # speed is already in milliseconds
 
 
 def initialize_default_states(state_machine):

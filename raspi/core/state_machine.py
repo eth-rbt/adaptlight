@@ -23,6 +23,7 @@ class StateMachine:
         """Initialize the state machine."""
         self.rules: List[Rule] = []
         self.current_state = 'off'
+        self.current_state_params = None
         self.states = States()
         self.state_data = {}
         self.interval = None
@@ -122,6 +123,7 @@ class StateMachine:
             params: Optional parameters to pass to the state's onEnter function
         """
         self.current_state = state_name
+        self.current_state_params = params
         print(f"State changed to: {state_name}")
 
         # Execute the onEnter function for this state if it exists
@@ -195,6 +197,10 @@ class StateMachine:
         """Get the current state."""
         return self.current_state
 
+    def get_state_params(self):
+        """Get the current state parameters."""
+        return self.current_state_params
+
     def set_data(self, key: str, value: Any):
         """Set state data."""
         self.state_data[key] = value
@@ -227,9 +233,13 @@ class StateMachine:
     def stop_interval(self):
         """Stop the current interval if running."""
         if self.interval:
-            self.interval.cancel()
+            # Signal the thread to stop by setting interval to None
+            interval_thread = self.interval
             self.interval = None
             self.interval_callback = None
+            # Wait briefly for thread to finish
+            if interval_thread.is_alive():
+                interval_thread.join(timeout=0.5)
             print("State machine interval stopped")
 
     def start_interval(self, callback: Callable, interval_ms: int = 100):
@@ -240,11 +250,30 @@ class StateMachine:
             callback: Function to execute on each interval
             interval_ms: Interval in milliseconds
         """
+        import threading
+
         self.stop_interval()
 
-        # TODO: Implement interval using threading.Timer or similar
-        # For now, just store the callback
         self.interval_callback = callback
+        self.interval_ms = interval_ms
+
+        def interval_loop():
+            """Run the callback in a loop until stopped."""
+            while self.interval is not None:
+                try:
+                    self.interval_callback()
+                except Exception as e:
+                    print(f"Interval callback error: {e}")
+                    break
+
+                # Sleep for the interval duration
+                if self.interval is not None:
+                    import time
+                    time.sleep(interval_ms / 1000.0)
+
+        # Start the interval thread
+        self.interval = threading.Thread(target=interval_loop, daemon=True)
+        self.interval.start()
         print(f"State machine interval started ({interval_ms}ms)")
 
     def reset(self):

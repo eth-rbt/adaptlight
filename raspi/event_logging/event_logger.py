@@ -36,39 +36,51 @@ class EventLogger:
 
         print(f"EventLogger initialized: {self.log_dir}")
 
-    def log_voice_command(self, text: str, parsed_rules: list = None):
+    def log_voice_command(self, text: str, parsed_rules: list = None, state_before: str = None, state_after: str = None, state_params: dict = None):
         """
         Log a voice command event.
 
         Args:
             text: The voice command text
             parsed_rules: List of rules parsed from the command
+            state_before: State before command execution
+            state_after: State after command execution
+            state_params: Parameters of the resulting state
         """
         event = {
             'timestamp': datetime.now(timezone.utc).isoformat(),
             'type': 'voice_command',
             'text': text,
-            'parsed_rules': parsed_rules or []
+            'parsed_rules': parsed_rules or [],
+            'state_before': state_before,
+            'state_after': state_after,
+            'state_params': state_params
         }
 
         self._write_log(self.voice_log_dir, event)
-        print(f"Logged voice command: {text}")
+        print(f"Logged voice command: {text} (state: {state_before} -> {state_after})")
 
-    def log_button_event(self, event_type: str):
+    def log_button_event(self, event_type: str, state_before: str = None, state_after: str = None, state_params: dict = None):
         """
         Log a button event.
 
         Args:
             event_type: Type of button event (button_click, button_hold, etc.)
+            state_before: State before button event
+            state_after: State after button event
+            state_params: Parameters of the resulting state
         """
         event = {
             'timestamp': datetime.now(timezone.utc).isoformat(),
             'type': 'button_event',
-            'event': event_type
+            'event': event_type,
+            'state_before': state_before,
+            'state_after': state_after,
+            'state_params': state_params
         }
 
         self._write_log(self.button_log_dir, event)
-        print(f"Logged button event: {event_type}")
+        print(f"Logged button event: {event_type} (state: {state_before} -> {state_after})")
 
     def log_state_change(self, from_state: str, to_state: str, params=None):
         """
@@ -98,6 +110,9 @@ class EventLogger:
             log_dir: Directory to write log to
             event: Event dictionary to log
         """
+        # Ensure log directory exists
+        log_dir.mkdir(parents=True, exist_ok=True)
+
         # Create daily log file
         date_str = datetime.now(timezone.utc).strftime('%Y-%m-%d')
         log_file = log_dir / f'log-{date_str}.jsonl'

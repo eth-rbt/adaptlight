@@ -197,19 +197,28 @@ class AdaptLight:
         """
         print(f"\nButton event: {event_type}")
 
-        # Log the event
-        if self.event_logger:
-            self.event_logger.log_button_event(event_type)
-
         # Execute transition in state machine
         if self.state_machine:
             old_state = self.state_machine.get_state()
+            old_params = self.state_machine.get_state_params()
+
             self.state_machine.execute_transition(event_type)
+
             new_state = self.state_machine.get_state()
+            new_params = self.state_machine.get_state_params()
+
+            # Log button event with state information
+            if self.event_logger:
+                self.event_logger.log_button_event(
+                    event_type,
+                    state_before=old_state,
+                    state_after=new_state,
+                    state_params=new_params
+                )
 
             # Log state change if it occurred
             if old_state != new_state and self.event_logger:
-                self.event_logger.log_state_change(old_state, new_state)
+                self.event_logger.log_state_change(old_state, new_state, new_params)
 
     def handle_voice_command(self, command_text: str):
         """
@@ -224,51 +233,82 @@ class AdaptLight:
             print("Command parser or state machine not initialized")
             return
 
-        # Gather system context for GPT-5
-        available_states = self.state_machine.states.get_states_for_prompt()
-        available_transitions = [
-            {'name': 'button_click', 'description': 'Single click'},
-            {'name': 'button_double_click', 'description': 'Double click'},
-            {'name': 'button_hold', 'description': 'Hold button'},
-            {'name': 'button_release', 'description': 'Release after hold'},
-            {'name': 'voice_command', 'description': 'Voice command trigger'}
-        ]
-        current_rules = [r.to_dict() for r in self.state_machine.get_rules()]
-        current_state = self.state_machine.get_state()
-        global_variables = self.state_machine.state_data
+        # Capture state before command execution
+        state_before = self.state_machine.get_state()
+        state_params_before = self.state_machine.get_state_params()
 
-        # Parse command using GPT-5 (returns tool calls)
-        result = self.command_parser.parse_command(
-            command_text,
-            available_states,
-            available_transitions,
-            current_rules,
-            current_state,
-            global_variables
-        )
+        # Start loading animation while waiting for OpenAI
+        if self.led_controller:
+            print("Starting loading animation...")
+            self.led_controller.start_loading_animation(color=(255, 255, 255), speed=0.1)  # White circle
 
-        # Log the voice command
-        if self.event_logger:
-            self.event_logger.log_voice_command(command_text, result)
+        try:
+            # Gather system context for GPT-5
+            available_states = self.state_machine.states.get_states_for_prompt()
+            available_transitions = [
+                {'name': 'button_click', 'description': 'Single click'},
+                {'name': 'button_double_click', 'description': 'Double click'},
+                {'name': 'button_hold', 'description': 'Hold button'},
+                {'name': 'button_release', 'description': 'Release after hold'},
+                {'name': 'voice_command', 'description': 'Voice command trigger'}
+            ]
+            current_rules = [r.to_dict() for r in self.state_machine.get_rules()]
+            current_state = self.state_machine.get_state()
+            global_variables = self.state_machine.state_data
 
-        # Handle result
-        if result['success']:
-            print("=" * 60)
+            # Parse command using GPT-5 (returns tool calls)
+            result = self.command_parser.parse_command(
+                command_text,
+                available_states,
+                available_transitions,
+                current_rules,
+                current_state,
+                global_variables
+            )
 
-            # Print AI message if present
-            if result.get('message'):
-                print(f"💬 AI Response: {result['message']}")
+            # Stop loading animation after OpenAI responds
+            if self.led_controller:
+                self.led_controller.stop_loading_animation()
+                print("Loading animation stopped")
 
-            # Execute tool calls
-            if result.get('toolCalls'):
-                print(f"⚡ Executing {len(result['toolCalls'])} action(s):")
-                for i, tool_call in enumerate(result['toolCalls'], 1):
-                    print(f"\n[{i}/{len(result['toolCalls'])}] {tool_call['name']}")
-                    self.execute_tool(tool_call['name'], tool_call['arguments'])
+            # Handle result
+            if result['success']:
+                print("=" * 60)
 
-            print("=" * 60)
-        else:
-            print("❌ Failed to parse command")
+                # Print AI message if present
+                if result.get('message'):
+                    print(f"💬 AI Response: {result['message']}")
+
+                # Execute tool calls
+                if result.get('toolCalls'):
+                    print(f"⚡ Executing {len(result['toolCalls'])} action(s):")
+                    for i, tool_call in enumerate(result['toolCalls'], 1):
+                        print(f"\n[{i}/{len(result['toolCalls'])}] {tool_call['name']}")
+                        self.execute_tool(tool_call['name'], tool_call['arguments'])
+
+                print("=" * 60)
+            else:
+                print("❌ Failed to parse command")
+
+            # Capture state after command execution
+            state_after = self.state_machine.get_state()
+            state_params_after = self.state_machine.get_state_params()
+
+            # Log the voice command with state information
+            if self.event_logger:
+                self.event_logger.log_voice_command(
+                    command_text,
+                    result,
+                    state_before=state_before,
+                    state_after=state_after,
+                    state_params=state_params_after
+                )
+
+        except Exception as e:
+            # Make sure to stop loading animation even if there's an error
+            if self.led_controller:
+                self.led_controller.stop_loading_animation()
+            raise e
 
     def execute_tool(self, tool_name: str, args: dict):
         """
@@ -373,6 +413,20 @@ class AdaptLight:
                 print(f"  💾 Clearing all variables")
                 self.state_machine.clear_data()
 
+        elif tool_name == 'reset_rules':
+            # Reset rules back to default (on/off toggle)
+            print(f"  🔄 Resetting rules to default")
+
+            # Clear all existing rules
+            rule_count = len(self.state_machine.get_rules())
+            self.state_machine.clear_rules()
+            print(f"    → Cleared {rule_count} existing rule(s)")
+
+            # Re-initialize default rules
+            from states.light_states import initialize_default_rules
+            initialize_default_rules(self.state_machine)
+            print(f"    → Restored default on/off toggle")
+
         else:
             print(f"  ❌ Unknown tool: {tool_name}")
 
@@ -431,8 +485,15 @@ class AdaptLight:
         if self.voice_input:
             self.voice_input.cleanup()
 
-        # Stop AWS uploader
+        # Upload pending logs before shutdown
         if self.aws_uploader:
+            print("Uploading pending logs to AWS...")
+            try:
+                self.aws_uploader.upload_pending_logs()
+            except Exception as e:
+                print(f"Error uploading logs during shutdown: {e}")
+
+            # Stop the scheduled uploader
             self.aws_uploader.stop_scheduled_uploads()
 
         # Cleanup hardware

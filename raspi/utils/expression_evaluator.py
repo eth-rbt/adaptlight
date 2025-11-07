@@ -105,6 +105,10 @@ def create_safe_expression_function(expr: str):
         'E': math.e
     }
 
+    # Random function
+    def random():
+        return random_module.randint(0, 255)
+
     def eval_fn(context):
         """
         Evaluate expression with context.
@@ -120,6 +124,7 @@ def create_safe_expression_function(expr: str):
             eval_globals = {
                 '__builtins__': {},
                 **context,
+                'random': random,
                 **safe_math
             }
 

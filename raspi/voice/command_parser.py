@@ -24,7 +24,7 @@ class CommandParser:
         """
         self.api_key = api_key
         self.conversation_history = []
-        self.max_history = 10  # Keep last 10 commands for context
+        self.max_history = 2  # Keep last 2 commands with actions for context
 
         try:
             from openai import OpenAI
@@ -120,6 +120,16 @@ class CommandParser:
                     },
                     "required": ["action"]
                 }
+            },
+            {
+                "type": "function",
+                "name": "reset_rules",
+                "description": "Reset all rules back to the default state (simple on/off toggle with button click). Use this when the user wants to start fresh or go back to basics.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
             }
         ]
 
@@ -191,8 +201,13 @@ class CommandParser:
                 elif item.type == "text":
                     results['message'] = item.text
 
-            # Add to conversation history
-            self.conversation_history.append(user_input)
+            # Add to conversation history with actions taken
+            history_entry = {
+                'input': user_input,
+                'toolCalls': results.get('toolCalls', []),
+                'message': results.get('message')
+            }
+            self.conversation_history.append(history_entry)
             if len(self.conversation_history) > self.max_history:
                 self.conversation_history.pop(0)
 
@@ -237,11 +252,52 @@ class CommandParser:
                 content += f"- {key}: {json.dumps(value)}\n"
             content += "\n"
 
-        # Conversation history (matching server.js)
+        # Conversation history with actions taken
         if self.conversation_history:
-            content += "### Past User Inputs\n"
-            for i, msg in enumerate(self.conversation_history, 1):
-                content += f"{i}. \"{msg}\"\n"
+            content += "### Past User Inputs (with actions taken)\n"
+            for i, entry in enumerate(self.conversation_history, 1):
+                # Add the user input
+                if isinstance(entry, dict):
+                    content += f"{i}. User: \"{entry['input']}\"\n"
+
+                    # Add AI message if present
+                    if entry.get('message'):
+                        content += f"   AI: {entry['message']}\n"
+
+                    # Add tool calls executed
+                    if entry.get('toolCalls'):
+                        content += f"   Actions taken:\n"
+                        for tc in entry['toolCalls']:
+                            tool_name = tc.get('name', 'unknown')
+                            args = tc.get('arguments', {})
+
+                            # Format action description
+                            if tool_name == 'append_rules':
+                                rule_count = len(args.get('rules', []))
+                                content += f"   - Added {rule_count} rule(s)\n"
+                            elif tool_name == 'delete_rules':
+                                if args.get('delete_all'):
+                                    content += f"   - Deleted all rules\n"
+                                elif args.get('indices'):
+                                    content += f"   - Deleted rules at indices {args['indices']}\n"
+                                else:
+                                    content += f"   - Deleted rules matching criteria\n"
+                            elif tool_name == 'set_state':
+                                content += f"   - Changed state to {args.get('state')}\n"
+                            elif tool_name == 'manage_variables':
+                                action = args.get('action')
+                                if action == 'set':
+                                    var_count = len(args.get('variables', {}))
+                                    content += f"   - Set {var_count} variable(s)\n"
+                                elif action == 'delete':
+                                    content += f"   - Deleted variables\n"
+                                elif action == 'clear_all':
+                                    content += f"   - Cleared all variables\n"
+                            elif tool_name == 'reset_rules':
+                                content += f"   - Reset rules to default (on/off toggle)\n"
+                else:
+                    # Legacy format (just string)
+                    content += f"{i}. \"{entry}\"\n"
             content += "\n"
 
         # Current rules (matching server.js format with indices)

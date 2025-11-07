@@ -46,11 +46,11 @@ class AWSUploader:
             try:
                 self.s3_client = boto3.client(
                     's3',
-                    aws_access_key_id=config['aws']['access_key_id'],
-                    aws_secret_access_key=config['aws']['secret_access_key'],
-                    region_name=config['aws']['region']
+                    aws_access_key_id=config.get('access_key_id'),
+                    aws_secret_access_key=config.get('secret_access_key'),
+                    region_name=config.get('region')
                 )
-                self.s3_bucket = config['aws']['s3_bucket']
+                self.s3_bucket = config.get('s3_bucket')
                 self.log_prefix = config.get('log_prefix', 'adaptlight-logs/')
                 print(f"AWS S3 uploader initialized: {self.s3_bucket}")
             except (KeyError, NoCredentialsError) as e:
