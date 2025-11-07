@@ -1,0 +1,465 @@
+#!/usr/bin/env python3
+"""
+Main entry point for AdaptLight Raspberry Pi application.
+
+Orchestrates all components:
+- Hardware (LEDs, button)
+- State machine
+- Voice input
+- Command parsing
+- Logging and AWS uploads 
+"""
+ 
+import signal
+import sys
+import yaml
+from pathlib import Path
+
+# Import core components
+from core.state_machine import StateMachine
+from hardware.led_controller import LEDController
+from hardware.button_controller import ButtonController
+from hardware.hardware_config import HardwareConfig
+from states.light_states import initialize_default_states, initialize_default_rules, set_led_controller, set_state_machine
+from voice.voice_input import VoiceInput
+from voice.command_parser import CommandParser
+from event_logging.event_logger import EventLogger
+from event_logging.log_manager import LogManager
+from event_logging.aws_uploader import AWSUploader
+
+
+class AdaptLight:
+    """Main application class for AdaptLight."""
+
+    def __init__(self, config_path='config.yaml'):
+        """
+        Initialize AdaptLight application.
+
+        Args:
+            config_path: Path to configuration file
+        """
+        print("=" * 60)
+        print("AdaptLight - Voice-Controlled Smart Lamp")
+        print("=" * 60)
+
+        # Load configuration
+        self.config = self.load_config(config_path)
+
+        # Initialize components
+        self.state_machine = None
+        self.led_controller = None
+        self.button_controller = None
+        self.record_button_controller = None
+        self.voice_input = None
+        self.command_parser = None
+        self.event_logger = None
+        self.log_manager = None
+        self.aws_uploader = None
+        self.is_recording = False
+
+        # Setup signal handlers for graceful shutdown
+        signal.signal(signal.SIGINT, self.signal_handler)
+        signal.signal(signal.SIGTERM, self.signal_handler)
+
+    def load_config(self, config_path):
+        """Load configuration from YAML file."""
+        try:
+            with open(config_path, 'r') as f:
+                config = yaml.safe_load(f)
+                print(f"Configuration loaded from {config_path}")
+                return config
+        except FileNotFoundError:
+            print(f"Warning: {config_path} not found. Using defaults.")
+            return self.get_default_config()
+
+    def get_default_config(self):
+        """Get default configuration."""
+        return {
+            'hardware': {
+                'led_count': HardwareConfig.LED_COUNT,
+                'led_brightness': HardwareConfig.LED_BRIGHTNESS,
+                'button_pin': HardwareConfig.BUTTON_PIN
+            },
+            'voice': {
+                'enabled': True,
+                'stt_provider': 'whisper'
+            },
+            'logging': {
+                'enabled': True,
+                'log_dir': 'data/logs',
+                'retention_days': 30
+            },
+            'aws': {
+                'enabled': False
+            }
+        }
+
+    def initialize(self):
+        """Initialize all components."""
+        print("\nInitializing components...")
+
+        # Initialize state machine
+        print("- State machine")
+        self.state_machine = StateMachine()
+        set_state_machine(self.state_machine)
+
+        # Initialize LED controller
+        print("- LED controller")
+        led_config = self.config.get('hardware', {})
+        self.led_controller = LEDController(
+            led_count=led_config.get('led_count', 16),
+            led_pin=HardwareConfig.LED_PIN,
+            brightness=led_config.get('led_brightness', 0.3)
+        )
+        set_led_controller(self.led_controller)
+
+        # Initialize default states
+        print("- Default states")
+        initialize_default_states(self.state_machine)
+
+        # Initialize default rules (button toggle)
+        print("- Default rules")
+        initialize_default_rules(self.state_machine)
+
+        # Initialize button controller (main control button)
+        print("- Button controller (GPIO 2)")
+        button_config = self.config.get('hardware', {})
+        self.button_controller = ButtonController(
+            button_pin=button_config.get('button_pin', 2)
+        )
+
+        # Set button callbacks
+        self.button_controller.set_callbacks(
+            on_single_click=lambda: self.handle_button_event('button_click'),
+            on_double_click=lambda: self.handle_button_event('button_double_click'),
+            on_hold=lambda: self.handle_button_event('button_hold'),
+            on_release=lambda: self.handle_button_event('button_release')
+        )
+
+        # Initialize record button controller (GPIO 17)
+        print("- Record button controller (GPIO 17)")
+        self.record_button_controller = ButtonController(
+            button_pin=17
+        )
+
+        # Set record button callbacks
+        self.record_button_controller.set_callbacks(
+            on_single_click=lambda: self.handle_record_button(),
+            on_double_click=None,
+            on_hold=None,
+            on_release=None
+        )
+
+        # Initialize logging
+        print("- Event logger")
+        log_config = self.config.get('logging', {})
+        self.event_logger = EventLogger(
+            log_dir=log_config.get('log_dir', 'data/logs')
+        )
+
+        print("- Log manager")
+        self.log_manager = LogManager(
+            log_dir=log_config.get('log_dir', 'data/logs'),
+            retention_days=log_config.get('retention_days', 30)
+        )
+
+        # Initialize AWS uploader if enabled
+        aws_config = self.config.get('aws', {})
+        if aws_config.get('enabled', False):
+            print("- AWS uploader")
+            self.aws_uploader = AWSUploader(aws_config, self.log_manager)
+            self.aws_uploader.start_scheduled_uploads()
+
+        # Initialize voice input if enabled
+        voice_config = self.config.get('voice', {})
+        if voice_config.get('enabled', False):
+            print("- Command parser")
+            openai_config = self.config.get('openai', {})
+            openai_key = openai_config.get('api_key')
+            self.command_parser = CommandParser(api_key=openai_key)
+
+            print("- Voice input")
+            # Pass OpenAI client to VoiceInput for transcription
+            self.voice_input = VoiceInput(
+                stt_provider=voice_config.get('stt_provider', 'whisper'),
+                openai_client=self.command_parser.client if self.command_parser else None
+            )
+            self.voice_input.set_command_callback(self.handle_voice_command)
+
+        print("\nInitialization complete!")
+
+    def handle_button_event(self, event_type: str):
+        """
+        Handle button events.
+
+        Args:
+            event_type: Type of button event
+        """
+        print(f"\nButton event: {event_type}")
+
+        # Log the event
+        if self.event_logger:
+            self.event_logger.log_button_event(event_type)
+
+        # Execute transition in state machine
+        if self.state_machine:
+            old_state = self.state_machine.get_state()
+            self.state_machine.execute_transition(event_type)
+            new_state = self.state_machine.get_state()
+
+            # Log state change if it occurred
+            if old_state != new_state and self.event_logger:
+                self.event_logger.log_state_change(old_state, new_state)
+
+    def handle_voice_command(self, command_text: str):
+        """
+        Handle voice commands.
+
+        Args:
+            command_text: Transcribed voice command
+        """
+        print(f"\nVoice command: {command_text}")
+
+        if not self.command_parser or not self.state_machine:
+            print("Command parser or state machine not initialized")
+            return
+
+        # Gather system context for GPT-5
+        available_states = self.state_machine.states.get_states_for_prompt()
+        available_transitions = [
+            {'name': 'button_click', 'description': 'Single click'},
+            {'name': 'button_double_click', 'description': 'Double click'},
+            {'name': 'button_hold', 'description': 'Hold button'},
+            {'name': 'button_release', 'description': 'Release after hold'},
+            {'name': 'voice_command', 'description': 'Voice command trigger'}
+        ]
+        current_rules = [r.to_dict() for r in self.state_machine.get_rules()]
+        current_state = self.state_machine.get_state()
+        global_variables = self.state_machine.state_data
+
+        # Parse command using GPT-5 (returns tool calls)
+        result = self.command_parser.parse_command(
+            command_text,
+            available_states,
+            available_transitions,
+            current_rules,
+            current_state,
+            global_variables
+        )
+
+        # Log the voice command
+        if self.event_logger:
+            self.event_logger.log_voice_command(command_text, result)
+
+        # Handle result
+        if result['success']:
+            print("=" * 60)
+
+            # Print AI message if present
+            if result.get('message'):
+                print(f"💬 AI Response: {result['message']}")
+
+            # Execute tool calls
+            if result.get('toolCalls'):
+                print(f"⚡ Executing {len(result['toolCalls'])} action(s):")
+                for i, tool_call in enumerate(result['toolCalls'], 1):
+                    print(f"\n[{i}/{len(result['toolCalls'])}] {tool_call['name']}")
+                    self.execute_tool(tool_call['name'], tool_call['arguments'])
+
+            print("=" * 60)
+        else:
+            print("❌ Failed to parse command")
+
+    def execute_tool(self, tool_name: str, args: dict):
+        """
+        Execute a tool call from GPT-5 (matching script.js executeTool function).
+
+        Args:
+            tool_name: Name of the tool to execute
+            args: Arguments for the tool
+        """
+        print(f"  🔧 Action: {tool_name}")
+        print(f"  Arguments: {args}")
+
+        if tool_name == 'append_rules':
+            # Add new rules to the state machine
+            if args.get('rules') and isinstance(args['rules'], list):
+                print(f"  ➕ Adding {len(args['rules'])} rule(s):")
+                for rule in args['rules']:
+                    self.state_machine.add_rule(rule)
+                    print(f"    → {rule['state1']} --[{rule['transition']}]--> {rule['state2']}")
+
+        elif tool_name == 'delete_rules':
+            # Delete rules based on criteria
+            all_rules = self.state_machine.get_rules()
+
+            if args.get('delete_all'):
+                # Delete all rules
+                count = len(all_rules)
+                self.state_machine.clear_rules()
+                print(f"  🗑️  Deleted all {count} rule(s)")
+
+            elif args.get('indices') and isinstance(args['indices'], list):
+                # Delete by specific indices (sort descending to avoid index shifting)
+                print(f"  🗑️  Deleting rules at indices: {args['indices']}")
+                sorted_indices = sorted(args['indices'], reverse=True)
+                for index in sorted_indices:
+                    if 0 <= index < len(all_rules):
+                        rule = all_rules[index]
+                        print(f"    → [{index}] {rule.state1} --[{rule.transition}]--> {rule.state2}")
+                        self.state_machine.remove_rule(index)
+
+            else:
+                # Delete by criteria (state1, transition, state2)
+                criteria = []
+                if args.get('state1'):
+                    criteria.append(f"state1={args['state1']}")
+                if args.get('transition'):
+                    criteria.append(f"transition={args['transition']}")
+                if args.get('state2'):
+                    criteria.append(f"state2={args['state2']}")
+
+                if criteria:
+                    print(f"  🗑️  Deleting rules matching: {', '.join(criteria)}")
+                    rules_to_delete = []
+
+                    for i in range(len(all_rules) - 1, -1, -1):
+                        rule = all_rules[i]
+                        should_delete = False
+
+                        if args.get('state1') and rule.state1 == args['state1']:
+                            should_delete = True
+                        if args.get('transition') and rule.transition == args['transition']:
+                            should_delete = True
+                        if args.get('state2') and rule.state2 == args['state2']:
+                            should_delete = True
+
+                        if should_delete:
+                            rules_to_delete.append(i)
+                            print(f"    → [{i}] {rule.state1} --[{rule.transition}]--> {rule.state2}")
+
+                    # Delete the matching rules
+                    for index in rules_to_delete:
+                        self.state_machine.remove_rule(index)
+
+        elif tool_name == 'set_state':
+            # Change the current state immediately
+            if args.get('state'):
+                params_str = str(args.get('params')) if args.get('params') else 'none'
+                print(f"  🔄 Changing state to: {args['state']}")
+                print(f"    → Parameters: {params_str}")
+                self.state_machine.set_state(args['state'], args.get('params'))
+
+        elif tool_name == 'manage_variables':
+            # Manage global variables
+            action = args.get('action')
+
+            if action == 'set' and args.get('variables'):
+                # Set/update variables
+                print(f"  💾 Setting {len(args['variables'])} variable(s):")
+                for key, value in args['variables'].items():
+                    self.state_machine.set_data(key, value)
+                    print(f"    → {key} = {value}")
+
+            elif action == 'delete' and args.get('keys'):
+                # Delete specific variables
+                print(f"  💾 Deleting {len(args['keys'])} variable(s):")
+                for key in args['keys']:
+                    print(f"    → {key}")
+                    self.state_machine.set_data(key, None)
+
+            elif action == 'clear_all':
+                # Clear all variables
+                print(f"  💾 Clearing all variables")
+                self.state_machine.clear_data()
+
+        else:
+            print(f"  ❌ Unknown tool: {tool_name}")
+
+    def handle_record_button(self):
+        """
+        Handle record button press - start/stop voice recording.
+        """
+        print(f"\nRecord button pressed! (is_recording={self.is_recording})")
+
+        if not self.voice_input:
+            print("Voice input not enabled")
+            return
+
+        if self.is_recording:
+            print("\nStopping recording...")
+            self.is_recording = False
+            # Stop recording and transcribe
+            transcribed_text = self.voice_input.stop_recording()
+            if transcribed_text:
+                print(f"Transcribed: {transcribed_text}")
+                self.handle_voice_command(transcribed_text)
+        else:
+            print("\nStarting recording... Speak now!")
+            self.is_recording = True
+            # Start recording
+            self.voice_input.start_recording()
+
+    def run(self):
+        """Main application loop."""
+        print("\n" + "=" * 60)
+        print("AdaptLight is running!")
+        print("=" * 60)
+        print("\nPress Ctrl+C to exit\n")
+
+        # Start voice listening if enabled
+        if self.voice_input:
+            self.voice_input.start_listening()
+
+        # Main loop
+        try:
+            while True:
+                # In a real implementation, this would handle events
+                # For now, just keep the process running
+                import time
+                time.sleep(1)
+
+        except KeyboardInterrupt:
+            print("\n\nShutting down...")
+            self.shutdown()
+
+    def shutdown(self):
+        """Graceful shutdown."""
+        print("\nCleaning up...")
+
+        # Stop voice input
+        if self.voice_input:
+            self.voice_input.cleanup()
+
+        # Stop AWS uploader
+        if self.aws_uploader:
+            self.aws_uploader.stop_scheduled_uploads()
+
+        # Cleanup hardware
+        if self.button_controller:
+            self.button_controller.cleanup()
+
+        if self.record_button_controller:
+            self.record_button_controller.cleanup()
+
+        if self.led_controller:
+            self.led_controller.cleanup()
+
+        print("Goodbye!")
+        sys.exit(0)
+
+    def signal_handler(self, sig, frame):
+        """Handle interrupt signals."""
+        print(f"\nReceived signal {sig}")
+        self.shutdown()
+
+
+def main():
+    """Main entry point."""
+    app = AdaptLight()
+    app.initialize()
+    app.run()
+
+
+if __name__ == '__main__':
+    main()

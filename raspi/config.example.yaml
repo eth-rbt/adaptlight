@@ -1,12 +1,59 @@
-# AWS Configuration
-aws:
-  access_key_id: 
-  secret_access_key: 
-  region: us-east-1
-  s3_bucket: adapt-lamp
+# AdaptLight Configuration File
+# Copy this file to config.yaml and customize for your setup
 
-# Logging Configuration
+# Hardware configuration
+hardware:
+  led_count: 16                    # Number of LEDs in strip
+  led_brightness: 0.3              # Default brightness (0.0 to 1.0)
+  button_pin: 2                    # GPIO pin for button (BCM numbering)
+  led_pin: 18                      # GPIO pin for LED data (BCM numbering)
+
+# Voice command configuration
+voice:
+  enabled: true                    # Enable voice commands
+  stt_provider: whisper            # Speech-to-text provider: whisper, google, or vosk
+
+  # Whisper-specific settings
+  whisper:
+    model: base                    # Whisper model: tiny, base, small, medium, large
+
+  # Google Cloud Speech settings (if using google provider)
+  google:
+    credentials_path: null         # Path to Google Cloud credentials JSON
+
+  # Vosk settings (if using vosk provider - offline)
+  vosk:
+    model_path: null               # Path to Vosk model directory
+
+# Logging configuration
 logging:
-  enabled: true
-  log_prefix: button-logs/
-  timezone: UTC
+  enabled: true                    # Enable event logging
+  log_dir: data/logs               # Directory for log files
+  retention_days: 30               # Days to keep logs locally
+  log_prefix: adaptlight-logs/     # S3 prefix for uploaded logs
+
+# AWS configuration
+aws:
+  enabled: false                   # Enable AWS S3 uploads
+  access_key_id: YOUR_ACCESS_KEY   # AWS access key ID
+  secret_access_key: YOUR_SECRET   # AWS secret access key
+  region: us-east-1                # AWS region
+  s3_bucket: your-bucket-name      # S3 bucket for logs
+  upload_interval_hours: 6         # Upload interval (hours)
+
+# OpenAI configuration (for voice command parsing)
+openai:
+  api_key: YOUR_OPENAI_API_KEY     # OpenAI API key
+  model: gpt-4o                    # Model to use for parsing
+
+# State machine configuration
+state_machine:
+  default_state: off               # Initial state on startup
+  save_state: true                 # Save state to file on changes
+  state_file: data/state.json      # Path to state save file
+
+# Button configuration
+button:
+  double_click_threshold: 0.2      # Time window for double click (seconds)
+  hold_threshold: 0.5              # Time before hold is registered (seconds)
+  bounce_time: 0.05                # Debounce time (seconds)
