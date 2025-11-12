@@ -46,6 +46,19 @@ openai:
   api_key: YOUR_OPENAI_API_KEY     # OpenAI API key
   model: gpt-4o                    # Model to use for parsing
 
+# Google Speech-to-Text configuration
+google:
+  #api_key: YOUR_GOOGLE_API_KEY     # Google Cloud API key (optional)
+  credentials_path: null           # Path to Google Cloud credentials JSON
+
+# DeepGram configuration
+deepgram:
+  api_key: YOUR_DEEPGRAM_API_KEY   # DeepGram API key (optional)
+
+# Replicate configuration (for Whisper Large model)
+replicate:
+  api_token: YOUR_REPLICATE_API_TOKEN   # Replicate API token (optional)
+
 # State machine configuration
 state_machine:
   default_state: off               # Initial state on startup

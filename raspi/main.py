@@ -443,6 +443,11 @@ class AdaptLight:
         if self.is_recording:
             print("\nStopping recording...")
             self.is_recording = False
+
+            # Stop recording animation
+            if self.led_controller:
+                self.led_controller.stop_recording_animation()
+
             # Stop recording and transcribe
             transcribed_text = self.voice_input.stop_recording()
             if transcribed_text:
@@ -451,6 +456,11 @@ class AdaptLight:
         else:
             print("\nStarting recording... Speak now!")
             self.is_recording = True
+
+            # Start recording animation with green pulsing
+            if self.led_controller:
+                self.led_controller.start_recording_animation(base_color=(0, 255, 0), speed=0.02)
+
             # Start recording
             self.voice_input.start_recording()
 

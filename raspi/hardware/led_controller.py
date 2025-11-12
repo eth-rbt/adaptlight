@@ -201,8 +201,65 @@ class LEDController:
             # Clear all pixels after stopping
             self.clear()
 
+    def start_recording_animation(self, base_color=(0, 255, 0), speed=0.02):
+        """
+        Start a recording animation with breathing/pulsing effect.
+        Uses varying brightness of green to indicate voice recording.
+
+        Args:
+            base_color: RGB tuple for the recording color (default green)
+            speed: Time in seconds between brightness updates
+        """
+        import threading
+        import time
+        import math
+
+        # Stop any existing animation
+        self.stop_recording_animation()
+
+        self.recording_active = True
+
+        def recording_loop():
+            """Run the recording animation with breathing effect."""
+            step = 0
+            while self.recording_active:
+                # Use sine wave for smooth breathing effect
+                # Brightness oscillates between 0.2 and 1.0
+                brightness_factor = 0.2 + 0.8 * (math.sin(step * 0.1) + 1) / 2
+
+                # Calculate color with brightness factor
+                r = int(base_color[0] * brightness_factor)
+                g = int(base_color[1] * brightness_factor)
+                b = int(base_color[2] * brightness_factor)
+
+                # Set all pixels to the pulsing color
+                if self.pixels:
+                    for i in range(self.led_count):
+                        self.set_pixel(i, r, g, b)
+                    self.show()
+                else:
+                    # Simulation mode
+                    print(f"Recording LED: RGB({r}, {g}, {b}) - brightness: {brightness_factor:.2f}")
+
+                step += 1
+                time.sleep(speed)
+
+        # Start the recording thread
+        self.recording_thread = threading.Thread(target=recording_loop, daemon=True)
+        self.recording_thread.start()
+
+    def stop_recording_animation(self):
+        """Stop the recording animation."""
+        if hasattr(self, 'recording_active'):
+            self.recording_active = False
+            if hasattr(self, 'recording_thread') and self.recording_thread.is_alive():
+                self.recording_thread.join(timeout=0.5)
+            # Clear all pixels after stopping
+            self.clear()
+
     def cleanup(self):
         """Cleanup resources and turn off LEDs."""
         self.stop_loading_animation()
+        self.stop_recording_animation()
         self.clear()
         print("LED controller cleanup complete")
