@@ -258,7 +258,7 @@ class ParserEvaluator:
             for tool_call in tool_calls:
                 tool_name = tool_call['name']
                 tool_args = tool_call['arguments']
-                print(f"  - {tool_name}")
+                print(f"  - {tool_name}({json.dumps(tool_args, indent=4)})")
                 mock_sm.execute_tool(tool_name, tool_args)
 
             final_state = mock_sm.get_state()
@@ -369,7 +369,10 @@ class ParserEvaluator:
             tool_calls = result.get('toolCalls', [])
             print(f"\nExecuting {len(tool_calls)} tool call(s)")
             for tool_call in tool_calls:
-                mock_sm.execute_tool(tool_call['name'], tool_call['arguments'])
+                tool_name = tool_call['name']
+                tool_args = tool_call['arguments']
+                print(f"  - {tool_name}({json.dumps(tool_args, indent=4)})")
+                mock_sm.execute_tool(tool_name, tool_args)
 
             final_state = mock_sm.get_state()
             after_rules = final_state['rules']
