@@ -267,20 +267,20 @@ delete_rules({{"indices": [0, 1]}})
 
 When the user wants to create rules, use append_rules. These examples show: Previous State → User Input → Function Call
 
-### Example 1
-Previous State: No rules
+### Example 1 - Already has default rules, do nothing
+Previous State: [0] off --[button_click]--> on, [1] on --[button_click]--> off
 Current State: off
 User Input: "When button is clicked in off state, go to on state"
-Function call: append_rules({{rules: [
-  {{"state1": "off", "transition": "button_click", "state2": "on"}},
-  {{"state1": "on", "transition": "button_click", "state2": "off"}}
-]}})
+Function call: None needed - rules already exist
+(Note: This is just to show what the default rules look like)
 
-### Example 2
-Previous State: No rules
+### Example 2 - REPLACING default rules with blue light
+Previous State: [0] off --[button_click]--> on, [1] on --[button_click]--> off
 Current State: off
 User Input: "Click button to turn on blue light"
-Function call: append_rules({{rules: [
+Function calls:
+1. delete_rules({{"transition": "button_click"}})
+2. append_rules({{rules: [
   {{"state1": "off", "transition": "button_click", "state2": "color", "state2Param": {{"r": 0, "g": 0, "b": 255}}}},
   {{"state1": "color", "transition": "button_click", "state2": "off"}}
 ]}})
@@ -307,11 +307,12 @@ Function call: append_rules({{rules: [
 ]}})
 // Note: No delete needed - double_click is a NEW transition
 
-### Example 5
-Previous State: No rules
+### Example 5 - ADDING hold (new transition, keep default click)
+Previous State: [0] off --[button_click]--> on, [1] on --[button_click]--> off
 Current State: off
 User Input: "Hold button for random color"
 Function call: append_rules({{rules: [{{"state1": "off", "transition": "button_hold", "state2": "color", "state2Param": {{"r": "random()", "g": "random()", "b": "random()"}}}}]}})
+(Note: No delete needed - hold is a NEW transition, click rules stay intact)
 
 ### Example 7
 Previous State: off --[button_click]--> on
@@ -325,24 +326,27 @@ Current State: color
 User Input: "Double click to make it brighter"
 Function call: append_rules({{rules: [{{"state1": "color", "transition": "button_double_click", "state2": "color", "state2Param": {{"r": "min(r + 30, 255)", "g": "min(g + 30, 255)", "b": "min(b + 30, 255)"}}}}]}})
 
-### Example 9
-Previous State: No rules
+### Example 9 - REPLACING with counter-based behavior
+Previous State: [0] off --[button_click]--> on, [1] on --[button_click]--> off
 Current State: off
 User Input: "Next 5 clicks should be random colors"
-Function call: append_rules({{rules: [
+Function calls:
+1. delete_rules({{"transition": "button_click"}})
+2. append_rules({{rules: [
   {{"state1": "off", "transition": "button_click", "condition": "getData('click_counter') === undefined", "action": "setData('click_counter', 4)", "state2": "color", "state2Param": {{"r": "random()", "g": "random()", "b": "random()"}}}},
   {{"state1": "color", "transition": "button_click", "condition": "getData('click_counter') > 0", "action": "setData('click_counter', getData('click_counter') - 1)", "state2": "color", "state2Param": {{"r": "random()", "g": "random()", "b": "random()"}}}},
   {{"state1": "color", "transition": "button_click", "condition": "getData('click_counter') === 0", "state2": "off"}}
 ]}})
 
-### Example 10
-Previous State: No rules
+### Example 10 - ADDING conditional rule (keeps default)
+Previous State: [0] off --[button_click]--> on, [1] on --[button_click]--> off
 Current State: off
 User Input: "Click for blue light, but only after 8pm"
 Function call: append_rules({{rules: [{{"state1": "off", "transition": "button_click", "condition": "time.hour >= 20", "state2": "color", "state2Param": {{"r": 0, "g": 0, "b": 255}}}}]}})
+(Note: Conditional rule is added alongside default click rules - both can coexist since they have different conditions)
 
-### Example 11
-Previous State: No rules
+### Example 11 - ADDING animation with hold (new transition)
+Previous State: [0] off --[button_click]--> on, [1] on --[button_click]--> off
 Current State: off
 User Input: "Hold button for rainbow animation"
 Function call: append_rules({{rules: [
