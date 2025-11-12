@@ -4,7 +4,7 @@ env/
 ENV/
 .venv/
 light/
-raspi/googlapi.json
+/raspi/googlapi.json
 # Environment variables
 .env
 .env.local
