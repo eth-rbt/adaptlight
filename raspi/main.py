@@ -23,6 +23,7 @@ from hardware.hardware_config import HardwareConfig
 from states.light_states import initialize_default_states, initialize_default_rules, set_led_controller, set_state_machine
 from voice.voice_input import VoiceInput
 from voice.command_parser import CommandParser
+from voice.audio_player import AudioPlayer
 from event_logging.event_logger import EventLogger
 from event_logging.log_manager import LogManager
 from event_logging.aws_uploader import AWSUploader
@@ -52,6 +53,7 @@ class AdaptLight:
         self.record_button_controller = None
         self.voice_input = None
         self.command_parser = None
+        self.audio_player = None
         self.event_logger = None
         self.log_manager = None
         self.aws_uploader = None
@@ -179,12 +181,21 @@ class AdaptLight:
             self.command_parser = CommandParser(api_key=openai_key)
 
             print("- Voice input")
-            # Pass OpenAI client to VoiceInput for transcription
+            # Get Replicate configuration
+            replicate_config = self.config.get('replicate', {})
+            replicate_token = replicate_config.get('api_token')
+
+            # Pass OpenAI client and Replicate token to VoiceInput for transcription
             self.voice_input = VoiceInput(
                 stt_provider=voice_config.get('stt_provider', 'whisper'),
-                openai_client=self.command_parser.client if self.command_parser else None
+                openai_client=self.command_parser.client if self.command_parser else None,
+                replicate_token=replicate_token
             )
             self.voice_input.set_command_callback(self.handle_voice_command)
+
+            # Initialize audio player for feedback sounds
+            print("- Audio player")
+            self.audio_player = AudioPlayer()
 
         print("\nInitialization complete!")
 
@@ -272,6 +283,7 @@ class AdaptLight:
                 print("Loading animation stopped")
 
             # Handle result
+            changes_made = False
             if result['success']:
                 print("=" * 60)
 
@@ -279,16 +291,41 @@ class AdaptLight:
                 if result.get('message'):
                     print(f"💬 AI Response: {result['message']}")
 
-                # Execute tool calls
+                # Execute tool calls and track if changes were made
                 if result.get('toolCalls'):
                     print(f"⚡ Executing {len(result['toolCalls'])} action(s):")
                     for i, tool_call in enumerate(result['toolCalls'], 1):
                         print(f"\n[{i}/{len(result['toolCalls'])}] {tool_call['name']}")
                         self.execute_tool(tool_call['name'], tool_call['arguments'])
 
+                        # Track if any tools that modify state were called
+                        if tool_call['name'] in ['append_rules', 'delete_rules', 'set_state', 'manage_variables', 'reset_rules']:
+                            changes_made = True
+
                 print("=" * 60)
+
+                # Provide visual feedback based on whether changes were made
+                if self.led_controller:
+                    if changes_made:
+                        self.led_controller.flash_success()
+                        # Optionally play success sound
+                        if self.audio_player:
+                            self.audio_player.play_success_sound(blocking=False)
+                    else:
+                        self.led_controller.flash_error()
+                        # Play error sound for no changes
+                        if self.audio_player:
+                            self.audio_player.play_error_sound(blocking=False)
             else:
                 print("❌ Failed to parse command")
+
+                # Flash red for parsing failure
+                if self.led_controller:
+                    self.led_controller.flash_error()
+
+                # Play error sound
+                if self.audio_player:
+                    self.audio_player.play_error_sound(blocking=False)
 
             # Capture state after command execution
             state_after = self.state_machine.get_state()
@@ -515,6 +552,10 @@ class AdaptLight:
 
         if self.led_controller:
             self.led_controller.cleanup()
+
+        # Cleanup audio player
+        if self.audio_player:
+            self.audio_player.cleanup()
 
         print("Goodbye!")
         sys.exit(0)

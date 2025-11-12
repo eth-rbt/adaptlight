@@ -25,20 +25,29 @@ except ImportError:
     AUDIO_AVAILABLE = False
     print("Warning: pyaudio/numpy not available. Voice input disabled.")
 
+try:
+    import replicate
+    REPLICATE_AVAILABLE = True
+except ImportError:
+    REPLICATE_AVAILABLE = False
+    print("Warning: replicate not available. Install with: pip install replicate")
+
 
 class VoiceInput:
     """Handles voice input and speech-to-text conversion."""
 
-    def __init__(self, stt_provider='whisper', openai_client=None):
+    def __init__(self, stt_provider='whisper', openai_client=None, replicate_token=None):
         """
         Initialize voice input system.
 
         Args:
-            stt_provider: 'whisper' (OpenAI), 'google', or 'vosk' (offline)
+            stt_provider: 'whisper' (OpenAI), 'replicate', 'google', or 'vosk' (offline)
             openai_client: OpenAI client instance for transcription
+            replicate_token: Replicate API token for transcription
         """
         self.stt_provider = stt_provider
         self.openai_client = openai_client
+        self.replicate_token = replicate_token
         self.is_listening = False
         self.audio_queue = queue.Queue()
         self.listener_thread = None
@@ -201,6 +210,8 @@ class VoiceInput:
         """
         if self.stt_provider == 'whisper':
             return self._transcribe_whisper(audio_data)
+        elif self.stt_provider == 'replicate':
+            return self._transcribe_replicate(audio_data)
         elif self.stt_provider == 'google':
             return self._transcribe_google(audio_data)
         elif self.stt_provider == 'vosk':
@@ -241,6 +252,72 @@ class VoiceInput:
 
         except Exception as e:
             print(f"Transcription error: {e}")
+            return ""
+
+    def _transcribe_replicate(self, audio_data):
+        """Transcribe using Replicate's Whisper API."""
+        if not REPLICATE_AVAILABLE:
+            print("Replicate not available. Install with: pip install replicate")
+            return ""
+
+        if not self.replicate_token:
+            print("Replicate API token not available")
+            return ""
+
+        try:
+            # Save audio data to temporary WAV file
+            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp_file:
+                tmp_path = tmp_file.name
+
+                # Write WAV file
+                wf = wave.open(tmp_path, 'wb')
+                wf.setnchannels(self.channels)
+                wf.setsampwidth(2)  # 16-bit = 2 bytes
+                wf.setframerate(self.rate)
+                wf.writeframes(audio_data)
+                wf.close()
+
+                # Set Replicate API token
+                import os
+                os.environ['REPLICATE_API_TOKEN'] = self.replicate_token
+
+                # Transcribe using Replicate's Whisper Large v3
+                print("  Transcribing with Replicate Whisper Large v3...")
+                with open(tmp_path, 'rb') as audio_file:
+                    output = replicate.run(
+                        "openai/whisper:4d50797290df275329f202e48c76360b3f22b08d28c196cbc54600319435f8d2",
+                        input={
+                            "audio": audio_file,
+                            "model": "large-v3",
+                            "translate": False,
+                            "temperature": 0,
+                            "transcription": "plain text",
+                            "suppress_tokens": "-1",
+                            "logprob_threshold": -1,
+                            "no_speech_threshold": 0.6,
+                            "condition_on_previous_text": True,
+                            "compression_ratio_threshold": 2.4,
+                            "temperature_increment_on_fallback": 0.2
+                        }
+                    )
+
+                # Cleanup temp file
+                Path(tmp_path).unlink()
+
+                # Extract transcription text from output
+                if isinstance(output, dict):
+                    transcription_text = output.get('transcription', '')
+                elif isinstance(output, str):
+                    transcription_text = output
+                else:
+                    transcription_text = str(output)
+
+                return transcription_text.strip()
+
+        except Exception as e:
+            print(f"Replicate transcription error: {e}")
+            import traceback
+            traceback.print_exc()
             return ""
 
     def _transcribe_google(self, audio_data):
