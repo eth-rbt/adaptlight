@@ -480,7 +480,7 @@ These examples show complete conversations with multiple turns, demonstrating ho
 ### Multi-turn Example 1: Party Mode Setup and Refinement
 
 **Turn 1:**
-Previous State: No rules
+Previous State: [0] off --[button_click]--> on, [1] on --[button_click]--> off
 Current State: off
 User Input: "Click for party mode with random colors"
 Function calls:
@@ -517,7 +517,7 @@ Function calls:
 ### Multi-turn Example 2: Time-based Rules
 
 **Turn 1:**
-Previous State: No rules
+Previous State: [0] off --[button_click]--> on, [1] on --[button_click]--> off
 Current State: off
 User Input: "Click for blue light"
 Function calls:
@@ -562,7 +562,7 @@ Function calls:
 ### Multi-turn Example 3: Building Complex Behavior
 
 **Turn 1:**
-Previous State: No rules
+Previous State: [0] off --[button_click]--> on, [1] on --[button_click]--> off
 Current State: off
 User Input: "Click for red, double click for blue"
 Function calls:
@@ -640,7 +640,7 @@ Function calls:
 ### Multi-turn Example 4: Party Mode with Persistence
 
 **Turn 1:**
-Previous State: No rules
+Previous State: [0] off --[button_click]--> on, [1] on --[button_click]--> off
 Current State: off
 User Input: "Hold button to start party mode with pulsing colors"
 Function calls:
@@ -685,7 +685,7 @@ Function calls:
 ### Multi-turn Example 5: Campfire Animation Refinement
 
 **Turn 1:**
-Previous State: No rules
+Previous State: [0] off --[button_click]--> on, [1] on --[button_click]--> off
 Current State: off
 User Input: "I want to double-click the button to make it look like there's a campfire animation"
 Function calls:
@@ -718,13 +718,13 @@ Function calls:
 These examples show: Previous State → User Input → Function Call(s)
 
 ### Example 1: Immediate State Change
-Previous State: No rules
+Previous State: [0] off --[button_click]--> on, [1] on --[button_click]--> off
 Current State: off
 User Input: "Turn the light red now"
 Function call: set_state({{state: "color", params: {{"r": 255, "g": 0, "b": 0}}}})
 
 ### Example 2: Adding Rules
-Previous State: No rules
+Previous State: [0] off --[button_click]--> on, [1] on --[button_click]--> off
 Current State: off
 User Input: "When I click the button, turn it green"
 Function call: append_rules({{rules: [{{"state1": "off", "transition": "button_click", "state2": "color", "state2Param": {{"r": 0, "g": 255, "b": 0}}}}, {{"state1": "color", "transition": "button_click", "state2": "off"}}]}})
@@ -754,7 +754,7 @@ User Input: "Remove all button click rules"
 Function call: delete_rules({{transition: "button_click"}})
 
 ### Example 5: Managing Variables
-Previous State: No rules
+Previous State: [0] off --[button_click]--> on, [1] on --[button_click]--> off
 Global Variables: {{}}
 Current State: off
 User Input: "Set a counter to 10"
