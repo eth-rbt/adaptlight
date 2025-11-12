@@ -257,6 +257,48 @@ class LEDController:
             # Clear all pixels after stopping
             self.clear()
 
+    def flash_success(self, flashes=3, duration=0.2):
+        """
+        Flash green to indicate successful operation (e.g., rules changed).
+
+        Args:
+            flashes: Number of times to flash
+            duration: Duration of each flash in seconds
+        """
+        import time
+
+        print(f"  ✅ Flashing green (success)")
+
+        for _ in range(flashes):
+            # Flash bright green
+            self.set_color(0, 255, 0)
+            time.sleep(duration)
+
+            # Turn off
+            self.set_color(0, 0, 0)
+            time.sleep(duration)
+
+    def flash_error(self, flashes=3, duration=0.3):
+        """
+        Flash red to indicate error or no changes made.
+
+        Args:
+            flashes: Number of times to flash
+            duration: Duration of each flash in seconds
+        """
+        import time
+
+        print(f"  ❌ Flashing red (error/no changes)")
+
+        for _ in range(flashes):
+            # Flash bright red
+            self.set_color(255, 0, 0)
+            time.sleep(duration)
+
+            # Turn off
+            self.set_color(0, 0, 0)
+            time.sleep(duration)
+
     def cleanup(self):
         """Cleanup resources and turn off LEDs."""
         self.stop_loading_animation()
