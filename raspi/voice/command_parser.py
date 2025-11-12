@@ -268,7 +268,7 @@ class CommandParser:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_input}
                 ],
-                reasoning={"effort": "high"},  # High effort for best tool call reasoning
+                reasoning={"effort": "low"},  # Low effort for faster responses
                 text={"verbosity": "low"}
             )
 
