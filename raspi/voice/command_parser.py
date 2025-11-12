@@ -34,7 +34,7 @@ class CommandParser:
             self.client = None
             print("Warning: OpenAI library not available")
 
-        # Define tool schemas for GPT-5 function calling (matching server.js)
+        # Define tool schemas for GPT-5 function calling with strict validation
         self.tools = [
             {
                 "type": "function",
@@ -49,19 +49,74 @@ class CommandParser:
                             "items": {
                                 "type": "object",
                                 "properties": {
-                                    "state1": {"type": "string", "description": "Starting state name"},
-                                    "state1Param": {"description": "Parameters for state1 (null if none)"},
-                                    "transition": {"type": "string", "description": "Transition/event that triggers this rule"},
-                                    "state2": {"type": "string", "description": "Destination state name"},
-                                    "state2Param": {"description": "Parameters for state2 (object, string, or null)"},
-                                    "condition": {"type": "string", "description": "Optional condition expression"},
-                                    "action": {"type": "string", "description": "Optional action to execute"}
+                                    "state1": {
+                                        "type": "string",
+                                        "enum": ["off", "on", "color", "animation"],
+                                        "description": "Starting state name"
+                                    },
+                                    "state1Param": {
+                                        "oneOf": [
+                                            {"type": "null"},
+                                            {"type": "object"}
+                                        ],
+                                        "description": "Parameters for state1 (null if none)"
+                                    },
+                                    "transition": {
+                                        "type": "string",
+                                        "enum": ["button_click", "button_double_click", "button_hold", "button_release", "voice_command"],
+                                        "description": "Transition/event that triggers this rule"
+                                    },
+                                    "state2": {
+                                        "type": "string",
+                                        "enum": ["off", "on", "color", "animation"],
+                                        "description": "Destination state name"
+                                    },
+                                    "state2Param": {
+                                        "oneOf": [
+                                            {"type": "null"},
+                                            {
+                                                "type": "object",
+                                                "properties": {
+                                                    "r": {"type": ["number", "string"]},
+                                                    "g": {"type": ["number", "string"]},
+                                                    "b": {"type": ["number", "string"]},
+                                                    "speed": {"type": "number"}
+                                                },
+                                                "required": ["r", "g", "b"],
+                                                "additionalProperties": False
+                                            }
+                                        ],
+                                        "description": "Parameters for state2 (object with r,g,b for color/animation, null for on/off)"
+                                    },
+                                    "condition": {
+                                        "type": ["string", "null"],
+                                        "description": "Optional condition expression"
+                                    },
+                                    "action": {
+                                        "type": ["string", "null"],
+                                        "description": "Optional action to execute"
+                                    }
                                 },
-                                "required": ["state1", "transition", "state2"]
+                                "required": ["state1", "transition", "state2", "state2Param"],
+                                "allOf": [
+                                    {
+                                        "if": {"properties": {"state2": {"enum": ["on", "off"]}}},
+                                        "then": {"properties": {"state2Param": {"const": None}}}
+                                    },
+                                    {
+                                        "if": {"properties": {"state2": {"const": "color"}}},
+                                        "then": {"properties": {"state2Param": {"type": "object", "required": ["r", "g", "b"]}}}
+                                    },
+                                    {
+                                        "if": {"properties": {"state2": {"const": "animation"}}},
+                                        "then": {"properties": {"state2Param": {"type": "object", "required": ["r", "g", "b", "speed"]}}}
+                                    }
+                                ]
                             }
                         }
                     },
-                    "required": ["rules"]
+                    "required": ["rules"],
+                    "additionalProperties": False
                 }
             },
             {
@@ -76,11 +131,24 @@ class CommandParser:
                             "description": "Array of rule indices to delete (0-based)",
                             "items": {"type": "number"}
                         },
-                        "state1": {"type": "string", "description": "Delete rules matching this starting state"},
-                        "transition": {"type": "string", "description": "Delete rules matching this transition"},
-                        "state2": {"type": "string", "description": "Delete rules matching this destination state"},
+                        "state1": {
+                            "type": "string",
+                            "enum": ["off", "on", "color", "animation"],
+                            "description": "Delete rules matching this starting state"
+                        },
+                        "transition": {
+                            "type": "string",
+                            "enum": ["button_click", "button_double_click", "button_hold", "button_release", "voice_command"],
+                            "description": "Delete rules matching this transition"
+                        },
+                        "state2": {
+                            "type": "string",
+                            "enum": ["off", "on", "color", "animation"],
+                            "description": "Delete rules matching this destination state"
+                        },
                         "delete_all": {"type": "boolean", "description": "If true, delete all rules"}
-                    }
+                    },
+                    "additionalProperties": False
                 }
             },
             {
@@ -90,10 +158,29 @@ class CommandParser:
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "state": {"type": "string", "description": "The state to switch to"},
-                        "params": {"description": "Optional parameters to pass to the state (e.g., color values)"}
+                        "state": {
+                            "type": "string",
+                            "enum": ["off", "on", "color", "animation"],
+                            "description": "The state to switch to"
+                        },
+                        "params": {
+                            "oneOf": [
+                                {"type": "null"},
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "r": {"type": ["number", "string"]},
+                                        "g": {"type": ["number", "string"]},
+                                        "b": {"type": ["number", "string"]},
+                                        "speed": {"type": "number"}
+                                    }
+                                }
+                            ],
+                            "description": "Optional parameters to pass to the state (e.g., color values)"
+                        }
                     },
-                    "required": ["state"]
+                    "required": ["state"],
+                    "additionalProperties": False
                 }
             },
             {
@@ -118,7 +205,8 @@ class CommandParser:
                             "items": {"type": "string"}
                         }
                     },
-                    "required": ["action"]
+                    "required": ["action"],
+                    "additionalProperties": False
                 }
             },
             {
@@ -128,7 +216,8 @@ class CommandParser:
                 "parameters": {
                     "type": "object",
                     "properties": {},
-                    "required": []
+                    "required": [],
+                    "additionalProperties": False
                 }
             }
         ]
@@ -169,7 +258,7 @@ class CommandParser:
         system_prompt = get_system_prompt(dynamic_content)
 
         try:
-            # Call GPT-5 API using responses.create (matching server.js)
+            # Call GPT-5 API using responses.create with reasoning padding
             print(f"Calling OpenAI API with model: gpt-5")
             response = self.client.responses.create(
                 model="gpt-5",
@@ -178,7 +267,7 @@ class CommandParser:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_input}
                 ],
-                reasoning={"effort": "minimal"},
+                reasoning={"effort": "medium"},  # Medium effort for better tool call reasoning
                 text={"verbosity": "low"}
             )
 
