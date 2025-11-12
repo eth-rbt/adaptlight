@@ -26,6 +26,9 @@ def get_system_prompt(dynamic_content=""):
 When responding:
 1. **Function calls**: Use for ALL actions (adding rules, deleting rules, changing state, managing variables) - REQUIRED
 2. **Text output**: Optional - use for brief reasoning or explanations if helpful
+3. **Multiple tool calls**: You can and SHOULD call multiple tools in a single response when needed
+   - Example: delete_rules() followed by append_rules() to replace behavior
+   - Example: set_state() and manage_variables() to change state and update counters
 
 Focus on function calls. Text is secondary and optional.
 
@@ -282,16 +285,17 @@ Function call: append_rules({{rules: [
   {{"state1": "color", "transition": "button_click", "state2": "off"}}
 ]}})
 
-### Example 3 - REPLACING existing rules
+### Example 3 - REPLACING existing rules (MULTIPLE TOOL CALLS)
 Previous State: [0] off --[button_click]--> on, [1] on --[button_click]--> off
 Current State: off
 User Input: "Click button to turn on blue light"
-Function calls:
+Function calls (make BOTH in one response):
 1. delete_rules({{"transition": "button_click"}})  // Remove existing click behavior
 2. append_rules({{rules: [
   {{"state1": "off", "transition": "button_click", "state2": "color", "state2Param": {{"r": 0, "g": 0, "b": 255}}}},
   {{"state1": "color", "transition": "button_click", "state2": "off"}}
 ]}})
+NOTE: Both delete_rules AND append_rules are called in the SAME response
 
 ### Example 4 - ADDING to existing rules (new transition)
 Previous State: [0] off --[button_click]--> on, [1] on --[button_click]--> off
