@@ -253,8 +253,9 @@ class CommandParser:
             current_state, global_variables or {}
         )
 
-        # Load the parsing prompt
+        # Load the parsing prompt (use full version with examples)
         from prompts.parsing_prompt import get_system_prompt
+        # from prompts.parsing_prompt_concise import get_system_prompt  # Shorter version
         system_prompt = get_system_prompt(dynamic_content)
 
         try:
@@ -267,7 +268,7 @@ class CommandParser:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_input}
                 ],
-                reasoning={"effort": "medium"},  # Medium effort for better tool call reasoning
+                reasoning={"effort": "high"},  # High effort for best tool call reasoning
                 text={"verbosity": "low"}
             )
 

@@ -223,12 +223,42 @@ Examples:
 
 ## RULE BEHAVIOR
 
-- When you create a new rule, it will be ADDED to the existing rules
-- If a rule with the SAME state1, transition, AND condition already exists, it will be REPLACED
-- Rules with different conditions are treated as separate rules, even if state1 and transition match
-- For toggle behaviors (like "click to turn on X"), create TWO rules:
-  1. From current state to the new state
-  2. From the new state back to the previous state (usually "off")
+**CRITICAL: Understanding When to Delete vs Add Rules**
+
+When the user wants to change behavior for an existing transition, you must DELETE the old rules first, then add new ones.
+
+### When to DELETE then ADD (Replace behavior):
+- User says "click to turn on blue light" and there are already click rules → DELETE old click rules, ADD new ones
+- User says "change X to Y" → DELETE old, ADD new
+- User says "make click do Z instead" → DELETE old click rules, ADD new
+- User says "click for [something]" and click already does something else → DELETE then ADD
+- **Key**: If the transition (button_click, hold, etc.) is already in use and user wants different behavior, DELETE first!
+
+### When to ADD (Keep existing + add new):
+- User says "ADD a rule" or "also make double click do X" → Just ADD
+- User specifies a NEW transition that isn't currently used → Just ADD
+- User says "add another rule for..." → Just ADD
+- **Key**: Only add if it's clear they want to KEEP existing behavior AND add more
+
+### When UNSURE:
+- If user says "click for blue" and click already does something → **DELETE then ADD** (assume replace)
+- Default to replacing unless user explicitly says "add" or "also"
+
+### How to Delete:
+```javascript
+// Delete by transition (removes all rules using that transition)
+delete_rules({{"transition": "button_click"}})
+
+// Delete by state1 + transition (more targeted)
+delete_rules({{"state1": "off", "transition": "button_click"}})
+
+// Delete specific indices
+delete_rules({{"indices": [0, 1]}})
+```
+
+### For toggle behaviors (like "click to turn on X"), create TWO rules:
+1. From current state to the new state
+2. From the new state back to the previous state (usually "off")
 
 ## RULE EXAMPLES FOR append_rules
 
@@ -252,34 +282,46 @@ Function call: append_rules({{rules: [
   {{"state1": "color", "transition": "button_click", "state2": "off"}}
 ]}})
 
-### Example 3
-Previous State: No rules
+### Example 3 - REPLACING existing rules
+Previous State: [0] off --[button_click]--> on, [1] on --[button_click]--> off
+Current State: off
+User Input: "Click button to turn on blue light"
+Function calls:
+1. delete_rules({{"transition": "button_click"}})  // Remove existing click behavior
+2. append_rules({{rules: [
+  {{"state1": "off", "transition": "button_click", "state2": "color", "state2Param": {{"r": 0, "g": 0, "b": 255}}}},
+  {{"state1": "color", "transition": "button_click", "state2": "off"}}
+]}})
+
+### Example 4 - ADDING to existing rules (new transition)
+Previous State: [0] off --[button_click]--> on, [1] on --[button_click]--> off
 Current State: off
 User Input: "Double click to toggle red light"
 Function call: append_rules({{rules: [
   {{"state1": "off", "transition": "button_double_click", "state2": "color", "state2Param": {{"r": 255, "g": 0, "b": 0}}}},
   {{"state1": "color", "transition": "button_double_click", "state2": "off"}}
 ]}})
+// Note: No delete needed - double_click is a NEW transition
 
-### Example 4
+### Example 5
 Previous State: No rules
 Current State: off
 User Input: "Hold button for random color"
 Function call: append_rules({{rules: [{{"state1": "off", "transition": "button_hold", "state2": "color", "state2Param": {{"r": "random()", "g": "random()", "b": "random()"}}}}]}})
 
-### Example 5
+### Example 7
 Previous State: off --[button_click]--> on
 Current State: color
 User Input: "Click to cycle through colors"
 Function call: append_rules({{rules: [{{"state1": "color", "transition": "button_click", "state2": "color", "state2Param": {{"r": "b", "g": "r", "b": "g"}}}}]}})
 
-### Example 6
+### Example 8
 Previous State: off --[button_click]--> color (blue)
 Current State: color
 User Input: "Double click to make it brighter"
 Function call: append_rules({{rules: [{{"state1": "color", "transition": "button_double_click", "state2": "color", "state2Param": {{"r": "min(r + 30, 255)", "g": "min(g + 30, 255)", "b": "min(b + 30, 255)"}}}}]}})
 
-### Example 7
+### Example 9
 Previous State: No rules
 Current State: off
 User Input: "Next 5 clicks should be random colors"
@@ -289,13 +331,13 @@ Function call: append_rules({{rules: [
   {{"state1": "color", "transition": "button_click", "condition": "getData('click_counter') === 0", "state2": "off"}}
 ]}})
 
-### Example 8
+### Example 10
 Previous State: No rules
 Current State: off
 User Input: "Click for blue light, but only after 8pm"
 Function call: append_rules({{rules: [{{"state1": "off", "transition": "button_click", "condition": "time.hour >= 20", "state2": "color", "state2Param": {{"r": 0, "g": 0, "b": 255}}}}]}})
 
-### Example 9
+### Example 11
 Previous State: No rules
 Current State: off
 User Input: "Hold button for rainbow animation"
