@@ -2,11 +2,13 @@
 """
 Evaluation script for AdaptLight command parser.
 
-Runs example test cases and compares parser output against expected results.
+Runs test cases by executing transitions and checking resulting states.
 """
 
 import sys
 import json
+import copy
+import random
 from pathlib import Path
 
 # Add parent directory to path for imports
@@ -14,6 +16,175 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from voice.command_parser import CommandParser
 from eval.examples import ALL_EXAMPLES
+
+
+class RuleExecutor:
+    """Executes state machine rules to simulate transitions."""
+
+    def __init__(self, rules, initial_state, initial_params, initial_variables):
+        """Initialize with rules and state."""
+        self.rules = copy.deepcopy(rules)
+        self.current_state = initial_state
+        self.state_params = initial_params
+        self.variables = copy.deepcopy(initial_variables)
+
+    def execute_transition(self, transition):
+        """
+        Execute a transition and update state.
+
+        Args:
+            transition: Transition name (e.g., "button_click") or None to skip
+
+        Returns:
+            (new_state, new_params) tuple
+        """
+        if transition is None:
+            # No transition, just return current state
+            return self.current_state, self.state_params
+
+        # Find matching rule
+        matching_rule = None
+        for rule in self.rules:
+            if rule.get("state1") == self.current_state and rule.get("transition") == transition:
+                # Check condition if present
+                if rule.get("condition"):
+                    # Skip condition evaluation for now (would need full eval context)
+                    # Assume condition passes
+                    pass
+
+                matching_rule = rule
+                break
+
+        if not matching_rule:
+            # No rule found, state doesn't change
+            return self.current_state, self.state_params
+
+        # Execute action if present
+        if matching_rule.get("action"):
+            # Would need full eval context to execute
+            # For now, just handle simple setData calls for counter tests
+            action = matching_rule.get("action")
+            if "setData" in action and "counter" in action:
+                # Simple parsing for counter actions
+                if "setData('counter', 4)" in action or 'setData("counter", 4)' in action:
+                    self.variables["counter"] = 4
+                elif "getData('counter') - 1" in action:
+                    if "counter" in self.variables:
+                        self.variables["counter"] -= 1
+
+        # Get new state and params
+        new_state = matching_rule.get("state2")
+        new_params = matching_rule.get("state2Param")
+
+        # Evaluate params if they're expressions
+        if isinstance(new_params, dict):
+            evaluated_params = {}
+            for key, value in new_params.items():
+                if isinstance(value, str):
+                    # Simple evaluation for common cases
+                    if value == "random()":
+                        evaluated_params[key] = random.randint(0, 255)
+                    else:
+                        # Keep as string expression
+                        evaluated_params[key] = value
+                else:
+                    evaluated_params[key] = value
+            new_params = evaluated_params
+
+        # Update state
+        self.current_state = new_state
+        self.state_params = new_params
+
+        return self.current_state, self.state_params
+
+    def get_state(self):
+        """Get current state as dict."""
+        return {
+            "state": self.current_state,
+            "params": self.state_params,
+            "variables": self.variables
+        }
+
+
+class MockStateMachine:
+    """Mock state machine to execute tool calls and track state."""
+
+    def __init__(self, initial_rules, initial_state, initial_variables):
+        """Initialize with starting conditions."""
+        self.rules = copy.deepcopy(initial_rules)
+        self.current_state = initial_state
+        self.state_params = None
+        self.variables = copy.deepcopy(initial_variables)
+
+    def execute_tool(self, tool_name, args):
+        """Execute a tool call and update state."""
+        if tool_name == 'append_rules':
+            # Add rules to the list
+            new_rules = args.get('rules', [])
+            self.rules.extend(new_rules)
+
+        elif tool_name == 'delete_rules':
+            # Delete rules based on criteria
+            if args.get('delete_all'):
+                self.rules = []
+            elif args.get('indices'):
+                # Delete by indices (reverse order to avoid index shifting)
+                for idx in sorted(args['indices'], reverse=True):
+                    if 0 <= idx < len(self.rules):
+                        del self.rules[idx]
+            else:
+                # Delete by criteria (state1, transition, state2)
+                rules_to_delete = []
+                for i in range(len(self.rules) - 1, -1, -1):
+                    rule = self.rules[i]
+                    should_delete = False
+
+                    if args.get('state1') and rule.get('state1') == args['state1']:
+                        should_delete = True
+                    if args.get('transition') and rule.get('transition') == args['transition']:
+                        should_delete = True
+                    if args.get('state2') and rule.get('state2') == args['state2']:
+                        should_delete = True
+
+                    if should_delete:
+                        rules_to_delete.append(i)
+
+                for idx in rules_to_delete:
+                    del self.rules[idx]
+
+        elif tool_name == 'set_state':
+            # Change current state immediately
+            self.current_state = args.get('state')
+            self.state_params = args.get('params')
+
+        elif tool_name == 'manage_variables':
+            # Manage variables
+            action = args.get('action')
+            if action == 'set':
+                variables = args.get('variables', {})
+                self.variables.update(variables)
+            elif action == 'delete':
+                keys = args.get('keys', [])
+                for key in keys:
+                    self.variables.pop(key, None)
+            elif action == 'clear_all':
+                self.variables = {}
+
+        elif tool_name == 'reset_rules':
+            # Reset to default rules
+            self.rules = [
+                {"state1": "off", "transition": "button_click", "state2": "on", "state2Param": None},
+                {"state1": "on", "transition": "button_click", "state2": "off", "state2Param": None}
+            ]
+
+    def get_state(self):
+        """Get current state as dict."""
+        return {
+            "rules": self.rules,
+            "current_state": self.current_state,
+            "state_params": self.state_params,
+            "variables": self.variables
+        }
 
 
 class ParserEvaluator:
@@ -29,12 +200,12 @@ class ParserEvaluator:
             "details": []
         }
 
-    def evaluate_example(self, example):
+    def evaluate_deterministic(self, example):
         """
-        Evaluate a single example.
+        Evaluate a deterministic test by executing transitions.
 
         Args:
-            example: Example dict with user_input, expected_tools, etc.
+            example: Example dict with test_sequence
 
         Returns:
             Dict with evaluation result
@@ -50,6 +221,7 @@ class ParserEvaluator:
             prev_state = example.get('previous_state', {})
             current_rules = prev_state.get('rules', [])
             current_state = prev_state.get('current_state', 'off')
+            variables = prev_state.get('variables', {})
 
             # Build available states (simplified for testing)
             available_states = "off, on, color, animation"
@@ -69,101 +241,216 @@ class ParserEvaluator:
                 available_states,
                 available_transitions,
                 current_rules,
-                current_state
+                current_state,
+                variables
             )
 
             # Check if parsing succeeded
             if not result.get('success'):
                 print("❌ FAILED: Parser returned success=False")
-                return {
-                    "passed": False,
-                    "reason": "Parser failed",
-                    "expected": example['expected_tools'],
-                    "actual": None
-                }
+                return {"passed": False, "reason": "Parser failed"}
 
-            # Extract tool calls
-            actual_tools = result.get('toolCalls', [])
-            expected_tools = example.get('expected_tools', [])
+            # Execute tool calls to get final rules
+            mock_sm = MockStateMachine(current_rules, current_state, variables)
 
-            print(f"\nExpected {len(expected_tools)} tool call(s)")
-            print(f"Received {len(actual_tools)} tool call(s)")
+            tool_calls = result.get('toolCalls', [])
+            print(f"\nExecuting {len(tool_calls)} tool call(s)")
+            for tool_call in tool_calls:
+                tool_name = tool_call['name']
+                tool_args = tool_call['arguments']
+                print(f"  - {tool_name}")
+                mock_sm.execute_tool(tool_name, tool_args)
 
-            # Compare tool calls
-            if self.compare_tool_calls(expected_tools, actual_tools):
-                print("✅ PASSED")
-                return {
-                    "passed": True,
-                    "expected": expected_tools,
-                    "actual": actual_tools
-                }
-            else:
-                print("❌ FAILED: Tool calls don't match")
-                print(f"\nExpected:")
-                print(json.dumps(expected_tools, indent=2))
-                print(f"\nActual:")
-                print(json.dumps(actual_tools, indent=2))
-                return {
-                    "passed": False,
-                    "reason": "Tool calls mismatch",
-                    "expected": expected_tools,
-                    "actual": actual_tools
-                }
+            final_state = mock_sm.get_state()
+
+            # Now execute test sequence using the rules
+            print(f"\nExecuting {len(example['test_sequence'])} transition(s):")
+
+            executor = RuleExecutor(
+                final_state['rules'],
+                final_state['current_state'],
+                final_state.get('state_params'),
+                final_state['variables']
+            )
+
+            for i, step in enumerate(example['test_sequence'], 1):
+                transition = step.get('transition')
+                expected_state = step.get('expected_state')
+                expected_params = step.get('expected_params')
+
+                if transition:
+                    print(f"  [{i}] Execute: {transition}")
+                else:
+                    print(f"  [{i}] Check current state")
+
+                # Execute transition
+                actual_state, actual_params = executor.execute_transition(transition)
+
+                # Check state
+                if actual_state != expected_state:
+                    print(f"    ❌ State mismatch: expected '{expected_state}', got '{actual_state}'")
+                    return {
+                        "passed": False,
+                        "reason": f"Step {i}: State mismatch (expected {expected_state}, got {actual_state})"
+                    }
+
+                # Check params
+                if expected_params != "any":
+                    if expected_params != actual_params:
+                        print(f"    ❌ Params mismatch: expected {expected_params}, got {actual_params}")
+                        return {
+                            "passed": False,
+                            "reason": f"Step {i}: Params mismatch"
+                        }
+
+                print(f"    ✓ State: {actual_state}, Params: {actual_params if expected_params != 'any' else '(any)'}")
+
+            print("\n✅ PASSED")
+            return {"passed": True}
 
         except Exception as e:
             print(f"❌ ERROR: {e}")
             import traceback
             traceback.print_exc()
-            return {
-                "passed": False,
-                "reason": f"Exception: {e}",
-                "expected": example['expected_tools'],
-                "actual": None
+            return {"passed": False, "reason": f"Exception: {e}"}
+
+    def evaluate_non_deterministic(self, example):
+        """
+        Evaluate a non-deterministic test with property checks.
+
+        Args:
+            example: Example dict with property_checks
+
+        Returns:
+            Dict with evaluation result
+        """
+        print(f"\n{'='*60}")
+        print(f"Test: {example['name']}")
+        print(f"Description: {example['description']}")
+        print(f"User Input: \"{example['user_input']}\"")
+        print(f"{'='*60}")
+
+        try:
+            # Extract previous state
+            prev_state = example.get('previous_state', {})
+            current_rules = prev_state.get('rules', [])
+            current_state = prev_state.get('current_state', 'off')
+            variables = prev_state.get('variables', {})
+
+            before_rules = copy.deepcopy(current_rules)
+            before_state = {"state": current_state, "variables": variables}
+
+            # Build available states
+            available_states = "off, on, color, animation"
+            available_transitions = [
+                {"name": "button_click", "description": "Single click"},
+                {"name": "button_double_click", "description": "Double click"},
+                {"name": "button_hold", "description": "Hold button"},
+                {"name": "button_release", "description": "Release after hold"},
+                {"name": "voice_command", "description": "Voice command"}
+            ]
+
+            # Parse the command
+            result = self.parser.parse_command(
+                example['user_input'],
+                available_states,
+                available_transitions,
+                current_rules,
+                current_state,
+                variables
+            )
+
+            if not result.get('success'):
+                print("❌ FAILED: Parser returned success=False")
+                return {"passed": False, "reason": "Parser failed"}
+
+            # Execute tool calls
+            mock_sm = MockStateMachine(current_rules, current_state, variables)
+            tool_calls = result.get('toolCalls', [])
+            print(f"\nExecuting {len(tool_calls)} tool call(s)")
+            for tool_call in tool_calls:
+                mock_sm.execute_tool(tool_call['name'], tool_call['arguments'])
+
+            final_state = mock_sm.get_state()
+            after_rules = final_state['rules']
+            after_state = {
+                "state": final_state['current_state'],
+                "params": final_state.get('state_params'),
+                "variables": final_state['variables']
             }
 
-    def compare_tool_calls(self, expected, actual):
-        """
-        Compare expected and actual tool calls.
+            # Run property checks
+            print(f"\nRunning {len(example['property_checks'])} property check(s):")
+            for prop_check in example['property_checks']:
+                check_name = prop_check['name']
+                check_func = prop_check['check']
 
-        Args:
-            expected: List of expected tool call dicts
-            actual: List of actual tool call dicts from parser
+                print(f"  - {check_name}")
 
-        Returns:
-            True if they match, False otherwise
-        """
-        # Check count
-        if len(expected) != len(actual):
-            return False
+                try:
+                    passed = check_func(before_rules, after_rules, before_state, after_state)
+                    if not passed:
+                        print(f"    ❌ Property check failed")
+                        print(f"\n    Before rules: {json.dumps(before_rules, indent=6)}")
+                        print(f"\n    After rules: {json.dumps(after_rules, indent=6)}")
+                        return {
+                            "passed": False,
+                            "reason": f"Property check failed: {check_name}"
+                        }
+                    print(f"    ✓ Passed")
+                except Exception as e:
+                    print(f"    ❌ Error in property check: {e}")
+                    return {
+                        "passed": False,
+                        "reason": f"Property check error: {check_name} - {e}"
+                    }
 
-        # Compare each tool call
-        for exp_tool, act_tool in zip(expected, actual):
-            # Check tool name
-            if exp_tool['name'] != act_tool['name']:
-                return False
+            # Execute test sequence if present
+            if example.get('test_sequence'):
+                print(f"\nExecuting {len(example['test_sequence'])} transition(s):")
 
-            # Compare arguments (loosely - just check structure)
-            exp_args = exp_tool.get('arguments', {})
-            act_args = act_tool.get('arguments', {})
+                executor = RuleExecutor(
+                    after_rules,
+                    after_state['state'],
+                    after_state.get('params'),
+                    after_state['variables']
+                )
 
-            # For now, just check that major keys are present
-            # More sophisticated comparison can be added later
-            if set(exp_args.keys()) != set(act_args.keys()):
-                return False
+                for i, step in enumerate(example['test_sequence'], 1):
+                    transition = step.get('transition')
+                    expected_state = step.get('expected_state')
+                    expected_params = step.get('expected_params')
 
-        return True
+                    print(f"  [{i}] Execute: {transition}")
+                    actual_state, actual_params = executor.execute_transition(transition)
+
+                    if actual_state != expected_state:
+                        print(f"    ❌ State mismatch: expected '{expected_state}', got '{actual_state}'")
+                        return {
+                            "passed": False,
+                            "reason": f"Step {i}: State mismatch"
+                        }
+
+                    if expected_params != "any" and expected_params != actual_params:
+                        print(f"    ❌ Params mismatch")
+                        return {
+                            "passed": False,
+                            "reason": f"Step {i}: Params mismatch"
+                        }
+
+                    print(f"    ✓ State: {actual_state}")
+
+            print("\n✅ PASSED")
+            return {"passed": True}
+
+        except Exception as e:
+            print(f"❌ ERROR: {e}")
+            import traceback
+            traceback.print_exc()
+            return {"passed": False, "reason": f"Exception: {e}"}
 
     def evaluate_category(self, category_name, examples):
-        """
-        Evaluate all examples in a category.
-
-        Args:
-            category_name: Name of the category
-            examples: List of example dicts
-
-        Returns:
-            Summary dict
-        """
+        """Evaluate all examples in a category."""
         print(f"\n{'#'*60}")
         print(f"# Category: {category_name.upper()}")
         print(f"# {len(examples)} test(s)")
@@ -173,7 +460,11 @@ class ParserEvaluator:
         failed = 0
 
         for example in examples:
-            result = self.evaluate_example(example)
+            # Choose evaluation method based on category
+            if category_name == "deterministic":
+                result = self.evaluate_deterministic(example)
+            else:
+                result = self.evaluate_non_deterministic(example)
 
             detail = {
                 "category": category_name,
@@ -191,11 +482,7 @@ class ParserEvaluator:
 
         print(f"\nCategory Summary: {passed}/{len(examples)} passed")
 
-        return {
-            "passed": passed,
-            "failed": failed,
-            "total": len(examples)
-        }
+        return {"passed": passed, "failed": failed, "total": len(examples)}
 
     def evaluate_all(self):
         """Evaluate all example categories."""
@@ -211,9 +498,12 @@ class ParserEvaluator:
         print("FINAL RESULTS")
         print("="*60)
         total = self.results['passed'] + self.results['failed']
-        print(f"Total Tests: {total}")
-        print(f"Passed: {self.results['passed']} ({self.results['passed']/total*100:.1f}%)")
-        print(f"Failed: {self.results['failed']} ({self.results['failed']/total*100:.1f}%)")
+        if total > 0:
+            print(f"Total Tests: {total}")
+            print(f"Passed: {self.results['passed']} ({self.results['passed']/total*100:.1f}%)")
+            print(f"Failed: {self.results['failed']} ({self.results['failed']/total*100:.1f}%)")
+        else:
+            print("No tests run")
         print("="*60)
 
         return self.results

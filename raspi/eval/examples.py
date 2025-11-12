@@ -1,354 +1,386 @@
 """
 Example test cases for command parser evaluation.
 
-These examples are extracted from the main parsing prompt and organized
-for systematic testing and evaluation.
+Tests execute transitions and check resulting states (deterministic)
+or check that properties changed correctly (non-deterministic).
+
+All examples start with default rules (on/off toggle).
 """
 
-# Basic rule examples
-BASIC_RULE_EXAMPLES = [
+# Default rules that all examples start with
+DEFAULT_RULES = [
+    {"state1": "off", "transition": "button_click", "state2": "on", "state2Param": None},
+    {"state1": "on", "transition": "button_click", "state2": "off", "state2Param": None}
+]
+
+# Deterministic tests - execute transitions and check exact state
+DETERMINISTIC_TESTS = [
     {
-        "name": "Simple on/off toggle",
-        "description": "Basic button click to toggle on/off",
-        "previous_state": {"rules": [], "current_state": "off"},
-        "user_input": "When button is clicked in off state, go to on state",
-        "expected_tools": [
-            {
-                "name": "append_rules",
-                "arguments": {
-                    "rules": [
-                        {"state1": "off", "transition": "button_click", "state2": "on", "state2Param": None},
-                        {"state1": "on", "transition": "button_click", "state2": "off", "state2Param": None}
-                    ]
-                }
-            }
-        ]
-    },
-    {
-        "name": "Click for blue light",
-        "description": "Button click to turn on specific color",
-        "previous_state": {"rules": [], "current_state": "off"},
+        "name": "Replace with blue light toggle",
+        "description": "Click should toggle blue light instead of plain on",
+        "previous_state": {
+            "rules": DEFAULT_RULES.copy(),
+            "current_state": "off",
+            "variables": {}
+        },
         "user_input": "Click button to turn on blue light",
-        "expected_tools": [
+        "test_sequence": [
             {
-                "name": "append_rules",
-                "arguments": {
-                    "rules": [
-                        {"state1": "off", "transition": "button_click", "state2": "color", "state2Param": {"r": 0, "g": 0, "b": 255}},
-                        {"state1": "color", "transition": "button_click", "state2": "off", "state2Param": None}
-                    ]
-                }
+                "transition": "button_click",
+                "expected_state": "color",
+                "expected_params": {"r": 0, "g": 0, "b": 255}
+            },
+            {
+                "transition": "button_click",
+                "expected_state": "off",
+                "expected_params": None
+            },
+            {
+                "transition": "button_double_click",
+                "expected_state": "off",  # No rule for double click, stay in off
+                "expected_params": None
             }
         ]
     },
     {
-        "name": "Double click for red light",
-        "description": "Double click to toggle red light",
-        "previous_state": {"rules": [], "current_state": "off"},
+        "name": "Add double click for red light",
+        "description": "Double click should add red light, keep click for on/off",
+        "previous_state": {
+            "rules": DEFAULT_RULES.copy(),
+            "current_state": "off",
+            "variables": {}
+        },
         "user_input": "Double click to toggle red light",
-        "expected_tools": [
+        "test_sequence": [
             {
-                "name": "append_rules",
-                "arguments": {
-                    "rules": [
-                        {"state1": "off", "transition": "button_double_click", "state2": "color", "state2Param": {"r": 255, "g": 0, "b": 0}},
-                        {"state1": "color", "transition": "button_double_click", "state2": "off", "state2Param": None}
-                    ]
-                }
+                "transition": "button_click",
+                "expected_state": "on",
+                "expected_params": None
+            },
+            {
+                "transition": "button_click",
+                "expected_state": "off",
+                "expected_params": None
+            },
+            {
+                "transition": "button_double_click",
+                "expected_state": "color",
+                "expected_params": {"r": 255, "g": 0, "b": 0}
+            },
+            {
+                "transition": "button_double_click",
+                "expected_state": "off",
+                "expected_params": None
             }
         ]
     },
     {
         "name": "Hold for random color",
-        "description": "Hold button for random color",
-        "previous_state": {"rules": [], "current_state": "off"},
+        "description": "Hold should give random color",
+        "previous_state": {
+            "rules": DEFAULT_RULES.copy(),
+            "current_state": "off",
+            "variables": {}
+        },
         "user_input": "Hold button for random color",
-        "expected_tools": [
+        "test_sequence": [
             {
-                "name": "append_rules",
-                "arguments": {
-                    "rules": [
-                        {"state1": "off", "transition": "button_hold", "state2": "color", "state2Param": {"r": "random()", "g": "random()", "b": "random()"}}
-                    ]
-                }
+                "transition": "button_hold",
+                "expected_state": "color",
+                "expected_params": "any"  # Random, so we just check it's a color state
+            },
+            {
+                "transition": "button_click",
+                "expected_state": "on",  # Default click rule should still work
+                "expected_params": None
             }
         ]
-    }
-]
-
-# Color manipulation examples
-COLOR_MANIPULATION_EXAMPLES = [
+    },
     {
-        "name": "Cycle through colors",
-        "description": "Click to cycle RGB values",
+        "name": "Animation with hold and release",
+        "description": "Hold for animation, release to turn off",
         "previous_state": {
-            "rules": [
-                {"state1": "off", "transition": "button_click", "state2": "on", "state2Param": None}
-            ],
-            "current_state": "color"
+            "rules": DEFAULT_RULES.copy(),
+            "current_state": "off",
+            "variables": {}
         },
-        "user_input": "Click to cycle through colors",
-        "expected_tools": [
+        "user_input": "Hold button for rainbow animation, release to turn off",
+        "test_sequence": [
             {
-                "name": "append_rules",
-                "arguments": {
-                    "rules": [
-                        {"state1": "color", "transition": "button_click", "state2": "color", "state2Param": {"r": "b", "g": "r", "b": "g"}}
-                    ]
-                }
+                "transition": "button_hold",
+                "expected_state": "animation",
+                "expected_params": "any"
+            },
+            {
+                "transition": "button_release",
+                "expected_state": "off",
+                "expected_params": None
+            },
+            {
+                "transition": "button_click",
+                "expected_state": "on",  # Default rule still works
+                "expected_params": None
             }
         ]
     },
     {
-        "name": "Make it brighter",
-        "description": "Double click to increase brightness",
+        "name": "Replace click with animation",
+        "description": "Click should start animation instead of turning on",
         "previous_state": {
-            "rules": [
-                {"state1": "off", "transition": "button_click", "state2": "color", "state2Param": {"r": 0, "g": 0, "b": 255}}
-            ],
-            "current_state": "color"
+            "rules": DEFAULT_RULES.copy(),
+            "current_state": "off",
+            "variables": {}
         },
-        "user_input": "Double click to make it brighter",
-        "expected_tools": [
+        "user_input": "Click for pulsing animation instead",
+        "test_sequence": [
             {
-                "name": "append_rules",
-                "arguments": {
-                    "rules": [
-                        {"state1": "color", "transition": "button_double_click", "state2": "color",
-                         "state2Param": {"r": "min(r + 30, 255)", "g": "min(g + 30, 255)", "b": "min(b + 30, 255)"}}
-                    ]
-                }
-            }
-        ]
-    }
-]
-
-# Animation examples
-ANIMATION_EXAMPLES = [
-    {
-        "name": "Rainbow animation",
-        "description": "Hold for rainbow animation",
-        "previous_state": {"rules": [], "current_state": "off"},
-        "user_input": "Hold button for rainbow animation",
-        "expected_tools": [
+                "transition": "button_click",
+                "expected_state": "animation",
+                "expected_params": "any"
+            },
             {
-                "name": "append_rules",
-                "arguments": {
-                    "rules": [
-                        {
-                            "state1": "off",
-                            "transition": "button_hold",
-                            "state2": "animation",
-                            "state2Param": {
-                                "r": "(frame * 2) % 256",
-                                "g": "abs(sin(frame * 0.1)) * 255",
-                                "b": "abs(cos(frame * 0.1)) * 255",
-                                "speed": 50
-                            }
-                        },
-                        {"state1": "animation", "transition": "button_release", "state2": "off", "state2Param": None}
-                    ]
-                }
+                "transition": "button_click",
+                "expected_state": "off",
+                "expected_params": None
+            },
+            {
+                "transition": "button_double_click",
+                "expected_state": "off",  # No rule, stays off
+                "expected_params": None
             }
         ]
     },
     {
-        "name": "Pulsing animation",
-        "description": "Click for pulsing white animation",
-        "previous_state": {"rules": [], "current_state": "off"},
-        "user_input": "Click for pulsing animation",
-        "expected_tools": [
+        "name": "Time-based conditional",
+        "description": "Add time-based rule alongside default",
+        "previous_state": {
+            "rules": DEFAULT_RULES.copy(),
+            "current_state": "off",
+            "variables": {}
+        },
+        "user_input": "Add a rule: click for blue light, but only after 8pm",
+        "test_sequence": [
             {
-                "name": "append_rules",
-                "arguments": {
-                    "rules": [
-                        {
-                            "state1": "off",
-                            "transition": "button_click",
-                            "state2": "animation",
-                            "state2Param": {
-                                "r": "abs(sin(frame * 0.05)) * 255",
-                                "g": "abs(sin(frame * 0.05)) * 255",
-                                "b": "abs(sin(frame * 0.05)) * 255",
-                                "speed": 50
-                            }
-                        }
-                    ]
-                }
-            }
-        ]
-    }
-]
-
-# Conditional rule examples
-CONDITIONAL_EXAMPLES = [
-    {
-        "name": "Counter-based behavior",
-        "description": "Next 5 clicks should be random colors",
-        "previous_state": {"rules": [], "current_state": "off"},
-        "user_input": "Next 5 clicks should be random colors",
-        "expected_tools": [
+                "transition": "button_click",
+                "expected_state": "on",  # Default rule still works (condition might not match)
+                "expected_params": None
+            },
             {
-                "name": "append_rules",
-                "arguments": {
-                    "rules": [
-                        {
-                            "state1": "off",
-                            "transition": "button_click",
-                            "condition": "getData('counter') === undefined",
-                            "action": "setData('counter', 4)",
-                            "state2": "color",
-                            "state2Param": {"r": "random()", "g": "random()", "b": "random()"}
-                        },
-                        {
-                            "state1": "color",
-                            "transition": "button_click",
-                            "condition": "getData('counter') > 0",
-                            "action": "setData('counter', getData('counter') - 1)",
-                            "state2": "color",
-                            "state2Param": {"r": "random()", "g": "random()", "b": "random()"}
-                        },
-                        {
-                            "state1": "color",
-                            "transition": "button_click",
-                            "condition": "getData('counter') === 0",
-                            "state2": "off",
-                            "state2Param": None
-                        }
-                    ]
-                }
+                "transition": "button_click",
+                "expected_state": "off",
+                "expected_params": None
             }
         ]
     },
     {
-        "name": "Time-based rule",
-        "description": "Blue light only after 8pm",
-        "previous_state": {"rules": [], "current_state": "off"},
-        "user_input": "Click for blue light, but only after 8pm",
-        "expected_tools": [
-            {
-                "name": "append_rules",
-                "arguments": {
-                    "rules": [
-                        {
-                            "state1": "off",
-                            "transition": "button_click",
-                            "condition": "time.hour >= 20",
-                            "state2": "color",
-                            "state2Param": {"r": 0, "g": 0, "b": 255}
-                        }
-                    ]
-                }
-            }
+        "name": "Counter-based clicks",
+        "description": "5 clicks should give random colors, then turn off",
+        "previous_state": {
+            "rules": DEFAULT_RULES.copy(),
+            "current_state": "off",
+            "variables": {}
+        },
+        "user_input": "Next 5 clicks should be random colors, then turn off",
+        "test_sequence": [
+            {"transition": "button_click", "expected_state": "color", "expected_params": "any"},  # Click 1
+            {"transition": "button_click", "expected_state": "color", "expected_params": "any"},  # Click 2
+            {"transition": "button_click", "expected_state": "color", "expected_params": "any"},  # Click 3
+            {"transition": "button_click", "expected_state": "color", "expected_params": "any"},  # Click 4
+            {"transition": "button_click", "expected_state": "color", "expected_params": "any"},  # Click 5
+            {"transition": "button_click", "expected_state": "off", "expected_params": None},     # Click 6 - should turn off
         ]
-    }
-]
-
-# Immediate state change examples
-IMMEDIATE_STATE_EXAMPLES = [
+    },
     {
-        "name": "Turn red now",
-        "description": "Immediate state change to red",
-        "previous_state": {"rules": [], "current_state": "off"},
+        "name": "Immediate state change",
+        "description": "Turn red now should change state immediately",
+        "previous_state": {
+            "rules": DEFAULT_RULES.copy(),
+            "current_state": "off",
+            "variables": {}
+        },
         "user_input": "Turn the light red now",
-        "expected_tools": [
+        "test_sequence": [
             {
-                "name": "set_state",
-                "arguments": {
-                    "state": "color",
-                    "params": {"r": 255, "g": 0, "b": 0}
-                }
+                "transition": None,  # No transition, just check current state
+                "expected_state": "color",
+                "expected_params": {"r": 255, "g": 0, "b": 0}
+            },
+            {
+                "transition": "button_click",
+                "expected_state": "off",  # Default rules should still work
+                "expected_params": None
+            }
+        ]
+    },
+    {
+        "name": "Reset to default",
+        "description": "Reset should restore simple on/off",
+        "previous_state": {
+            "rules": [
+                {"state1": "off", "transition": "button_click", "state2": "animation", "state2Param": {"r": "random()", "g": "random()", "b": "random()", "speed": 100}},
+                {"state1": "animation", "transition": "button_click", "state2": "off", "state2Param": None}
+            ],
+            "current_state": "off",
+            "variables": {}
+        },
+        "user_input": "Reset everything back to default",
+        "test_sequence": [
+            {
+                "transition": "button_click",
+                "expected_state": "on",  # Should be on, not animation
+                "expected_params": None
+            },
+            {
+                "transition": "button_click",
+                "expected_state": "off",
+                "expected_params": None
             }
         ]
     }
 ]
 
-# Rule modification examples
-RULE_MODIFICATION_EXAMPLES = [
+# Non-deterministic tests - check properties changed correctly
+NON_DETERMINISTIC_TESTS = [
     {
-        "name": "Change color from blue to red",
-        "description": "Modify existing rule to use different color",
+        "name": "Change color blue to red",
+        "description": "Modify existing click rule to use red instead of blue",
         "previous_state": {
             "rules": [
                 {"state1": "off", "transition": "button_click", "state2": "color", "state2Param": {"r": 0, "g": 0, "b": 255}},
                 {"state1": "color", "transition": "button_click", "state2": "off", "state2Param": None}
             ],
-            "current_state": "off"
+            "current_state": "off",
+            "variables": {}
         },
         "user_input": "Change the click color to red",
-        "expected_tools": [
+        "property_checks": [
             {
-                "name": "delete_rules",
-                "arguments": {"indices": [0]}
-            },
+                "name": "Click now gives red color",
+                "check": lambda before_rules, after_rules, before_state, after_state: (
+                    # Find the off->color rule after modification
+                    any(r.get("state1") == "off" and
+                        r.get("transition") == "button_click" and
+                        r.get("state2") == "color" and
+                        r.get("state2Param", {}).get("r") == 255 and
+                        r.get("state2Param", {}).get("g") == 0 and
+                        r.get("state2Param", {}).get("b") == 0
+                        for r in after_rules)
+                )
+            }
+        ],
+        "test_sequence": [
             {
-                "name": "append_rules",
-                "arguments": {
-                    "rules": [
-                        {"state1": "off", "transition": "button_click", "state2": "color", "state2Param": {"r": 255, "g": 0, "b": 0}}
-                    ]
-                }
+                "transition": "button_click",
+                "expected_state": "color",
+                "expected_params": {"r": 255, "g": 0, "b": 0}  # Should be red now
             }
         ]
     },
     {
-        "name": "Change from click to double click",
-        "description": "Change the transition type",
+        "name": "Make animation faster",
+        "description": "Reduce speed value to make animation faster",
+        "previous_state": {
+            "rules": [
+                {"state1": "off", "transition": "button_click", "state2": "on", "state2Param": None},
+                {"state1": "on", "transition": "button_click", "state2": "off", "state2Param": None},
+                {
+                    "state1": "off",
+                    "transition": "button_hold",
+                    "state2": "animation",
+                    "state2Param": {"r": "(frame * 2) % 256", "g": "abs(sin(frame * 0.1)) * 255", "b": "abs(cos(frame * 0.1)) * 255", "speed": 100}
+                }
+            ],
+            "current_state": "off",
+            "variables": {}
+        },
+        "user_input": "Make the animation faster",
+        "property_checks": [
+            {
+                "name": "Animation speed decreased",
+                "check": lambda before_rules, after_rules, before_state, after_state: (
+                    # Find animation rule before
+                    (before_speed := next((r.get("state2Param", {}).get("speed")
+                                          for r in before_rules
+                                          if r.get("state2") == "animation"), None)) is not None and
+                    # Find animation rule after
+                    (after_speed := next((r.get("state2Param", {}).get("speed")
+                                         for r in after_rules
+                                         if r.get("state2") == "animation"), None)) is not None and
+                    # Speed should be lower (faster)
+                    after_speed < before_speed
+                )
+            }
+        ],
+        "test_sequence": [
+            {
+                "transition": "button_hold",
+                "expected_state": "animation",
+                "expected_params": "any"  # Don't check exact params, property check handles it
+            }
+        ]
+    },
+    {
+        "name": "Change transition type",
+        "description": "Change from click to double click",
         "previous_state": {
             "rules": [
                 {"state1": "off", "transition": "button_click", "state2": "color", "state2Param": {"r": 0, "g": 255, "b": 0}},
                 {"state1": "color", "transition": "button_click", "state2": "off", "state2Param": None}
             ],
-            "current_state": "off"
+            "current_state": "off",
+            "variables": {}
         },
         "user_input": "Change it to double click instead",
-        "expected_tools": [
+        "property_checks": [
             {
-                "name": "delete_rules",
-                "arguments": {"indices": [0, 1]}
+                "name": "Rules use double_click now",
+                "check": lambda before_rules, after_rules, before_state, after_state: (
+                    # Should have double_click rules
+                    any(r.get("transition") == "button_double_click" for r in after_rules) and
+                    # Should not have old single click to color rules (might keep or remove)
+                    not any(r.get("state1") == "off" and
+                           r.get("transition") == "button_click" and
+                           r.get("state2") == "color"
+                           for r in after_rules)
+                )
+            }
+        ],
+        "test_sequence": [
+            {
+                "transition": "button_click",
+                "expected_state": "off",  # Click should no longer work
+                "expected_params": None
             },
             {
-                "name": "append_rules",
-                "arguments": {
-                    "rules": [
-                        {"state1": "off", "transition": "button_double_click", "state2": "color", "state2Param": {"r": 0, "g": 255, "b": 0}},
-                        {"state1": "color", "transition": "button_double_click", "state2": "off", "state2Param": None}
-                    ]
-                }
+                "transition": "button_double_click",
+                "expected_state": "color",  # Double click should work now
+                "expected_params": {"r": 0, "g": 255, "b": 0}
             }
         ]
-    }
-]
-
-# Reset examples
-RESET_EXAMPLES = [
+    },
     {
-        "name": "Reset to default",
-        "description": "Reset everything back to basics",
+        "name": "Set counter variable",
+        "description": "Set a counter to 10",
         "previous_state": {
-            "rules": [
-                {"state1": "off", "transition": "button_click", "state2": "animation", "state2Param": {"r": "random()", "g": "random()", "b": "random()", "speed": 100}},
-                {"state1": "animation", "transition": "button_release", "state2": "off", "state2Param": None}
-            ],
-            "current_state": "off"
+            "rules": DEFAULT_RULES.copy(),
+            "current_state": "off",
+            "variables": {}
         },
-        "user_input": "Reset everything back to default",
-        "expected_tools": [
+        "user_input": "Set a counter variable to 10",
+        "property_checks": [
             {
-                "name": "reset_rules",
-                "arguments": {}
+                "name": "Counter variable is set",
+                "check": lambda before_rules, after_rules, before_state, after_state: (
+                    after_state.get("variables", {}).get("counter") == 10
+                )
             }
-        ]
+        ],
+        "test_sequence": []  # No state transitions to test
     }
 ]
 
 # All example categories
 ALL_EXAMPLES = {
-    "basic_rules": BASIC_RULE_EXAMPLES,
-    "color_manipulation": COLOR_MANIPULATION_EXAMPLES,
-    "animations": ANIMATION_EXAMPLES,
-    "conditionals": CONDITIONAL_EXAMPLES,
-    "immediate_state": IMMEDIATE_STATE_EXAMPLES,
-    "rule_modifications": RULE_MODIFICATION_EXAMPLES,
-    "resets": RESET_EXAMPLES
+    "deterministic": DETERMINISTIC_TESTS,
+    "non_deterministic": NON_DETERMINISTIC_TESTS
 }
