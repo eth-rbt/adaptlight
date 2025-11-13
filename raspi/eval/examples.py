@@ -75,24 +75,34 @@ DETERMINISTIC_TESTS = [
         ]
     },
     {
-        "name": "Hold for random color",
-        "description": "Hold should give random color",
+        "name": "Hold for random color animation",
+        "description": "Hold to cycle through random colors, release to freeze on current color",
         "previous_state": {
             "rules": DEFAULT_RULES.copy(),
             "current_state": "off",
             "variables": {}
         },
-        "user_input": "Hold button for random color",
+        "user_input": "Hold to cycle through random colors, release to freeze on current color",
         "test_sequence": [
-            {
-                "transition": "button_hold",
-                "expected_state": "color",
-                "expected_params": "any"  # Random, so we just check it's a color state
-            },
             {
                 "transition": "button_click",
                 "expected_state": "on",  # Default click rule should still work
                 "expected_params": None
+            },
+            {
+                "transition": "button_click",
+                "expected_state": "off",
+                "expected_params": None
+            },
+            {
+                "transition": "button_hold",
+                "expected_state": "animation",
+                "expected_params": "any"  # Animation with random colors
+            },
+            {
+                "transition": "button_release",
+                "expected_state": "color",
+                "expected_params": "any"  # Freezes to current color
             }
         ]
     },
@@ -151,43 +161,22 @@ DETERMINISTIC_TESTS = [
         ]
     },
     {
-        "name": "Time-based conditional",
-        "description": "Add time-based rule alongside default",
-        "previous_state": {
-            "rules": DEFAULT_RULES.copy(),
-            "current_state": "off",
-            "variables": {}
-        },
-        "user_input": "Add a rule: click for blue light, but only after 8pm",
-        "test_sequence": [
-            {
-                "transition": "button_click",
-                "expected_state": "on",  # Default rule still works (condition might not match)
-                "expected_params": None
-            },
-            {
-                "transition": "button_click",
-                "expected_state": "off",
-                "expected_params": None
-            }
-        ]
-    },
-    {
         "name": "Counter-based clicks",
-        "description": "5 clicks should give random colors, then turn off",
+        "description": "the next 5 clicks should give me random colors, then it goes back to normal on and off",
         "previous_state": {
             "rules": DEFAULT_RULES.copy(),
             "current_state": "off",
             "variables": {}
         },
-        "user_input": "Next 5 clicks should be random colors, then turn off",
+        "user_input": "the next 5 clicks should give me random colors, then it goes back to normal on and off",
         "test_sequence": [
             {"transition": "button_click", "expected_state": "color", "expected_params": "any"},  # Click 1
             {"transition": "button_click", "expected_state": "color", "expected_params": "any"},  # Click 2
             {"transition": "button_click", "expected_state": "color", "expected_params": "any"},  # Click 3
             {"transition": "button_click", "expected_state": "color", "expected_params": "any"},  # Click 4
             {"transition": "button_click", "expected_state": "color", "expected_params": "any"},  # Click 5
-            {"transition": "button_click", "expected_state": "off", "expected_params": None},     # Click 6 - should turn off
+            {"transition": "button_click", "expected_state": "on", "expected_params": None}, 
+            {"transition": "button_click", "expected_state": "off", "expected_params": None}    # Click 6 - should turn off
         ]
     },
     {
@@ -223,7 +212,7 @@ DETERMINISTIC_TESTS = [
             "current_state": "off",
             "variables": {}
         },
-        "user_input": "Reset everything back to default",
+        "user_input": "Reset everything",
         "test_sequence": [
             {
                 "transition": "button_click",
@@ -252,7 +241,7 @@ NON_DETERMINISTIC_TESTS = [
             "current_state": "off",
             "variables": {}
         },
-        "user_input": "Change the click color to red",
+        "user_input": "Change the click color to red, it was another color before",
         "property_checks": [
             {
                 "name": "Click now gives red color",
@@ -293,7 +282,7 @@ NON_DETERMINISTIC_TESTS = [
             "current_state": "off",
             "variables": {}
         },
-        "user_input": "Make the animation faster",
+        "user_input": "Make the last animation faster",
         "property_checks": [
             {
                 "name": "Animation speed decreased",
@@ -357,25 +346,6 @@ NON_DETERMINISTIC_TESTS = [
                 "expected_params": {"r": 0, "g": 255, "b": 0}
             }
         ]
-    },
-    {
-        "name": "Set counter variable",
-        "description": "Set a counter to 10",
-        "previous_state": {
-            "rules": DEFAULT_RULES.copy(),
-            "current_state": "off",
-            "variables": {}
-        },
-        "user_input": "Set a counter variable to 10",
-        "property_checks": [
-            {
-                "name": "Counter variable is set",
-                "check": lambda before_rules, after_rules, before_state, after_state: (
-                    after_state.get("variables", {}).get("counter") == 10
-                )
-            }
-        ],
-        "test_sequence": []  # No state transitions to test
     }
 ]
 

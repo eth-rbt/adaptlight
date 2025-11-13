@@ -29,12 +29,14 @@ class CommandParser:
         try:
             from openai import OpenAI
             self.client = OpenAI(api_key=api_key)
-            print("CommandParser initialized with OpenAI GPT-5")
+            print("CommandParser initialized with OpenAI GPT-5-nano")
         except ImportError:
             self.client = None
             print("Warning: OpenAI library not available")
 
-        # Define tool schemas for GPT-5 function calling with strict validation
+        # No longer using function calling - using JSON output instead
+        # Keeping tool definitions commented out for reference
+        """
         self.tools = [
             {
                 "type": "function",
@@ -221,6 +223,7 @@ class CommandParser:
                 }
             }
         ]
+        """
 
     def parse_command(self, user_input: str, available_states: str,
                      available_transitions: List[Dict], current_rules: List[Dict],
@@ -245,7 +248,7 @@ class CommandParser:
         """
         if not self.client:
             print("OpenAI client not available")
-            return {'toolCalls': [], 'message': None, 'success': False}
+            return {'toolCalls': [], 'message': None, 'reasoning': None, 'success': False}
 
         # Build dynamic content for the prompt
         dynamic_content = self._build_dynamic_content(
@@ -253,49 +256,256 @@ class CommandParser:
             current_state, global_variables or {}
         )
 
-        # Load the parsing prompt (use full version with examples)
-        from prompts.parsing_prompt import get_system_prompt
+        # Load the parsing prompt (use concise version)
+        from prompts.parsing_prompt import get_system_prompt  # Full version with examples
         # from prompts.parsing_prompt_concise import get_system_prompt  # Shorter version
         system_prompt = get_system_prompt(dynamic_content)
 
+        # Define JSON schema for structured outputs
+        json_schema = {
+            "type": "object",
+            "properties": {
+                "setState": {
+                    "anyOf": [
+                        {"type": "null"},
+                        {
+                            "type": "object",
+                            "properties": {
+                                "state": {
+                                    "type": "string",
+                                    "enum": ["off", "on", "color", "animation"]
+                                },
+                                "params": {
+                                    "anyOf": [
+                                        {"type": "null"},
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "r": {"type": ["number", "string"]},
+                                                "g": {"type": ["number", "string"]},
+                                                "b": {"type": ["number", "string"]}
+                                            },
+                                            "required": ["r", "g", "b"],
+                                            "additionalProperties": False
+                                        }
+                                    ]
+                                }
+                            },
+                            "required": ["state", "params"],
+                            "additionalProperties": False
+                        }
+                    ]
+                },
+                "appendRules": {
+                    "anyOf": [
+                        {"type": "null"},
+                        {
+                            "type": "object",
+                            "properties": {
+                                "rules": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "state1": {
+                                                "type": "string",
+                                                "enum": ["off", "on", "color", "animation"]
+                                            },
+                                            "transition": {
+                                                "type": "string",
+                                                "enum": ["button_click", "button_double_click", "button_hold", "button_release", "voice_command"]
+                                            },
+                                            "state2": {
+                                                "type": "string",
+                                                "enum": ["off", "on", "color", "animation"]
+                                            },
+                                            "state2Param": {
+                                                "anyOf": [
+                                                    {"type": "null"},
+                                                    {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "r": {"type": ["number", "string"]},
+                                                            "g": {"type": ["number", "string"]},
+                                                            "b": {"type": ["number", "string"]},
+                                                            "speed": {"type": ["number", "null"]}
+                                                        },
+                                                        "required": ["r", "g", "b", "speed"],
+                                                        "additionalProperties": False
+                                                    }
+                                                ]
+                                            },
+                                            "condition": {"type": ["string", "null"]},
+                                            "action": {"type": ["string", "null"]}
+                                        },
+                                        "required": ["state1", "transition", "state2", "state2Param", "condition", "action"],
+                                        "additionalProperties": False
+                                    }
+                                }
+                            },
+                            "required": ["rules"],
+                            "additionalProperties": False
+                        }
+                    ]
+                },
+                "deleteRules": {
+                    "anyOf": [
+                        {"type": "null"},
+                        {
+                            "type": "object",
+                            "properties": {
+                                "transition": {"type": ["string", "null"]},
+                                "state1": {"type": ["string", "null"]},
+                                "state2": {"type": ["string", "null"]},
+                                "indices": {
+                                    "anyOf": [
+                                        {"type": "null"},
+                                        {
+                                            "type": "array",
+                                            "items": {"type": "number"}
+                                        }
+                                    ]
+                                },
+                                "delete_all": {"type": ["boolean", "null"]}
+                            },
+                            "required": ["transition", "state1", "state2", "indices", "delete_all"],
+                            "additionalProperties": False
+                        }
+                    ]
+                }
+            },
+            "required": ["setState", "appendRules", "deleteRules"],
+            "additionalProperties": False
+        }
+
         try:
-            # Call GPT-5 API using responses.create with reasoning padding
-            print(f"Calling OpenAI API with model: gpt-5")
+            # Call GPT-5-nano API using responses.create with Structured Outputs
+            print(f"Calling OpenAI API with model: gpt-5-nano (Structured Outputs)")
             response = self.client.responses.create(
-                model="gpt-5",
-                tools=self.tools,
+                model="gpt-5-nano",
                 input=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_input}
                 ],
-                reasoning={"effort": "low"},  # Low effort for faster responses
-                text={"verbosity": "low"}
+                reasoning={"effort": "medium"},
+                text={
+                    "format": {
+                        "type": "json_schema",
+                        "name": "command_response",
+                        "schema": json_schema,
+                        "strict": True
+                    }
+                }
             )
 
-            # Process the output (matching server.js processing)
+            # Extract text output (should be JSON)
+            text_output = None
+            for item in response.output:
+                if item.type == "text":
+                    text_output = item.text
+                    break
+                elif item.type == "message":
+                    # For structured outputs, text is in message.content[0].text
+                    if item.content and len(item.content) > 0:
+                        text_output = item.content[0].text
+                        break
+
+            if not text_output:
+                print("Error: No text output from API")
+                return {'toolCalls': [], 'message': None, 'reasoning': None, 'success': False}
+
+            # Parse JSON output
+            # Clean up potential markdown code blocks
+            json_text = text_output.strip()
+            if json_text.startswith("```json"):
+                json_text = json_text[7:]  # Remove ```json
+            if json_text.startswith("```"):
+                json_text = json_text[3:]  # Remove ```
+            if json_text.endswith("```"):
+                json_text = json_text[:-3]  # Remove trailing ```
+            json_text = json_text.strip()
+
+            try:
+                parsed = json.loads(json_text)
+            except json.JSONDecodeError as e:
+                print(f"Error parsing JSON: {e}")
+                print(f"Raw output: {text_output}")
+                return {'toolCalls': [], 'message': None, 'reasoning': None, 'success': False}
+
+            # Store raw JSON for debugging
+            print(f"Parsed JSON: {json.dumps(parsed, indent=2)}")
+
+            # Clean up the JSON before converting to tool calls
+            # Remove speed field from state2Param if it's null (for color states)
+            def cleanup_json(data):
+                """Remove null speed fields from state2Param objects"""
+                if isinstance(data, dict):
+                    # Clean appendRules
+                    if data.get('appendRules') and data['appendRules'].get('rules'):
+                        for rule in data['appendRules']['rules']:
+                            if rule.get('state2Param') and isinstance(rule['state2Param'], dict):
+                                if rule['state2Param'].get('speed') is None:
+                                    del rule['state2Param']['speed']
+
+                    # Clean setState params (though it shouldn't have speed)
+                    if data.get('setState') and data['setState'].get('params') and isinstance(data['setState']['params'], dict):
+                        if data['setState']['params'].get('speed') is None:
+                            del data['setState']['params']['speed']
+
+                    # Clean deleteRules - remove null fields
+                    if data.get('deleteRules') and isinstance(data['deleteRules'], dict):
+                        # Remove all null fields from deleteRules
+                        data['deleteRules'] = {k: v for k, v in data['deleteRules'].items() if v is not None}
+                        # If deleteRules becomes empty, set it to None
+                        if not data['deleteRules']:
+                            data['deleteRules'] = None
+
+                return data
+
+            parsed = cleanup_json(parsed)
+
+            # Convert JSON to toolCalls format for compatibility with eval script
             results = {
                 'toolCalls': [],
                 'message': None,
+                'reasoning': None,
+                'rawJson': parsed,  # Store raw JSON for inspection
                 'success': True
             }
 
-            # Extract function calls and text from the output
-            for item in response.output:
-                if item.type == "function_call":
-                    args = json.loads(item.arguments)
-                    results['toolCalls'].append({
-                        'id': item.call_id,
-                        'name': item.name,
-                        'arguments': args
-                    })
-                elif item.type == "text":
-                    results['message'] = item.text
+            # CRITICAL: Execute in correct order!
+            # 1. setState first (immediate change)
+            # 2. deleteRules second (remove old rules)
+            # 3. appendRules third (add new rules)
+            # This prevents deleting newly added rules!
 
-            # Add to conversation history with actions taken
+            if parsed.get('setState'):
+                results['toolCalls'].append({
+                    'id': 'set_state_1',
+                    'name': 'set_state',
+                    'arguments': parsed['setState']
+                })
+
+            if parsed.get('deleteRules'):
+                results['toolCalls'].append({
+                    'id': 'delete_rules_1',
+                    'name': 'delete_rules',
+                    'arguments': parsed['deleteRules']
+                })
+
+            if parsed.get('appendRules'):
+                results['toolCalls'].append({
+                    'id': 'append_rules_1',
+                    'name': 'append_rules',
+                    'arguments': parsed['appendRules']
+                })
+
+            # Add to conversation history with JSON action
             history_entry = {
                 'input': user_input,
-                'toolCalls': results.get('toolCalls', []),
-                'message': results.get('message')
+                'json': parsed,  # Store the actual JSON output
+                'state': current_state,  # Store state at time of command
+                'rules': current_rules  # Store rules at time of command
             }
             self.conversation_history.append(history_entry)
             if len(self.conversation_history) > self.max_history:
@@ -307,7 +517,7 @@ class CommandParser:
             print(f"Error parsing command: {e}")
             import traceback
             traceback.print_exc()
-            return {'toolCalls': [], 'message': None, 'success': False}
+            return {'toolCalls': [], 'message': None, 'reasoning': None, 'success': False}
 
     def _build_dynamic_content(self, available_states: str,
                               available_transitions: List[Dict],
@@ -342,51 +552,34 @@ class CommandParser:
                 content += f"- {key}: {json.dumps(value)}\n"
             content += "\n"
 
-        # Conversation history with actions taken
+        # Conversation history with previous state, comment, and JSON action
         if self.conversation_history:
-            content += "### Past User Inputs (with actions taken)\n"
+            content += "### Conversation History\n"
             for i, entry in enumerate(self.conversation_history, 1):
-                # Add the user input
                 if isinstance(entry, dict):
-                    content += f"{i}. User: \"{entry['input']}\"\n"
+                    content += f"\n**Turn {i}:**\n"
 
-                    # Add AI message if present
-                    if entry.get('message'):
-                        content += f"   AI: {entry['message']}\n"
+                    # Show previous state
+                    prev_state = entry.get('state', 'unknown')
+                    content += f"Previous State: {prev_state}\n"
 
-                    # Add tool calls executed
-                    if entry.get('toolCalls'):
-                        content += f"   Actions taken:\n"
-                        for tc in entry['toolCalls']:
-                            tool_name = tc.get('name', 'unknown')
-                            args = tc.get('arguments', {})
+                    # Show previous rules (abbreviated)
+                    prev_rules = entry.get('rules', [])
+                    if prev_rules:
+                        content += f"Previous Rules:\n"
+                        for idx, rule in enumerate(prev_rules):
+                            content += f"  [{idx}] {rule['state1']} --[{rule['transition']}]--> {rule['state2']}\n"
+                    else:
+                        content += "Previous Rules: None\n"
 
-                            # Format action description
-                            if tool_name == 'append_rules':
-                                rule_count = len(args.get('rules', []))
-                                content += f"   - Added {rule_count} rule(s)\n"
-                            elif tool_name == 'delete_rules':
-                                if args.get('delete_all'):
-                                    content += f"   - Deleted all rules\n"
-                                elif args.get('indices'):
-                                    content += f"   - Deleted rules at indices {args['indices']}\n"
-                                else:
-                                    content += f"   - Deleted rules matching criteria\n"
-                            elif tool_name == 'set_state':
-                                content += f"   - Changed state to {args.get('state')}\n"
-                            elif tool_name == 'manage_variables':
-                                action = args.get('action')
-                                if action == 'set':
-                                    var_count = len(args.get('variables', {}))
-                                    content += f"   - Set {var_count} variable(s)\n"
-                                elif action == 'delete':
-                                    content += f"   - Deleted variables\n"
-                                elif action == 'clear_all':
-                                    content += f"   - Cleared all variables\n"
-                            elif tool_name == 'reset_rules':
-                                content += f"   - Reset rules to default (on/off toggle)\n"
+                    # Show user comment
+                    content += f"User: \"{entry['input']}\"\n"
+
+                    # Show JSON action taken
+                    if entry.get('json'):
+                        content += f"Action JSON:\n```json\n{json.dumps(entry['json'], indent=2)}\n```\n"
                 else:
-                    # Legacy format (just string)
+                    # Legacy format
                     content += f"{i}. \"{entry}\"\n"
             content += "\n"
 

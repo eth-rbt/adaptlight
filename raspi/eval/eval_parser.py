@@ -250,11 +250,20 @@ class ParserEvaluator:
                 print("❌ FAILED: Parser returned success=False")
                 return {"passed": False, "reason": "Parser failed"}
 
+            # Print raw JSON output
+            print("\n" + "="*60)
+            if result.get('rawJson'):
+                print(f"📄 JSON OUTPUT:")
+                print(json.dumps(result['rawJson'], indent=2))
+            else:
+                print(f"⚠️  NO JSON OUTPUT")
+            print("="*60)
+
             # Execute tool calls to get final rules
             mock_sm = MockStateMachine(current_rules, current_state, variables)
 
             tool_calls = result.get('toolCalls', [])
-            print(f"\nExecuting {len(tool_calls)} tool call(s)")
+            print(f"\n⚙️  TOOL CALLS: {len(tool_calls)} call(s)")
             for tool_call in tool_calls:
                 tool_name = tool_call['name']
                 tool_args = tool_call['arguments']
@@ -364,10 +373,19 @@ class ParserEvaluator:
                 print("❌ FAILED: Parser returned success=False")
                 return {"passed": False, "reason": "Parser failed"}
 
+            # Print raw JSON output
+            print("\n" + "="*60)
+            if result.get('rawJson'):
+                print(f"📄 JSON OUTPUT:")
+                print(json.dumps(result['rawJson'], indent=2))
+            else:
+                print(f"⚠️  NO JSON OUTPUT")
+            print("="*60)
+
             # Execute tool calls
             mock_sm = MockStateMachine(current_rules, current_state, variables)
             tool_calls = result.get('toolCalls', [])
-            print(f"\nExecuting {len(tool_calls)} tool call(s)")
+            print(f"\n⚙️  TOOL CALLS: {len(tool_calls)} call(s)")
             for tool_call in tool_calls:
                 tool_name = tool_call['name']
                 tool_args = tool_call['arguments']
