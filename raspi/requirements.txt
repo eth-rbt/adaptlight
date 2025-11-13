@@ -24,6 +24,7 @@ pyaudio==0.2.14          # Audio capture
 sounddevice==0.4.6       # Alternative audio interface
 vosk==0.3.45             # Offline speech recognition (optional)
 numpy>=1.26.2            # Numerical operations for audio processing
+pygame>=2.5.0            # Audio playback for feedback sounds
 
 # Speech-to-Text providers (optional - only install what you need)
 google-cloud-speech      # Google Speech-to-Text API

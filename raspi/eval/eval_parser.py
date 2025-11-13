@@ -42,16 +42,19 @@ class RuleExecutor:
             # No transition, just return current state
             return self.current_state, self.state_params
 
-        # Find matching rule
+        # Find matching rule (checks in order, first match wins)
         matching_rule = None
         for rule in self.rules:
             if rule.get("state1") == self.current_state and rule.get("transition") == transition:
                 # Check condition if present
-                if rule.get("condition"):
-                    # Skip condition evaluation for now (would need full eval context)
-                    # Assume condition passes
-                    pass
+                condition = rule.get("condition")
+                if condition:
+                    # Simple condition evaluation for counter tests
+                    if not self._evaluate_condition(condition):
+                        # Condition failed, try next rule
+                        continue
 
+                # Found matching rule with passing condition (or no condition)
                 matching_rule = rule
                 break
 
@@ -61,13 +64,15 @@ class RuleExecutor:
 
         # Execute action if present
         if matching_rule.get("action"):
-            # Would need full eval context to execute
-            # For now, just handle simple setData calls for counter tests
+            # Handle simple setData calls for counter tests
             action = matching_rule.get("action")
             if "setData" in action and "counter" in action:
                 # Simple parsing for counter actions
                 if "setData('counter', 4)" in action or 'setData("counter", 4)' in action:
                     self.variables["counter"] = 4
+                elif "setData('counter', undefined)" in action or 'setData("counter", undefined)' in action:
+                    # Remove counter variable
+                    self.variables.pop("counter", None)
                 elif "getData('counter') - 1" in action:
                     if "counter" in self.variables:
                         self.variables["counter"] -= 1
@@ -97,6 +102,32 @@ class RuleExecutor:
 
         return self.current_state, self.state_params
 
+    def _evaluate_condition(self, condition):
+        """
+        Evaluate a condition expression.
+
+        For testing purposes, handles basic counter conditions:
+        - getData('counter') === undefined
+        - getData('counter') > 0
+        - getData('counter') === 0
+        """
+        counter_value = self.variables.get('counter')
+
+        # Handle getData('counter') === undefined
+        if "getData('counter') === undefined" in condition or 'getData("counter") === undefined' in condition:
+            return counter_value is None
+
+        # Handle getData('counter') === 0
+        if "getData('counter') === 0" in condition or 'getData("counter") === 0' in condition:
+            return counter_value == 0
+
+        # Handle getData('counter') > 0
+        if "getData('counter') > 0" in condition or 'getData("counter") > 0' in condition:
+            return counter_value is not None and counter_value > 0
+
+        # Default: assume condition passes (for non-counter conditions)
+        return True
+
     def get_state(self):
         """Get current state as dict."""
         return {
@@ -119,13 +150,20 @@ class MockStateMachine:
     def execute_tool(self, tool_name, args):
         """Execute a tool call and update state."""
         if tool_name == 'append_rules':
-            # Add rules to the list
+            # Add rules to the TOP of the list (prepend)
+            # New rules are checked first, allowing them to override/layer on defaults
             new_rules = args.get('rules', [])
-            self.rules.extend(new_rules)
+            self.rules = new_rules + self.rules
 
         elif tool_name == 'delete_rules':
             # Delete rules based on criteria
-            if args.get('delete_all'):
+            if args.get('reset_rules'):
+                # Reset to default on/off toggle rules
+                self.rules = [
+                    {"state1": "off", "transition": "button_click", "state2": "on", "state2Param": None, "condition": None, "action": None},
+                    {"state1": "on", "transition": "button_click", "state2": "off", "state2Param": None, "condition": None, "action": None}
+                ]
+            elif args.get('delete_all'):
                 self.rules = []
             elif args.get('indices'):
                 # Delete by indices (reverse order to avoid index shifting)
@@ -250,15 +288,6 @@ class ParserEvaluator:
                 print("❌ FAILED: Parser returned success=False")
                 return {"passed": False, "reason": "Parser failed"}
 
-            # Print raw JSON output
-            print("\n" + "="*60)
-            if result.get('rawJson'):
-                print(f"📄 JSON OUTPUT:")
-                print(json.dumps(result['rawJson'], indent=2))
-            else:
-                print(f"⚠️  NO JSON OUTPUT")
-            print("="*60)
-
             # Execute tool calls to get final rules
             mock_sm = MockStateMachine(current_rules, current_state, variables)
 
@@ -267,13 +296,16 @@ class ParserEvaluator:
             for tool_call in tool_calls:
                 tool_name = tool_call['name']
                 tool_args = tool_call['arguments']
-                print(f"  - {tool_name}({json.dumps(tool_args, indent=4)})")
+                print(f"  - {tool_name}({json.dumps(tool_args)})")
                 mock_sm.execute_tool(tool_name, tool_args)
 
             final_state = mock_sm.get_state()
 
-            # Now execute test sequence using the rules
-            print(f"\nExecuting {len(example['test_sequence'])} transition(s):")
+            # Print final rules
+            print(f"\n📋 RULES AFTER TOOL CALLS ({len(final_state['rules'])} rules):")
+            for idx, rule in enumerate(final_state['rules']):
+                cond = f" [if {rule['condition']}]" if rule.get('condition') else ""
+                print(f"  [{idx}] {rule['state1']} --[{rule['transition']}]--> {rule['state2']}{cond}")
 
             executor = RuleExecutor(
                 final_state['rules'],
@@ -287,17 +319,12 @@ class ParserEvaluator:
                 expected_state = step.get('expected_state')
                 expected_params = step.get('expected_params')
 
-                if transition:
-                    print(f"  [{i}] Execute: {transition}")
-                else:
-                    print(f"  [{i}] Check current state")
-
                 # Execute transition
                 actual_state, actual_params = executor.execute_transition(transition)
 
                 # Check state
                 if actual_state != expected_state:
-                    print(f"    ❌ State mismatch: expected '{expected_state}', got '{actual_state}'")
+                    print(f"\n❌ Step {i} FAILED: expected state '{expected_state}', got '{actual_state}'")
                     return {
                         "passed": False,
                         "reason": f"Step {i}: State mismatch (expected {expected_state}, got {actual_state})"
@@ -306,13 +333,11 @@ class ParserEvaluator:
                 # Check params
                 if expected_params != "any":
                     if expected_params != actual_params:
-                        print(f"    ❌ Params mismatch: expected {expected_params}, got {actual_params}")
+                        print(f"\n❌ Step {i} FAILED: params mismatch")
                         return {
                             "passed": False,
                             "reason": f"Step {i}: Params mismatch"
                         }
-
-                print(f"    ✓ State: {actual_state}, Params: {actual_params if expected_params != 'any' else '(any)'}")
 
             print("\n✅ PASSED")
             return {"passed": True}
@@ -373,15 +398,6 @@ class ParserEvaluator:
                 print("❌ FAILED: Parser returned success=False")
                 return {"passed": False, "reason": "Parser failed"}
 
-            # Print raw JSON output
-            print("\n" + "="*60)
-            if result.get('rawJson'):
-                print(f"📄 JSON OUTPUT:")
-                print(json.dumps(result['rawJson'], indent=2))
-            else:
-                print(f"⚠️  NO JSON OUTPUT")
-            print("="*60)
-
             # Execute tool calls
             mock_sm = MockStateMachine(current_rules, current_state, variables)
             tool_calls = result.get('toolCalls', [])
@@ -389,7 +405,7 @@ class ParserEvaluator:
             for tool_call in tool_calls:
                 tool_name = tool_call['name']
                 tool_args = tool_call['arguments']
-                print(f"  - {tool_name}({json.dumps(tool_args, indent=4)})")
+                print(f"  - {tool_name}({json.dumps(tool_args)})")
                 mock_sm.execute_tool(tool_name, tool_args)
 
             final_state = mock_sm.get_state()
@@ -400,27 +416,27 @@ class ParserEvaluator:
                 "variables": final_state['variables']
             }
 
+            # Print final rules
+            print(f"\n📋 RULES AFTER TOOL CALLS ({len(after_rules)} rules):")
+            for idx, rule in enumerate(after_rules):
+                cond = f" [if {rule['condition']}]" if rule.get('condition') else ""
+                print(f"  [{idx}] {rule['state1']} --[{rule['transition']}]--> {rule['state2']}{cond}")
+
             # Run property checks
-            print(f"\nRunning {len(example['property_checks'])} property check(s):")
             for prop_check in example['property_checks']:
                 check_name = prop_check['name']
                 check_func = prop_check['check']
 
-                print(f"  - {check_name}")
-
                 try:
                     passed = check_func(before_rules, after_rules, before_state, after_state)
                     if not passed:
-                        print(f"    ❌ Property check failed")
-                        print(f"\n    Before rules: {json.dumps(before_rules, indent=6)}")
-                        print(f"\n    After rules: {json.dumps(after_rules, indent=6)}")
+                        print(f"\n❌ Property check FAILED: {check_name}")
                         return {
                             "passed": False,
                             "reason": f"Property check failed: {check_name}"
                         }
-                    print(f"    ✓ Passed")
                 except Exception as e:
-                    print(f"    ❌ Error in property check: {e}")
+                    print(f"\n❌ Property check ERROR: {check_name} - {e}")
                     return {
                         "passed": False,
                         "reason": f"Property check error: {check_name} - {e}"
@@ -428,8 +444,6 @@ class ParserEvaluator:
 
             # Execute test sequence if present
             if example.get('test_sequence'):
-                print(f"\nExecuting {len(example['test_sequence'])} transition(s):")
-
                 executor = RuleExecutor(
                     after_rules,
                     after_state['state'],
@@ -442,24 +456,21 @@ class ParserEvaluator:
                     expected_state = step.get('expected_state')
                     expected_params = step.get('expected_params')
 
-                    print(f"  [{i}] Execute: {transition}")
                     actual_state, actual_params = executor.execute_transition(transition)
 
                     if actual_state != expected_state:
-                        print(f"    ❌ State mismatch: expected '{expected_state}', got '{actual_state}'")
+                        print(f"\n❌ Step {i} FAILED: expected state '{expected_state}', got '{actual_state}'")
                         return {
                             "passed": False,
                             "reason": f"Step {i}: State mismatch"
                         }
 
                     if expected_params != "any" and expected_params != actual_params:
-                        print(f"    ❌ Params mismatch")
+                        print(f"\n❌ Step {i} FAILED: params mismatch")
                         return {
                             "passed": False,
                             "reason": f"Step {i}: Params mismatch"
                         }
-
-                    print(f"    ✓ State: {actual_state}")
 
             print("\n✅ PASSED")
             return {"passed": True}

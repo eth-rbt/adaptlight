@@ -327,6 +327,16 @@ class CommandParser:
                                                         "properties": {
                                                             "r": {"type": ["number", "string"]},
                                                             "g": {"type": ["number", "string"]},
+                                                            "b": {"type": ["number", "string"]}
+                                                        },
+                                                        "required": ["r", "g", "b"],
+                                                        "additionalProperties": False
+                                                    },
+                                                    {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "r": {"type": ["number", "string"]},
+                                                            "g": {"type": ["number", "string"]},
                                                             "b": {"type": ["number", "string"]},
                                                             "speed": {"type": ["number", "null"]}
                                                         },
@@ -366,9 +376,10 @@ class CommandParser:
                                         }
                                     ]
                                 },
-                                "delete_all": {"type": ["boolean", "null"]}
+                                "delete_all": {"type": ["boolean", "null"]},
+                                "reset_rules": {"type": ["boolean", "null"]}
                             },
-                            "required": ["transition", "state1", "state2", "indices", "delete_all"],
+                            "required": ["transition", "state1", "state2", "indices", "delete_all", "reset_rules"],
                             "additionalProperties": False
                         }
                     ]
@@ -444,12 +455,14 @@ class CommandParser:
                     if data.get('appendRules') and data['appendRules'].get('rules'):
                         for rule in data['appendRules']['rules']:
                             if rule.get('state2Param') and isinstance(rule['state2Param'], dict):
-                                if rule['state2Param'].get('speed') is None:
+                                # Only delete if key exists and value is None
+                                if 'speed' in rule['state2Param'] and rule['state2Param']['speed'] is None:
                                     del rule['state2Param']['speed']
 
                     # Clean setState params (though it shouldn't have speed)
                     if data.get('setState') and data['setState'].get('params') and isinstance(data['setState']['params'], dict):
-                        if data['setState']['params'].get('speed') is None:
+                        # Only delete if key exists and value is None
+                        if 'speed' in data['setState']['params'] and data['setState']['params']['speed'] is None:
                             del data['setState']['params']['speed']
 
                     # Clean deleteRules - remove null fields
