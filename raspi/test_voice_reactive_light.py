@@ -14,6 +14,22 @@ Press Ctrl+C to exit.
 import sys
 import time
 import numpy as np
+import os
+from contextlib import contextmanager
+
+# Context manager to suppress ALSA error messages
+@contextmanager
+def suppress_alsa_errors():
+    """Temporarily redirect stderr to suppress ALSA warnings."""
+    devnull = os.open(os.devnull, os.O_WRONLY)
+    old_stderr = os.dup(2)
+    os.dup2(devnull, 2)
+    os.close(devnull)
+    try:
+        yield
+    finally:
+        os.dup2(old_stderr, 2)
+        os.close(old_stderr)
 
 try:
     import pyaudio
@@ -44,30 +60,44 @@ class VoiceReactiveLightTest:
         # Amplitude settings
         self.min_amplitude = 100  # Minimum RMS to register (noise floor)
         self.max_amplitude = 5000  # Maximum RMS for full brightness
-        self.smoothing_factor = 0.3  # Smoothing for less jittery response
+        self.smoothing_alpha = 0.15  # Alpha for exponential smoothing (lower = smoother)
         self.current_brightness = 0
+        self.current_rms = 0  # Smoothed RMS value
 
         self._select_audio_device()
 
     def _select_audio_device(self):
         """Auto-select USB audio device."""
         try:
-            p = pyaudio.PyAudio()
+            with suppress_alsa_errors():
+                p = pyaudio.PyAudio()
 
-            # Look for USB device
+            # Look for USB device (prioritize USB Audio or similar)
             for i in range(p.get_device_count()):
                 info = p.get_device_info_by_index(i)
                 if info['maxInputChannels'] > 0:
                     device_name = info['name'].lower()
-                    if 'usb' in device_name or 'pnp' in device_name:
+                    # Look for USB Audio Device or USB PnP Sound Device
+                    if 'usb' in device_name and 'audio' in device_name:
                         self.selected_device = i
                         self.rate = int(info['defaultSampleRate'])
-                        print(f"Selected audio device: [{i}] {info['name']}")
-                        print(f"Sample rate: {self.rate} Hz")
+                        print(f"✓ Using USB microphone: {info['name']} ({self.rate} Hz)")
                         break
 
+            # Fallback to any USB device
             if self.selected_device is None:
-                print("No USB audio device found, using default input")
+                for i in range(p.get_device_count()):
+                    info = p.get_device_info_by_index(i)
+                    if info['maxInputChannels'] > 0:
+                        device_name = info['name'].lower()
+                        if 'usb' in device_name or 'pnp' in device_name:
+                            self.selected_device = i
+                            self.rate = int(info['defaultSampleRate'])
+                            print(f"✓ Using USB device: {info['name']} ({self.rate} Hz)")
+                            break
+
+            if self.selected_device is None:
+                print("⚠ No USB audio device found, using default input")
 
             p.terminate()
         except Exception as e:
@@ -91,9 +121,24 @@ class VoiceReactiveLightTest:
 
         return rms
 
+    def smooth_value(self, new_value, current_value):
+        """
+        Apply exponential smoothing (alpha window).
+
+        Formula: smoothed = alpha * new + (1 - alpha) * current
+
+        Args:
+            new_value: New incoming value
+            current_value: Current smoothed value
+
+        Returns:
+            Smoothed value
+        """
+        return self.smoothing_alpha * new_value + (1 - self.smoothing_alpha) * current_value
+
     def map_amplitude_to_brightness(self, rms):
         """
-        Map RMS amplitude to LED brightness (0-255).
+        Map RMS amplitude to LED brightness (0-255) with double smoothing.
 
         Args:
             rms: RMS amplitude value
@@ -101,18 +146,18 @@ class VoiceReactiveLightTest:
         Returns:
             Brightness value (0-255)
         """
+        # First smooth the RMS value itself
+        self.current_rms = self.smooth_value(rms, self.current_rms)
+
         # Clamp RMS to range
-        clamped_rms = max(self.min_amplitude, min(rms, self.max_amplitude))
+        clamped_rms = max(self.min_amplitude, min(self.current_rms, self.max_amplitude))
 
         # Map to 0-255 range
         normalized = (clamped_rms - self.min_amplitude) / (self.max_amplitude - self.min_amplitude)
         brightness = int(normalized * 255)
 
-        # Apply smoothing to reduce jitter
-        smoothed_brightness = int(
-            self.smoothing_factor * brightness +
-            (1 - self.smoothing_factor) * self.current_brightness
-        )
+        # Apply additional smoothing to brightness
+        smoothed_brightness = int(self.smooth_value(brightness, self.current_brightness))
 
         self.current_brightness = smoothed_brightness
 
@@ -133,17 +178,18 @@ class VoiceReactiveLightTest:
         print("="*60 + "\n")
 
         try:
-            p = pyaudio.PyAudio()
+            with suppress_alsa_errors():
+                p = pyaudio.PyAudio()
 
-            # Open audio stream
-            stream = p.open(
-                format=self.format,
-                channels=self.channels,
-                rate=self.rate,
-                input=True,
-                input_device_index=self.selected_device,
-                frames_per_buffer=self.chunk
-            )
+                    # Open audio stream
+                stream = p.open(
+                    format=self.format,
+                    channels=self.channels,
+                    rate=self.rate,
+                    input=True,
+                    input_device_index=self.selected_device,
+                    frames_per_buffer=self.chunk
+                )
 
             print("Listening... (speak now!)\n")
 

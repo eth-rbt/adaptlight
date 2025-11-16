@@ -24,6 +24,7 @@ from states.light_states import initialize_default_states, initialize_default_ru
 from voice.voice_input import VoiceInput
 from voice.command_parser import CommandParser
 from voice.audio_player import AudioPlayer
+from voice.voice_reactive_light import VoiceReactiveLight
 from event_logging.event_logger import EventLogger
 from event_logging.log_manager import LogManager
 from event_logging.aws_uploader import AWSUploader
@@ -58,6 +59,7 @@ class AdaptLight:
         self.log_manager = None
         self.aws_uploader = None
         self.is_recording = False
+        self.voice_reactive = None
 
         # Setup signal handlers for graceful shutdown
         signal.signal(signal.SIGINT, self.signal_handler)
@@ -196,6 +198,14 @@ class AdaptLight:
             # Initialize audio player for feedback sounds
             print("- Audio player")
             self.audio_player = AudioPlayer()
+
+            # Initialize voice reactive light
+            print("- Voice reactive light")
+            self.voice_reactive = VoiceReactiveLight(
+                led_controller=self.led_controller,
+                color=(0, 255, 0),  # Green for voice input
+                smoothing_alpha=0.15  # Smooth but responsive
+            )
 
         print("\nInitialization complete!")
 
@@ -481,9 +491,9 @@ class AdaptLight:
             print("\nStopping recording...")
             self.is_recording = False
 
-            # Stop recording animation
-            if self.led_controller:
-                self.led_controller.stop_recording_animation()
+            # Stop voice reactive light
+            if self.voice_reactive:
+                self.voice_reactive.stop()
 
             # Stop recording and transcribe
             transcribed_text = self.voice_input.stop_recording()
@@ -494,12 +504,13 @@ class AdaptLight:
             print("\nStarting recording... Speak now!")
             self.is_recording = True
 
-            # Start recording animation with green pulsing
-            if self.led_controller:
-                self.led_controller.start_recording_animation(base_color=(0, 255, 0), speed=0.02)
+            # Start voice reactive light in callback mode (no standalone stream)
+            if self.voice_reactive:
+                self.voice_reactive.start(standalone=False)
 
-            # Start recording
-            self.voice_input.start_recording()
+            # Start recording with audio callback for reactive light
+            audio_callback = self.voice_reactive.process_audio_data if self.voice_reactive else None
+            self.voice_input.start_recording(audio_callback=audio_callback)
 
     def run(self):
         """Main application loop."""
@@ -556,6 +567,10 @@ class AdaptLight:
         # Cleanup audio player
         if self.audio_player:
             self.audio_player.cleanup()
+
+        # Cleanup voice reactive light
+        if self.voice_reactive:
+            self.voice_reactive.stop()
 
         print("Goodbye!")
         sys.exit(0)

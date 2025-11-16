@@ -52,6 +52,7 @@ class VoiceInput:
         self.audio_queue = queue.Queue()
         self.listener_thread = None
         self.on_command_callback = None
+        self.on_audio_data_callback = None  # For real-time audio visualization
 
         # Audio settings
         self.chunk = 1024
@@ -108,14 +109,21 @@ class VoiceInput:
             self.listener_thread.join(timeout=2.0)
         print("Stopped listening for voice commands")
 
-    def start_recording(self):
-        """Start push-to-talk recording."""
+    def start_recording(self, audio_callback=None):
+        """
+        Start push-to-talk recording.
+
+        Args:
+            audio_callback: Optional callback(audio_data) called for each audio chunk
+                          for real-time visualization (e.g., voice reactive light)
+        """
         if not AUDIO_AVAILABLE:
             print("Audio not available")
             return False
 
         self.audio_queue = queue.Queue()
         self.is_recording = True
+        self.on_audio_data_callback = audio_callback
 
         # Start recording thread
         self.recording_thread = threading.Thread(target=self._record_audio)
@@ -130,6 +138,7 @@ class VoiceInput:
             return None
 
         self.is_recording = False
+        self.on_audio_data_callback = None  # Clear callback
 
         # Wait for recording thread to finish
         if hasattr(self, 'recording_thread'):
@@ -174,6 +183,13 @@ class VoiceInput:
             while self.is_recording:
                 data = stream.read(self.chunk, exception_on_overflow=False)
                 self.audio_queue.put(data)
+
+                # Call audio callback for real-time visualization
+                if self.on_audio_data_callback:
+                    try:
+                        self.on_audio_data_callback(data)
+                    except Exception as e:
+                        print(f"Error in audio callback: {e}")
 
             # Cleanup
             stream.stop_stream()
