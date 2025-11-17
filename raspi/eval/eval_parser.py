@@ -228,9 +228,17 @@ class MockStateMachine:
 class ParserEvaluator:
     """Evaluates command parser against test examples."""
 
-    def __init__(self, api_key=None):
+    def __init__(self, api_key=None, parsing_method='json_output', prompt_variant='full', model='gpt-4o',
+                 reasoning_effort='medium', verbosity=0):
         """Initialize evaluator with command parser."""
-        self.parser = CommandParser(api_key=api_key)
+        self.parser = CommandParser(
+            api_key=api_key,
+            parsing_method=parsing_method,
+            prompt_variant=prompt_variant,
+            model=model,
+            reasoning_effort=reasoning_effort,
+            verbosity=verbosity
+        )
         self.results = {
             "passed": 0,
             "failed": 0,
@@ -561,8 +569,24 @@ def main():
         print("Error: openai.api_key not found in config.yaml")
         sys.exit(1)
 
+    # Get parsing configuration
+    parsing_method = config.get('openai', {}).get('parsing_method', 'json_output')
+    prompt_variant = config.get('openai', {}).get('prompt_variant', 'full')
+    model = config.get('openai', {}).get('model', 'gpt-4o')
+    reasoning_effort = config.get('openai', {}).get('reasoning_effort', 'medium')
+    verbosity = config.get('openai', {}).get('verbosity', 0)
+    print(f"Using parsing method: {parsing_method}, variant: {prompt_variant}, model: {model}")
+    print(f"Reasoning effort: {reasoning_effort}, verbosity: {verbosity}")
+
     # Run evaluation
-    evaluator = ParserEvaluator(api_key=api_key)
+    evaluator = ParserEvaluator(
+        api_key=api_key,
+        parsing_method=parsing_method,
+        prompt_variant=prompt_variant,
+        model=model,
+        reasoning_effort=reasoning_effort,
+        verbosity=verbosity
+    )
     results = evaluator.evaluate_all()
 
     # Exit with error code if any tests failed
