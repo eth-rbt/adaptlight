@@ -36,7 +36,7 @@ def suppress_alsa_errors():
 class VoiceReactiveLight:
     """Real-time voice-reactive lighting with smooth exponential smoothing."""
 
-    def __init__(self, led_controller, color=(0, 255, 0), smoothing_alpha=0.15):
+    def __init__(self, led_controller, color=(0, 255, 0), smoothing_alpha=0.6):
         """
         Initialize voice-reactive light.
 

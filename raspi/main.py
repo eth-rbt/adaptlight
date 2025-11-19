@@ -177,10 +177,27 @@ class AdaptLight:
         # Initialize voice input if enabled
         voice_config = self.config.get('voice', {})
         if voice_config.get('enabled', False):
+            # Initialize audio player first (needed by CommandParser for TTS)
+            print("- Audio player")
+            self.audio_player = AudioPlayer(volume=2.0)  # 200% volume for louder playback
+
             print("- Command parser")
             openai_config = self.config.get('openai', {})
             openai_key = openai_config.get('api_key')
-            self.command_parser = CommandParser(api_key=openai_key)
+            parsing_method = openai_config.get('parsing_method', 'json_output')
+            prompt_variant = openai_config.get('prompt_variant', 'full')
+            model = openai_config.get('model', 'gpt-4o')
+            reasoning_effort = openai_config.get('reasoning_effort', 'medium')
+            verbosity = openai_config.get('verbosity', 0)
+            self.command_parser = CommandParser(
+                api_key=openai_key,
+                parsing_method=parsing_method,
+                prompt_variant=prompt_variant,
+                model=model,
+                reasoning_effort=reasoning_effort,
+                verbosity=verbosity,
+                audio_player=self.audio_player
+            )
 
             print("- Voice input")
             # Get Replicate configuration
@@ -195,16 +212,12 @@ class AdaptLight:
             )
             self.voice_input.set_command_callback(self.handle_voice_command)
 
-            # Initialize audio player for feedback sounds
-            print("- Audio player")
-            self.audio_player = AudioPlayer()
-
             # Initialize voice reactive light
             print("- Voice reactive light")
             self.voice_reactive = VoiceReactiveLight(
                 led_controller=self.led_controller,
                 color=(0, 255, 0),  # Green for voice input
-                smoothing_alpha=0.15  # Smooth but responsive
+                smoothing_alpha=0.6  # More responsive
             )
 
         print("\nInitialization complete!")
@@ -258,10 +271,7 @@ class AdaptLight:
         state_before = self.state_machine.get_state()
         state_params_before = self.state_machine.get_state_params()
 
-        # Start loading animation while waiting for OpenAI
-        if self.led_controller:
-            print("Starting loading animation...")
-            self.led_controller.start_loading_animation(color=(255, 255, 255), speed=0.1)  # White circle
+        # Note: Loading animation is already started before transcription in handle_record_button()
 
         try:
             # Gather system context for GPT-5
@@ -314,28 +324,34 @@ class AdaptLight:
 
                 print("=" * 60)
 
-                # Provide visual feedback based on whether changes were made
-                if self.led_controller:
-                    if changes_made:
+                # Provide feedback based on whether changes were made
+                if changes_made:
+                    # Start sound first (non-blocking)
+                    if self.audio_player:
+                        self.audio_player.play_success_sound(blocking=False)
+                    # Then flash LEDs (happens simultaneously with sound)
+                    if self.led_controller:
                         self.led_controller.flash_success()
-                        # Optionally play success sound
-                        if self.audio_player:
-                            self.audio_player.play_success_sound(blocking=False)
-                    else:
-                        self.led_controller.flash_error()
-                        # Play error sound for no changes
+                else:
+                    # Only play error signal if no TTS was played
+                    tts_was_played = result.get('needsClarification', False)
+                    if not tts_was_played:
+                        # Start sound first (non-blocking)
                         if self.audio_player:
                             self.audio_player.play_error_sound(blocking=False)
+                        # Then flash LEDs (happens simultaneously with sound)
+                        if self.led_controller:
+                            self.led_controller.flash_error()
             else:
                 print("❌ Failed to parse command")
 
-                # Flash red for parsing failure
-                if self.led_controller:
-                    self.led_controller.flash_error()
-
-                # Play error sound
+                # Start sound first (non-blocking)
                 if self.audio_player:
                     self.audio_player.play_error_sound(blocking=False)
+
+                # Then flash LEDs (happens simultaneously with sound)
+                if self.led_controller:
+                    self.led_controller.flash_error()
 
             # Capture state after command execution
             state_after = self.state_machine.get_state()
@@ -494,6 +510,11 @@ class AdaptLight:
             # Stop voice reactive light
             if self.voice_reactive:
                 self.voice_reactive.stop()
+
+            # Start loading animation before transcription
+            if self.led_controller:
+                print("Starting loading animation...")
+                self.led_controller.start_loading_animation(color=(255, 255, 255), speed=0.1)  # White circle
 
             # Stop recording and transcribe
             transcribed_text = self.voice_input.stop_recording()

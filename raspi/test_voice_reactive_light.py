@@ -60,7 +60,7 @@ class VoiceReactiveLightTest:
         # Amplitude settings
         self.min_amplitude = 100  # Minimum RMS to register (noise floor)
         self.max_amplitude = 5000  # Maximum RMS for full brightness
-        self.smoothing_alpha = 0.15  # Alpha for exponential smoothing (lower = smoother)
+        self.smoothing_alpha = 0.6  # Alpha for exponential smoothing (lower = smoother)
         self.current_brightness = 0
         self.current_rms = 0  # Smoothed RMS value
 

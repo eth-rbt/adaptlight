@@ -45,6 +45,10 @@ aws:
 openai:
   api_key: YOUR_OPENAI_API_KEY     # OpenAI API key
   model: gpt-4o                    # Model to use for parsing
+  parsing_method: json_output      # Parsing method: json_output | reasoning | function_calling
+  prompt_variant: full             # Prompt variant: full | concise
+  reasoning_effort: medium         # Reasoning effort: low | medium | high (for reasoning mode)
+  verbosity: 0                     # Verbosity level: 0-2 (for reasoning mode)
 
 # Google Speech-to-Text configuration
 google:

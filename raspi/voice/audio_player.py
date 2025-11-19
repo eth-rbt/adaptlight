@@ -19,29 +19,37 @@ except ImportError:
 class AudioPlayer:
     """Handles audio playback for feedback sounds."""
 
-    def __init__(self):
-        """Initialize audio player."""
+    def __init__(self, volume=1.0):
+        """
+        Initialize audio player.
+
+        Args:
+            volume: Playback volume (0.0 to 1.0). Values > 1.0 will boost volume.
+                   Default: 1.0 (100%)
+        """
         self.initialized = False
+        self.volume = volume
 
         if PYGAME_AVAILABLE:
             try:
                 # Initialize pygame mixer for audio playback
                 pygame.mixer.init(frequency=22050, size=-16, channels=2, buffer=512)
                 self.initialized = True
-                print("AudioPlayer initialized successfully")
+                print(f"AudioPlayer initialized successfully (volume: {volume})")
             except Exception as e:
                 print(f"Warning: Could not initialize pygame mixer: {e}")
                 self.initialized = False
         else:
             print("AudioPlayer: pygame not available, audio playback disabled")
 
-    def play_sound(self, sound_path: str, blocking=False):
+    def play_sound(self, sound_path: str, blocking=False, volume=None):
         """
         Play a WAV audio file.
 
         Args:
             sound_path: Path to the WAV file to play
             blocking: If True, wait for sound to finish before returning
+            volume: Override volume for this sound (0.0 to 1.0+). If None, uses default.
 
         Returns:
             True if playback started successfully, False otherwise
@@ -56,8 +64,13 @@ class AudioPlayer:
             return False
 
         try:
-            # Load and play the sound
+            # Load the sound
             sound = pygame.mixer.Sound(sound_path)
+
+            # Set volume (use override if provided, otherwise use instance volume)
+            sound.set_volume(volume if volume is not None else self.volume)
+
+            # Play the sound
             channel = sound.play()
 
             if blocking and channel:
@@ -81,12 +94,12 @@ class AudioPlayer:
         Returns:
             True if playback started successfully, False otherwise
         """
-        # Look for error sound in data/sounds/ directory
-        sound_path = Path(__file__).parent.parent / 'data' / 'sounds' / 'error.wav'
+        # Look for error sound in wav/ directory
+        sound_path = Path(__file__).parent.parent / 'wav' / 'error.wav'
 
         if not sound_path.exists():
             print(f"Warning: Error sound not found at {sound_path}")
-            print("Please add an error.wav file to data/sounds/ directory")
+            print("Please add an error.wav file to wav/ directory")
             return False
 
         print(f"  🔊 Playing error sound")
@@ -102,8 +115,8 @@ class AudioPlayer:
         Returns:
             True if playback started successfully, False otherwise
         """
-        # Look for success sound in data/sounds/ directory
-        sound_path = Path(__file__).parent.parent / 'data' / 'sounds' / 'success.wav'
+        # Look for success sound in wav/ directory
+        sound_path = Path(__file__).parent.parent / 'wav' / 'success.wav'
 
         if not sound_path.exists():
             print(f"Info: Success sound not found at {sound_path}")
@@ -111,6 +124,16 @@ class AudioPlayer:
 
         print(f"  🔊 Playing success sound")
         return self.play_sound(str(sound_path), blocking=blocking)
+
+    def set_volume(self, volume):
+        """
+        Set the default playback volume.
+
+        Args:
+            volume: Volume level (0.0 to 1.0+). Values > 1.0 will boost volume.
+        """
+        self.volume = volume
+        print(f"Audio volume set to {volume}")
 
     def cleanup(self):
         """Cleanup audio player resources."""

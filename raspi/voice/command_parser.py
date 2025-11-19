@@ -15,21 +15,34 @@ from typing import List, Dict
 class CommandParser:
     """Parses natural language commands into state machine rules using OpenAI GPT-5."""
 
-    def __init__(self, api_key=None):
+    def __init__(self, api_key=None, parsing_method='json_output', prompt_variant='full', model='gpt-4o',
+                 reasoning_effort='medium', verbosity=0, audio_player=None):
         """
         Initialize command parser.
 
         Args:
             api_key: OpenAI API key
+            parsing_method: Parsing method to use ('json_output', 'reasoning', or 'function_calling')
+            prompt_variant: Prompt variant to use ('full' or 'concise')
+            model: OpenAI model to use (e.g., 'gpt-4o', 'gpt-5-mini')
+            reasoning_effort: Reasoning effort level ('low', 'medium', 'high')
+            verbosity: Verbosity level for reasoning mode (0-2)
+            audio_player: Optional AudioPlayer instance for TTS playback
         """
         self.api_key = api_key
         self.conversation_history = []
         self.max_history = 2  # Keep last 2 commands with actions for context
+        self.parsing_method = parsing_method
+        self.prompt_variant = prompt_variant
+        self.model = model
+        self.reasoning_effort = reasoning_effort
+        self.verbosity = verbosity
+        self.audio_player = audio_player
 
         try:
             from openai import OpenAI
             self.client = OpenAI(api_key=api_key)
-            print("CommandParser initialized with OpenAI GPT-5-nano")
+            print(f"CommandParser initialized: method={parsing_method}, variant={prompt_variant}, model={model}")
         except ImportError:
             self.client = None
             print("Warning: OpenAI library not available")
@@ -229,7 +242,7 @@ class CommandParser:
                      available_transitions: List[Dict], current_rules: List[Dict],
                      current_state: str = "off", global_variables: Dict = None) -> Dict:
         """
-        Parse a natural language command into tool calls using GPT-5.
+        Parse a natural language command into tool calls.
 
         Args:
             user_input: User's voice command
@@ -250,15 +263,46 @@ class CommandParser:
             print("OpenAI client not available")
             return {'toolCalls': [], 'message': None, 'reasoning': None, 'success': False}
 
+        # Route to the appropriate parsing method
+        if self.parsing_method == 'json_output':
+            return self._parse_json_output(
+                user_input, available_states, available_transitions,
+                current_rules, current_state, global_variables
+            )
+        elif self.parsing_method == 'reasoning':
+            return self._parse_reasoning(
+                user_input, available_states, available_transitions,
+                current_rules, current_state, global_variables
+            )
+        elif self.parsing_method == 'function_calling':
+            return self._parse_function_calling(
+                user_input, available_states, available_transitions,
+                current_rules, current_state, global_variables
+            )
+        else:
+            print(f"Unknown parsing method: {self.parsing_method}")
+            return {'toolCalls': [], 'message': None, 'reasoning': None, 'success': False}
+
+    def _parse_json_output(self, user_input: str, available_states: str,
+                          available_transitions: List[Dict], current_rules: List[Dict],
+                          current_state: str = "off", global_variables: Dict = None) -> Dict:
+        """
+        Parse command using JSON structured output.
+
+        Returns:
+            Dict with format: {'toolCalls': [...], 'message': str, 'success': bool}
+        """
         # Build dynamic content for the prompt
         dynamic_content = self._build_dynamic_content(
             available_states, available_transitions, current_rules,
             current_state, global_variables or {}
         )
 
-        # Load the parsing prompt (use concise version)
-        from prompts.parsing_prompt import get_system_prompt  # Full version with examples
-        # from prompts.parsing_prompt_concise import get_system_prompt  # Shorter version
+        # Load the parsing prompt from configured folder
+        import importlib
+        prompt_module_path = f'prompts.{self.parsing_method}.{self.prompt_variant}'
+        prompt_module = importlib.import_module(prompt_module_path)
+        get_system_prompt = prompt_module.get_system_prompt
         system_prompt = get_system_prompt(dynamic_content)
 
         # Define JSON schema for structured outputs
@@ -390,15 +434,15 @@ class CommandParser:
         }
 
         try:
-            # Call GPT-5-nano API using responses.create with Structured Outputs
-            print(f"Calling OpenAI API with model: gpt-5-nano (Structured Outputs)")
+            # Call OpenAI API using responses.create with Structured Outputs
+            print(f"Calling OpenAI API with model: {self.model} (Structured Outputs)")
             response = self.client.responses.create(
-                model="gpt-5-nano",
+                model=self.model,
                 input=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_input}
                 ],
-                reasoning={"effort": "medium"},
+                reasoning={"effort": self.reasoning_effort},
                 text={
                     "format": {
                         "type": "json_schema",
@@ -531,6 +575,381 @@ class CommandParser:
             import traceback
             traceback.print_exc()
             return {'toolCalls': [], 'message': None, 'reasoning': None, 'success': False}
+
+    def _parse_reasoning(self, user_input: str, available_states: str,
+                        available_transitions: List[Dict], current_rules: List[Dict],
+                        current_state: str = "off", global_variables: Dict = None) -> Dict:
+        """
+        Parse command using reasoning with clarification support.
+
+        Returns:
+            Dict with format: {
+                'toolCalls': [...],
+                'message': str,
+                'reasoning': str,
+                'needsClarification': bool,
+                'clarifyingQuestion': str,
+                'success': bool
+            }
+        """
+        # Build dynamic content for the prompt
+        dynamic_content = self._build_dynamic_content(
+            available_states, available_transitions, current_rules,
+            current_state, global_variables or {}
+        )
+
+        # Load the reasoning prompt
+        import importlib
+        prompt_module_path = f'prompts.{self.parsing_method}.{self.prompt_variant}'
+        prompt_module = importlib.import_module(prompt_module_path)
+        get_system_prompt = prompt_module.get_system_prompt
+        system_prompt = get_system_prompt(dynamic_content)
+
+        # Define JSON schema with reasoning fields
+        json_schema = {
+            "type": "object",
+            "properties": {
+                "reasoning": {"type": "string"},
+                "needsClarification": {"type": "boolean"},
+                "clarifyingQuestion": {
+                    "anyOf": [
+                        {"type": "null"},
+                        {"type": "string"}
+                    ]
+                },
+                "setState": {
+                    "anyOf": [
+                        {"type": "null"},
+                        {
+                            "type": "object",
+                            "properties": {
+                                "state": {
+                                    "type": "string",
+                                    "enum": ["off", "on", "color", "animation"]
+                                },
+                                "params": {
+                                    "anyOf": [
+                                        {"type": "null"},
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "r": {"type": ["number", "string"]},
+                                                "g": {"type": ["number", "string"]},
+                                                "b": {"type": ["number", "string"]}
+                                            },
+                                            "required": ["r", "g", "b"],
+                                            "additionalProperties": False
+                                        }
+                                    ]
+                                }
+                            },
+                            "required": ["state", "params"],
+                            "additionalProperties": False
+                        }
+                    ]
+                },
+                "appendRules": {
+                    "anyOf": [
+                        {"type": "null"},
+                        {
+                            "type": "object",
+                            "properties": {
+                                "rules": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "state1": {
+                                                "type": "string",
+                                                "enum": ["off", "on", "color", "animation"]
+                                            },
+                                            "transition": {
+                                                "type": "string",
+                                                "enum": ["button_click", "button_double_click", "button_hold", "button_release", "voice_command"]
+                                            },
+                                            "state2": {
+                                                "type": "string",
+                                                "enum": ["off", "on", "color", "animation"]
+                                            },
+                                            "state2Param": {
+                                                "anyOf": [
+                                                    {"type": "null"},
+                                                    {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "r": {"type": ["number", "string"]},
+                                                            "g": {"type": ["number", "string"]},
+                                                            "b": {"type": ["number", "string"]}
+                                                        },
+                                                        "required": ["r", "g", "b"],
+                                                        "additionalProperties": False
+                                                    },
+                                                    {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "r": {"type": ["number", "string"]},
+                                                            "g": {"type": ["number", "string"]},
+                                                            "b": {"type": ["number", "string"]},
+                                                            "speed": {"type": ["number", "null"]}
+                                                        },
+                                                        "required": ["r", "g", "b", "speed"],
+                                                        "additionalProperties": False
+                                                    }
+                                                ]
+                                            },
+                                            "condition": {"type": ["string", "null"]},
+                                            "action": {"type": ["string", "null"]}
+                                        },
+                                        "required": ["state1", "transition", "state2", "state2Param", "condition", "action"],
+                                        "additionalProperties": False
+                                    }
+                                }
+                            },
+                            "required": ["rules"],
+                            "additionalProperties": False
+                        }
+                    ]
+                },
+                "deleteRules": {
+                    "anyOf": [
+                        {"type": "null"},
+                        {
+                            "type": "object",
+                            "properties": {
+                                "transition": {"type": ["string", "null"]},
+                                "state1": {"type": ["string", "null"]},
+                                "state2": {"type": ["string", "null"]},
+                                "indices": {
+                                    "anyOf": [
+                                        {"type": "null"},
+                                        {
+                                            "type": "array",
+                                            "items": {"type": "number"}
+                                        }
+                                    ]
+                                },
+                                "delete_all": {"type": ["boolean", "null"]},
+                                "reset_rules": {"type": ["boolean", "null"]}
+                            },
+                            "required": ["transition", "state1", "state2", "indices", "delete_all", "reset_rules"],
+                            "additionalProperties": False
+                        }
+                    ]
+                }
+            },
+            "required": ["reasoning", "needsClarification", "clarifyingQuestion", "setState", "appendRules", "deleteRules"],
+            "additionalProperties": False
+        }
+
+        try:
+            # Call OpenAI API using responses.create with Structured Outputs
+            print(f"Calling OpenAI API with model: {self.model} (Reasoning Mode, effort={self.reasoning_effort})")
+            response = self.client.responses.create(
+                model=self.model,
+                input=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_input}
+                ],
+                reasoning={"effort": self.reasoning_effort},
+                text={
+                    "format": {
+                        "type": "json_schema",
+                        "name": "reasoning_response",
+                        "schema": json_schema,
+                        "strict": True
+                    }
+                }
+            )
+
+            # Parse the JSON response
+            parsed = json.loads(response.output_text)
+            print(f"💭 Reasoning: {parsed.get('reasoning')}")
+
+            # Convert JSON to toolCalls format
+            results = {
+                'toolCalls': [],
+                'message': None,
+                'reasoning': parsed.get('reasoning'),
+                'needsClarification': parsed.get('needsClarification', False),
+                'clarifyingQuestion': parsed.get('clarifyingQuestion'),
+                'rawJson': parsed,
+                'success': True
+            }
+
+            # If clarification is needed, don't execute actions
+            if results['needsClarification']:
+                print(f"❓ Needs clarification: {results['clarifyingQuestion']}")
+                # Speak the clarification question using TTS
+                if results['clarifyingQuestion']:
+                    self.speak_clarification(results['clarifyingQuestion'])
+                # Tool calls remain empty when asking for clarification
+            else:
+                # Execute actions in correct order
+                if parsed.get('setState'):
+                    results['toolCalls'].append({
+                        'id': 'set_state_1',
+                        'name': 'set_state',
+                        'arguments': parsed['setState']
+                    })
+
+                if parsed.get('deleteRules'):
+                    # Clean deleteRules - remove null fields
+                    delete_rules = {k: v for k, v in parsed['deleteRules'].items() if v is not None}
+                    if delete_rules:
+                        results['toolCalls'].append({
+                            'id': 'delete_rules_1',
+                            'name': 'delete_rules',
+                            'arguments': delete_rules
+                        })
+
+                if parsed.get('appendRules'):
+                    results['toolCalls'].append({
+                        'id': 'append_rules_1',
+                        'name': 'append_rules',
+                        'arguments': parsed['appendRules']
+                    })
+
+            # Add to conversation history
+            history_entry = {
+                'input': user_input,
+                'json': parsed,
+                'reasoning': parsed.get('reasoning'),
+                'state': current_state,
+                'rules': current_rules
+            }
+            self.conversation_history.append(history_entry)
+            if len(self.conversation_history) > self.max_history:
+                self.conversation_history.pop(0)
+
+            return results
+
+        except Exception as e:
+            print(f"Error in reasoning mode: {e}")
+            import traceback
+            traceback.print_exc()
+            return {'toolCalls': [], 'message': None, 'reasoning': None, 'needsClarification': False, 'clarifyingQuestion': None, 'success': False}
+
+    def _parse_function_calling(self, user_input: str, available_states: str,
+                               available_transitions: List[Dict], current_rules: List[Dict],
+                               current_state: str = "off", global_variables: Dict = None) -> Dict:
+        """
+        Parse command using OpenAI function calling.
+
+        Returns:
+            Dict with format: {'toolCalls': [...], 'message': str, 'success': bool}
+        """
+        # Build dynamic content for the prompt
+        dynamic_content = self._build_dynamic_content(
+            available_states, available_transitions, current_rules,
+            current_state, global_variables or {}
+        )
+
+        # Load the parsing prompt from configured folder
+        import importlib
+        prompt_module_path = f'prompts.{self.parsing_method}.{self.prompt_variant}'
+        prompt_module = importlib.import_module(prompt_module_path)
+        get_system_prompt = prompt_module.get_system_prompt
+        get_tools = prompt_module.get_tools
+        system_prompt = get_system_prompt(dynamic_content)
+        tools = get_tools()
+
+        try:
+            # Call OpenAI API with function calling
+            print(f"Calling OpenAI API with model: {self.model} (Function Calling)")
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_input}
+                ],
+                tools=tools,
+                tool_choice="auto"
+            )
+
+            message = response.choices[0].message
+
+            # Extract tool calls from response
+            results = {
+                'toolCalls': [],
+                'message': message.content,
+                'success': True
+            }
+
+            if message.tool_calls:
+                for tool_call in message.tool_calls:
+                    results['toolCalls'].append({
+                        'id': tool_call.id,
+                        'name': tool_call.function.name,
+                        'arguments': json.loads(tool_call.function.arguments)
+                    })
+
+            # Add to conversation history
+            history_entry = {
+                'input': user_input,
+                'tool_calls': results['toolCalls'],
+                'state': current_state,
+                'rules': current_rules
+            }
+            self.conversation_history.append(history_entry)
+            if len(self.conversation_history) > self.max_history:
+                self.conversation_history.pop(0)
+
+            return results
+
+        except Exception as e:
+            print(f"Error in function calling: {e}")
+            import traceback
+            traceback.print_exc()
+            return {'toolCalls': [], 'message': None, 'success': False}
+
+    def speak_clarification(self, question_text: str):
+        """
+        Use OpenAI TTS to speak a clarifying question.
+
+        Args:
+            question_text: The text to speak
+        """
+        if not self.client:
+            print("OpenAI client not available, cannot speak question")
+            return
+
+        if not self.audio_player:
+            print("Audio player not available, cannot speak question")
+            print(f"Question: {question_text}")
+            return
+
+        try:
+            import tempfile
+            from pathlib import Path
+
+            print(f"🔊 Speaking clarification: {question_text}")
+
+            # Call OpenAI TTS API
+            response = self.client.audio.speech.create(
+                model="tts-1",  # Can also use "tts-1-hd" for higher quality
+                voice="alloy",  # Options: alloy, echo, fable, onyx, nova, shimmer
+                input=question_text
+            )
+
+            # Save to temporary file
+            temp_dir = Path(tempfile.gettempdir())
+            tts_file = temp_dir / "adaptlight_clarification.mp3"
+
+            # Write the audio stream to file
+            response.stream_to_file(str(tts_file))
+
+            # Play the audio using the audio player with boosted volume (2x louder)
+            # Note: pygame can play MP3 if pygame is built with MP3 support
+            # Otherwise we may need to convert to WAV
+            self.audio_player.play_sound(str(tts_file), blocking=True, volume=4.0)
+
+            print("✅ Finished speaking clarification")
+
+        except Exception as e:
+            print(f"Error speaking clarification: {e}")
+            print(f"Question text: {question_text}")
+            import traceback
+            traceback.print_exc()
 
     def _build_dynamic_content(self, available_states: str,
                               available_transitions: List[Dict],
