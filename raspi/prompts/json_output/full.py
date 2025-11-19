@@ -33,31 +33,15 @@ Your output MUST conform to this exact JSON schema:
 {
   "type": "object",
   "properties": {
-    "setState": {
+    "deleteState": {
       "anyOf": [
         {"type": "null"},
         {
           "type": "object",
           "properties": {
-            "state": {"type": "string"},
-            "params": {
-              "anyOf": [
-                {"type": "null"},
-                {
-                  "type": "object",
-                  "properties": {
-                    "r": {"type": ["number", "string"]},
-                    "g": {"type": ["number", "string"]},
-                    "b": {"type": ["number", "string"]},
-                    "speed": {"type": ["number", "null"]}
-                  },
-                  "required": ["r", "g", "b"],
-                  "additionalProperties": false
-                }
-              ]
-            }
+            "name": {"type": "string"}
           },
-          "required": ["state", "params"],
+          "required": ["name"],
           "additionalProperties": false
         }
       ]
@@ -80,15 +64,27 @@ Your output MUST conform to this exact JSON schema:
         }
       ]
     },
-    "deleteState": {
+    "deleteRules": {
       "anyOf": [
         {"type": "null"},
         {
           "type": "object",
           "properties": {
-            "name": {"type": "string"}
+            "transition": {"type": ["string", "null"]},
+            "state1": {"type": ["string", "null"]},
+            "state2": {"type": ["string", "null"]},
+            "indices": {
+              "anyOf": [
+                {"type": "null"},
+                {
+                  "type": "array",
+                  "items": {"type": "number"}
+                }
+              ]
+            },
+            "delete_all": {"type": ["boolean", "null"]}
           },
-          "required": ["name"],
+          "required": ["transition", "state1", "state2", "indices", "delete_all"],
           "additionalProperties": false
         }
       ]
@@ -159,13 +155,13 @@ Your output MUST conform to this exact JSON schema:
       ]
     }
   },
-  "required": ["setState", "createState", "deleteState", "appendRules", "deleteRules"],
+  "required": ["deleteState", "createState", "deleteRules", "appendRules", "setState"],
   "additionalProperties": false
 }
 ```
 
 **Critical Rules:**
-- All five top-level fields (setState, createState, deleteState, appendRules, deleteRules) MUST be present
+- All five top-level fields (deleteState, createState, deleteRules, appendRules, setState) MUST be present in this order
 - Use `null` for any field you don't need
 - You can have multiple non-null fields (e.g., both deleteRules AND appendRules)
 - For deleteRules: all fields must be present, use null for unused ones
@@ -192,7 +188,7 @@ Use `createState` to create new named states that can be referenced in rules:
 
 ```json
 {
-  "setState": null,
+  "deleteState": null,
   "createState": {
     "name": "reading",
     "r": 255,
@@ -210,8 +206,6 @@ Use `createState` to create new named states that can be referenced in rules:
 Then use the state in rules:
 ```json
 {
-  "setState": null,
-  "createState": null,
   "deleteState": null,
   "appendRules": {
     "rules": [
@@ -226,8 +220,6 @@ Then use the state in rules:
 Use `deleteState` to remove a custom state:
 ```json
 {
-  "setState": null,
-  "createState": null,
   "deleteState": {"name": "reading"},
   "appendRules": null,
   "deleteRules": null
@@ -415,9 +407,8 @@ Examples:
 
 ```json
 {
-  "setState": null,
-  "createState": null,
   "deleteState": null,
+  "createState": null,
   "deleteRules": null,
   "appendRules": {
     "rules": [
@@ -455,9 +446,8 @@ Examples:
 
 ```json
 {
-  "setState": null,
-  "createState": null,
   "deleteState": null,
+  "createState": null,
   "deleteRules": null,
   "appendRules": {
     "rules": [
@@ -486,7 +476,7 @@ User Input: "Create a reading light state that's warm white"
 Output:
 ```json
 {
-  "setState": null,
+  "deleteState": null,
   "createState": {
     "name": "reading",
     "r": 255,
@@ -496,8 +486,10 @@ Output:
     "description": "Warm white light for reading"
   },
   "deleteState": null,
+  "createState": null,
   "deleteRules": null,
-  "appendRules": null
+  "appendRules": null,
+  "setState": null
 }
 ```
 
@@ -510,9 +502,8 @@ User Input: "Double click to turn on reading mode"
 Output:
 ```json
 {
-  "setState": null,
-  "createState": null,
   "deleteState": null,
+  "createState": null,
   "deleteRules": null,
   "appendRules": {
     "rules": [
@@ -531,7 +522,7 @@ User Input: "Create a purple pulse animation state"
 Output:
 ```json
 {
-  "setState": null,
+  "deleteState": null,
   "createState": {
     "name": "purple_pulse",
     "r": "128 + abs(sin(t/1000)) * 127",
@@ -541,8 +532,10 @@ Output:
     "description": "Pulsing purple animation"
   },
   "deleteState": null,
+  "createState": null,
   "deleteRules": null,
-  "appendRules": null
+  "appendRules": null,
+  "setState": null
 }
 ```
 
@@ -555,11 +548,10 @@ User Input: "Delete the reading state"
 Output:
 ```json
 {
-  "setState": null,
-  "createState": null,
   "deleteState": {"name": "reading"},
   "deleteRules": null,
-  "appendRules": null
+  "appendRules": null,
+  "setState": null
 }
 ```
 
@@ -571,9 +563,8 @@ User Input: "Click button to turn on blue light"
 Output:
 ```json
 {
-  "setState": null,
-  "createState": null,
   "deleteState": null,
+  "createState": null,
   "deleteRules": {"transition": "button_click", "state1": null, "state2": null, "indices": null, "delete_all": null},
   "appendRules": {
     "rules": [
@@ -592,9 +583,8 @@ User Input: "Double click to toggle red light"
 Output:
 ```json
 {
-  "setState": null,
-  "createState": null,
   "deleteState": null,
+  "createState": null,
   "deleteRules": null,
   "appendRules": {
     "rules": [
@@ -613,9 +603,8 @@ User Input: "Hold button for random color"
 Output:
 ```json
 {
-  "setState": null,
-  "createState": null,
   "deleteState": null,
+  "createState": null,
   "deleteRules": null,
   "appendRules": {
     "rules": [
@@ -633,11 +622,14 @@ User Input: "Turn the light red now"
 Output:
 ```json
 {
+  "appendRules": null,
   "setState": {"state": "on", "params": {"r": 255, "g": 0, "b": 0, "speed": null}},
   "createState": null,
   "deleteState": null,
+  "createState": null,
   "deleteRules": null,
-  "appendRules": null
+  "appendRules": null,
+  "setState": null
 }
 ```
 
@@ -649,9 +641,8 @@ User Input: "Next 5 clicks should be random colors, then it goes back to normal"
 Output:
 ```json
 {
-  "setState": null,
-  "createState": null,
   "deleteState": null,
+  "createState": null,
   "deleteRules": null,
   "appendRules": {
     "rules": [
@@ -672,9 +663,8 @@ User Input: "Hold button for rainbow animation"
 Output:
 ```json
 {
-  "setState": null,
-  "createState": null,
   "deleteState": null,
+  "createState": null,
   "deleteRules": null,
   "appendRules": {
     "rules": [
@@ -696,9 +686,8 @@ User Input: "Change the click color to red"
 Output:
 ```json
 {
-  "setState": null,
-  "createState": null,
   "deleteState": null,
+  "createState": null,
   "deleteRules": {"transition": null, "state1": null, "state2": null, "indices": [0], "delete_all": null},
   "appendRules": {
     "rules": [
@@ -719,9 +708,8 @@ User Input: "Make it faster"
 Output:
 ```json
 {
-  "setState": null,
-  "createState": null,
   "deleteState": null,
+  "createState": null,
   "deleteRules": {"transition": null, "state1": null, "state2": null, "indices": [0], "delete_all": null},
   "appendRules": {
     "rules": [
@@ -742,9 +730,8 @@ User Input: "Reset everything back to default"
 Output:
 ```json
 {
-  "setState": null,
-  "createState": null,
   "deleteState": null,
+  "createState": null,
   "deleteRules": {"transition": null, "state1": null, "state2": null, "indices": null, "delete_all": true},
   "appendRules": {
     "rules": [
@@ -775,9 +762,8 @@ User Input: "Make it faster"
 Output:
 ```json
 {
-  "setState": null,
-  "createState": null,
   "deleteState": null,
+  "createState": null,
   "deleteRules": {"transition": null, "state1": null, "state2": null, "indices": [0], "delete_all": null},
   "appendRules": {
     "rules": [

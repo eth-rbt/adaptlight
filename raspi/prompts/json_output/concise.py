@@ -32,30 +32,55 @@ Your output MUST conform to this exact JSON schema:
 {
   "type": "object",
   "properties": {
-    "setState": {
+    "deleteState": {
       "anyOf": [
         {"type": "null"},
         {
           "type": "object",
           "properties": {
-            "state": {"type": "string", "enum": ["off", "on", "color", "animation"]},
-            "params": {
+            "name": {"type": "string"}
+          },
+          "required": ["name"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "createState": {
+      "anyOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "properties": {
+            "name": {"type": "string"},
+            "r": {"type": ["number", "string"]},
+            "g": {"type": ["number", "string"]},
+            "b": {"type": ["number", "string"]},
+            "speed": {"type": ["number", "null"]},
+            "description": {"type": ["string", "null"]}
+          },
+          "required": ["name", "r", "g", "b", "speed"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "deleteRules": {
+      "anyOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "properties": {
+            "transition": {"type": ["string", "null"]},
+            "state1": {"type": ["string", "null"]},
+            "state2": {"type": ["string", "null"]},
+            "indices": {
               "anyOf": [
                 {"type": "null"},
-                {
-                  "type": "object",
-                  "properties": {
-                    "r": {"type": ["number", "string"]},
-                    "g": {"type": ["number", "string"]},
-                    "b": {"type": ["number", "string"]}
-                  },
-                  "required": ["r", "g", "b"],
-                  "additionalProperties": false
-                }
+                {"type": "array", "items": {"type": "number"}}
               ]
-            }
+            },
+            "delete_all": {"type": ["boolean", "null"]}
           },
-          "required": ["state", "params"],
+          "required": ["transition", "state1", "state2", "indices", "delete_all"],
           "additionalProperties": false
         }
       ]
@@ -71,9 +96,9 @@ Your output MUST conform to this exact JSON schema:
               "items": {
                 "type": "object",
                 "properties": {
-                  "state1": {"type": "string", "enum": ["off", "on", "color", "animation"]},
+                  "state1": {"type": "string"},
                   "transition": {"type": "string", "enum": ["button_click", "button_double_click", "button_hold", "button_release", "voice_command"]},
-                  "state2": {"type": "string", "enum": ["off", "on", "color", "animation"]},
+                  "state2": {"type": "string"},
                   "state2Param": {
                     "anyOf": [
                       {"type": "null"},
@@ -103,41 +128,50 @@ Your output MUST conform to this exact JSON schema:
         }
       ]
     },
-    "deleteRules": {
+    "setState": {
       "anyOf": [
         {"type": "null"},
         {
           "type": "object",
           "properties": {
-            "transition": {"type": ["string", "null"]},
-            "state1": {"type": ["string", "null"]},
-            "state2": {"type": ["string", "null"]},
-            "indices": {
+            "state": {"type": "string"},
+            "params": {
               "anyOf": [
                 {"type": "null"},
-                {"type": "array", "items": {"type": "number"}}
+                {
+                  "type": "object",
+                  "properties": {
+                    "r": {"type": ["number", "string"]},
+                    "g": {"type": ["number", "string"]},
+                    "b": {"type": ["number", "string"]},
+                    "speed": {"type": ["number", "null"]}
+                  },
+                  "required": ["r", "g", "b"],
+                  "additionalProperties": false
+                }
               ]
-            },
-            "delete_all": {"type": ["boolean", "null"]}
+            }
           },
-          "required": ["transition", "state1", "state2", "indices", "delete_all"],
+          "required": ["state", "params"],
           "additionalProperties": false
         }
       ]
     }
   },
-  "required": ["setState", "appendRules", "deleteRules"],
+  "required": ["deleteState", "createState", "deleteRules", "appendRules", "setState"],
   "additionalProperties": false
 }
 ```
 
 **Critical Rules:**
-- All three top-level fields (setState, appendRules, deleteRules) MUST be present
+- All five top-level fields (deleteState, createState, deleteRules, appendRules, setState) MUST be present in this order
 - Use `null` for any field you don't need
 - You can have multiple non-null fields (e.g., both deleteRules AND appendRules)
-- For deleteRules: all 6 fields (transition, state1, state2, indices, delete_all, reset_rules) must be present, use null for unused ones
+- For deleteState: must include name
+- For createState: must include name, r, g, b, speed (required), and optional description
+- For deleteRules: all fields must be present, use null for unused ones
 - For appendRules: each rule must have all 6 fields (state1, transition, state2, state2Param, condition, action)
-- For state2Param objects: must include r, g, b (required), and speed (optional - only for animations)
+- For state2Param objects: must include r, g, b (required), and speed (optional)
 
 ## WHEN TO DELETE RULES
 
@@ -190,65 +224,82 @@ Use setState when:
 
 {dynamic_content}
 
-## FIELD SPECIFICATIONS
+## UNIFIED STATE SYSTEM
 
-### setState
-```json
-"setState": {"state": "color", "params": {"r": 255, "g": 0, "b": 0}}
-```
-- state: "off" | "on" | "color" | "animation"
-- params: object or null
-  - off/on: null
-  - color/animation: {r, g, b} (no speed in setState - use appendRules for animated behaviors)
+All states use the same structure with r, g, b, speed parameters:
+- **Default states**: "on" (255,255,255) and "off" (0,0,0)
+- **Custom states**: Create with createState, reference by name in rules
+- **Static states**: speed=null (color evaluated once)
+- **Animated states**: speed=number (expressions evaluated every frame with t, frame variables)
 
-### appendRules
+### deleteState
 ```json
-"appendRules": {"rules": [
-  {"state1": "off", "transition": "button_click", "state2": "color", "state2Param": {"r": 0, "g": 0, "b": 255, "speed": null}, "condition": null, "action": null},
-  {"state1": "color", "transition": "button_click", "state2": "off", "state2Param": null, "condition": null, "action": null}
-]}
+"deleteState": {"name": "reading"}
 ```
-- rules: array of rule objects
-- Each rule: {state1, transition, state2, state2Param, condition, action}
-- **All fields are required** (use `null` if not needed)
-- States: "off" | "on" | "color" | "animation"
-- Transitions: "button_click" | "button_double_click" | "button_hold" | "button_release" | "voice_command"
-- **state2Param**: When it's an object, MUST include {r, g, b} and optionally {speed}
-  - For color states: omit speed or set to `null` - both work: `{r: 255, g: 0, b: 0}` or `{r: 255, g: 0, b: 0, speed: null}`
-  - For animation states: include speed as a number (milliseconds): `{r: "expr", g: "expr", b: "expr", speed: 50}`
-- **condition**: String expression or `null` (use for counters/time checks)
-- **action**: String expression or `null` (use for updating variables)
+Delete a custom state. Cannot delete "on" or "off".
+
+### createState
+```json
+"createState": {"name": "reading", "r": 255, "g": 200, "b": 150, "speed": null, "description": "Warm white"}
+```
+Create a custom named state that can be referenced in rules.
 
 ### deleteRules
-**All 6 fields are REQUIRED (use null for unused ones):**
+**All fields are REQUIRED (use null for unused ones):**
 ```json
 "deleteRules": {
   "transition": "button_click",
   "state1": null,
   "state2": null,
   "indices": null,
-  "delete_all": null,
-  "reset_rules": null
+  "delete_all": null
 }
 ```
-Options:
-- Reset to defaults: `{"transition": null, "state1": null, "state2": null, "indices": null, "delete_all": null, "reset_rules": true}` - Deletes all rules and restores default on/off toggle
-- By transition: `{"transition": "button_click", "state1": null, "state2": null, "indices": null, "delete_all": null, "reset_rules": null}`
-- By indices: `{"transition": null, "state1": null, "state2": null, "indices": [0, 1], "delete_all": null, "reset_rules": null}`
-- By criteria: `{"transition": "button_click", "state1": "off", "state2": null, "indices": null, "delete_all": null, "reset_rules": null}`
-- All: `{"transition": null, "state1": null, "state2": null, "indices": null, "delete_all": true, "reset_rules": null}`
+
+### appendRules
+```json
+"appendRules": {"rules": [
+  {"state1": "off", "transition": "button_click", "state2": "on", "state2Param": {"r": 0, "g": 0, "b": 255, "speed": null}, "condition": null, "action": null},
+  {"state1": "on", "transition": "button_click", "state2": "off", "state2Param": null, "condition": null, "action": null}
+]}
+```
+- rules: array of rule objects
+- Each rule: {state1, transition, state2, state2Param, condition, action}
+- **All fields are required** (use `null` if not needed)
+- States: Any state name (including "on", "off", and custom states)
+- Transitions: "button_click" | "button_double_click" | "button_hold" | "button_release" | "voice_command"
+- **state2Param**: Use `null` to use state's defaults, or object to override
+  - When object: MUST include {r, g, b}, optionally {speed}
+  - Static: `{r: 255, g: 0, b: 0, speed: null}`
+  - Animated: `{r: "abs(sin(t/1000))*255", g: 0, b: 0, speed: 50}`
+- **condition**: String expression or `null` (use for counters/time checks)
+- **action**: String expression or `null` (use for updating variables)
+
+### setState
+```json
+"setState": {"state": "on", "params": {"r": 255, "g": 0, "b": 0, "speed": null}}
+```
+- state: Any state name
+- params: object or null
+  - Use state's defaults: null
+  - Override: {r, g, b, speed}
 
 ## COMMON PATTERNS
 
+**Create custom state:**
+```
+createState: {name: "reading", r: 255, g: 200, b: 150, speed: null, description: "Warm white"}
+```
+
 **Toggle colored light:**
 ```
-{state1: "off", transition: "button_click", state2: "color", state2Param: {r: 0, g: 0, b: 255}, condition: null, action: null}
-{state1: "color", transition: "button_click", state2: "off", state2Param: null, condition: null, action: null}
+{state1: "off", transition: "button_click", state2: "on", state2Param: {r: 0, g: 0, b: 255, speed: null}, condition: null, action: null}
+{state1: "on", transition: "button_click", state2: "off", state2Param: null, condition: null, action: null}
 ```
 
 **Random color:**
 ```
-state2Param: {r: "random()", g: "random()", b: "random()"}
+state2Param: {r: "random()", g: "random()", b: "random()", speed: null}
 ```
 
 **Animation (note: speed IS required for animations):**
@@ -259,94 +310,118 @@ state2Param: {r: "abs(sin(frame * 0.05)) * 255", g: "abs(sin(frame * 0.05)) * 25
 **Counter (5 clicks random colors, then back to normal):**
 ```
 // DO NOT DELETE default rules! Use conditions to layer on top
-{state1: "off", transition: "button_click", condition: "getData('counter') === undefined", action: "setData('counter', 4)", state2: "color", state2Param: {r: "random()", g: "random()", b: "random()"}}
-{state1: "color", transition: "button_click", condition: "getData('counter') > 0", action: "setData('counter', getData('counter') - 1)", state2: "color", state2Param: {r: "random()", g: "random()", b: "random()"}}
-{state1: "color", transition: "button_click", condition: "getData('counter') === 0", action: "setData('counter', undefined)", state2: "on", state2Param: null}
+{state1: "off", transition: "button_click", condition: "getData('counter') === undefined", action: "setData('counter', 4)", state2: "on", state2Param: {r: "random()", g: "random()", b: "random()", speed: null}}
+{state1: "on", transition: "button_click", condition: "getData('counter') > 0", action: "setData('counter', getData('counter') - 1)", state2: "on", state2Param: {r: "random()", g: "random()", b: "random()", speed: null}}
+{state1: "on", transition: "button_click", condition: "getData('counter') === 0", action: "setData('counter', undefined)", state2: "on", state2Param: null}
 // After counter expires, default rules take over (on -> off)
 ```
 
 ## EXAMPLES
 
-**Example 1: Replace click behavior**
+**Example 1: Create custom state**
+User: "Create a reading light state that's warm white"
+
+Output:
+```json
+{
+  "deleteState": null,
+  "createState": {"name": "reading", "r": 255, "g": 200, "b": 150, "speed": null, "description": "Warm white"},
+  "deleteRules": null,
+  "appendRules": null,
+  "setState": null
+}
+```
+
+**Example 2: Replace click behavior**
 User: "Click button to turn on blue light"
 Current rules: [0] off→on (click), [1] on→off (click)
 
 Output:
 ```json
 {
-  "setState": null,
+  "deleteState": null,
+  "createState": null,
+  "deleteRules": {"transition": "button_click", "state1": null, "state2": null, "indices": null, "delete_all": null},
   "appendRules": {
     "rules": [
-      {"state1": "off", "transition": "button_click", "state2": "color", "state2Param": {"r": 0, "g": 0, "b": 255}, "condition": null, "action": null},
-      {"state1": "color", "transition": "button_click", "state2": "off", "state2Param": null, "condition": null, "action": null}
+      {"state1": "off", "transition": "button_click", "state2": "on", "state2Param": {"r": 0, "g": 0, "b": 255, "speed": null}, "condition": null, "action": null},
+      {"state1": "on", "transition": "button_click", "state2": "off", "state2Param": null, "condition": null, "action": null}
     ]
   },
-  "deleteRules": {"transition": "button_click", "state1": null, "state2": null, "indices": null, "delete_all": null}
+  "setState": null
 }
 ```
 
-**Example 2: Add new transition**
+**Example 3: Add new transition**
 User: "Double click to toggle red light"
 Current rules: [0] off→on (click), [1] on→off (click)
 
 Output:
 ```json
 {
-  "setState": null,
+  "deleteState": null,
+  "createState": null,
+  "deleteRules": null,
   "appendRules": {
     "rules": [
-      {"state1": "off", "transition": "button_double_click", "state2": "color", "state2Param": {"r": 255, "g": 0, "b": 0}, "condition": null, "action": null},
-      {"state1": "color", "transition": "button_double_click", "state2": "off", "state2Param": null, "condition": null, "action": null}
+      {"state1": "off", "transition": "button_double_click", "state2": "on", "state2Param": {"r": 255, "g": 0, "b": 0, "speed": null}, "condition": null, "action": null},
+      {"state1": "on", "transition": "button_double_click", "state2": "off", "state2Param": null, "condition": null, "action": null}
     ]
   },
-  "deleteRules": null
+  "setState": null
 }
 ```
 
-**Example 3: Immediate state change**
+**Example 4: Immediate state change**
 User: "Turn the light red now"
 Current state: off
 
 Output:
 ```json
 {
-  "setState": {"state": "color", "params": {"r": 255, "g": 0, "b": 0}},
+  "deleteState": null,
+  "createState": null,
+  "deleteRules": null,
   "appendRules": null,
-  "deleteRules": null
+  "setState": {"state": "on", "params": {"r": 255, "g": 0, "b": 0, "speed": null}}
 }
 ```
 
-**Example 4: Hold for random color**
+**Example 5: Hold for random color**
 User: "Hold button for random color"
 Current rules: [0] off→on (click), [1] on→off (click)
 
 Output:
 ```json
 {
-  "setState": null,
+  "deleteState": null,
+  "createState": null,
+  "deleteRules": null,
   "appendRules": {
     "rules": [
-      {"state1": "off", "transition": "button_hold", "state2": "color", "state2Param": {"r": "random()", "g": "random()", "b": "random()"}, "condition": null, "action": null}
+      {"state1": "off", "transition": "button_hold", "state2": "on", "state2Param": {"r": "random()", "g": "random()", "b": "random()", "speed": null}, "condition": null, "action": null}
     ]
   },
-  "deleteRules": null
+  "setState": null
 }
 ```
 
-**Example 5: Hold for animation**
+**Example 6: Hold for animation**
 User: "Hold button for rainbow animation"
 Current rules: [0] off→on (click), [1] on→off (click)
 
 Output:
 ```json
 {
-  "setState": null,
+  "deleteState": null,
+  "createState": null,
+  "deleteRules": null,
   "appendRules": {
     "rules": [
-      {"state1": "off", "transition": "button_hold", "state2": "animation", "state2Param": {"r": "abs(sin(frame * 0.05)) * 255", "g": "abs(sin(frame * 0.05)) * 255", "b": "abs(sin(frame * 0.05)) * 255", "speed": 50}, "condition": null, "action": null}
+      {"state1": "off", "transition": "button_hold", "state2": "on", "state2Param": {"r": "abs(sin(frame * 0.05)) * 255", "g": "abs(sin(frame * 0.05)) * 255", "b": "abs(sin(frame * 0.05)) * 255", "speed": 50}, "condition": null, "action": null}
     ]
   },
-  "deleteRules": null
+  "setState": null
 }
 ```
 

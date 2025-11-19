@@ -452,7 +452,7 @@ class CommandParser:
                     ]
                 }
             },
-            "required": ["setState", "createState", "deleteState", "appendRules", "deleteRules"],
+            "required": ["deleteState", "createState", "deleteRules", "appendRules", "setState"],
             "additionalProperties": False
         }
 
@@ -554,19 +554,12 @@ class CommandParser:
             }
 
             # CRITICAL: Execute in correct order!
-            # 1. createState first (create states before they can be used)
-            # 2. deleteState second (delete states)
-            # 3. setState third (immediate state change)
-            # 4. deleteRules fourth (remove old rules)
-            # 5. appendRules fifth (add new rules that may reference new states)
-            # This prevents issues with state references!
-
-            if parsed.get('createState'):
-                results['toolCalls'].append({
-                    'id': 'create_state_1',
-                    'name': 'create_state',
-                    'arguments': parsed['createState']
-                })
+            # 1. deleteState first (delete old states before creating new ones)
+            # 2. createState second (create states before they can be used in rules)
+            # 3. deleteRules third (remove old rules)
+            # 4. appendRules fourth (add new rules that may reference new states)
+            # 5. setState fifth (immediate state change after rules are set)
+            # This order ensures states exist before being referenced in rules!
 
             if parsed.get('deleteState'):
                 results['toolCalls'].append({
@@ -575,11 +568,11 @@ class CommandParser:
                     'arguments': parsed['deleteState']
                 })
 
-            if parsed.get('setState'):
+            if parsed.get('createState'):
                 results['toolCalls'].append({
-                    'id': 'set_state_1',
-                    'name': 'set_state',
-                    'arguments': parsed['setState']
+                    'id': 'create_state_1',
+                    'name': 'create_state',
+                    'arguments': parsed['createState']
                 })
 
             if parsed.get('deleteRules'):
@@ -594,6 +587,13 @@ class CommandParser:
                     'id': 'append_rules_1',
                     'name': 'append_rules',
                     'arguments': parsed['appendRules']
+                })
+
+            if parsed.get('setState'):
+                results['toolCalls'].append({
+                    'id': 'set_state_1',
+                    'name': 'set_state',
+                    'arguments': parsed['setState']
                 })
 
             # Add to conversation history with JSON action
@@ -799,7 +799,7 @@ class CommandParser:
                     ]
                 }
             },
-            "required": ["reasoning", "needsClarification", "clarifyingQuestion", "setState", "createState", "deleteState", "appendRules", "deleteRules"],
+            "required": ["reasoning", "needsClarification", "clarifyingQuestion", "deleteState", "createState", "deleteRules", "appendRules", "setState"],
             "additionalProperties": False
         }
 

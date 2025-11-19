@@ -140,12 +140,20 @@ class RuleExecutor:
 class MockStateMachine:
     """Mock state machine to execute tool calls and track state."""
 
-    def __init__(self, initial_rules, initial_state, initial_variables):
+    def __init__(self, initial_rules, initial_state, initial_variables, initial_states=None):
         """Initialize with starting conditions."""
         self.rules = copy.deepcopy(initial_rules)
         self.current_state = initial_state
         self.state_params = None
         self.variables = copy.deepcopy(initial_variables)
+        # Track created states (unified state system)
+        if initial_states:
+            self.states = copy.deepcopy(initial_states)
+        else:
+            self.states = {
+                "on": {"r": 255, "g": 255, "b": 255, "speed": None},
+                "off": {"r": 0, "g": 0, "b": 0, "speed": None}
+            }
 
     def execute_tool(self, tool_name, args):
         """Execute a tool call and update state."""
@@ -193,7 +201,8 @@ class MockStateMachine:
         elif tool_name == 'set_state':
             # Change current state immediately
             self.current_state = args.get('state')
-            self.state_params = args.get('params')
+            # Note: setState no longer takes params, only state name
+            self.state_params = None
 
         elif tool_name == 'manage_variables':
             # Manage variables
@@ -215,13 +224,32 @@ class MockStateMachine:
                 {"state1": "on", "transition": "button_click", "state2": "off", "state2Param": None}
             ]
 
+        elif tool_name == 'create_state':
+            # Create a new state with r, g, b, speed parameters
+            name = args.get('name')
+            if name:
+                self.states[name] = {
+                    "r": args.get('r'),
+                    "g": args.get('g'),
+                    "b": args.get('b'),
+                    "speed": args.get('speed'),
+                    "description": args.get('description')
+                }
+
+        elif tool_name == 'delete_state':
+            # Delete a state by name
+            name = args.get('name')
+            if name and name in self.states:
+                del self.states[name]
+
     def get_state(self):
         """Get current state as dict."""
         return {
             "rules": self.rules,
             "current_state": self.current_state,
             "state_params": self.state_params,
-            "variables": self.variables
+            "variables": self.variables,
+            "states": self.states
         }
 
 
@@ -268,6 +296,7 @@ class ParserEvaluator:
             current_rules = prev_state.get('rules', [])
             current_state = prev_state.get('current_state', 'off')
             variables = prev_state.get('variables', {})
+            initial_states = prev_state.get('states', None)
 
             # Build available states (simplified for testing)
             available_states = "off, on, color, animation"
@@ -297,7 +326,7 @@ class ParserEvaluator:
                 return {"passed": False, "reason": "Parser failed"}
 
             # Execute tool calls to get final rules
-            mock_sm = MockStateMachine(current_rules, current_state, variables)
+            mock_sm = MockStateMachine(current_rules, current_state, variables, initial_states)
 
             tool_calls = result.get('toolCalls', [])
             print(f"\n⚙️  TOOL CALLS: {len(tool_calls)} call(s)")
@@ -378,6 +407,7 @@ class ParserEvaluator:
             current_rules = prev_state.get('rules', [])
             current_state = prev_state.get('current_state', 'off')
             variables = prev_state.get('variables', {})
+            initial_states = prev_state.get('states', None)
 
             before_rules = copy.deepcopy(current_rules)
             before_state = {"state": current_state, "variables": variables}
@@ -407,7 +437,7 @@ class ParserEvaluator:
                 return {"passed": False, "reason": "Parser failed"}
 
             # Execute tool calls
-            mock_sm = MockStateMachine(current_rules, current_state, variables)
+            mock_sm = MockStateMachine(current_rules, current_state, variables, initial_states)
             tool_calls = result.get('toolCalls', [])
             print(f"\n⚙️  TOOL CALLS: {len(tool_calls)} call(s)")
             for tool_call in tool_calls:
