@@ -315,10 +315,7 @@ class CommandParser:
                         {
                             "type": "object",
                             "properties": {
-                                "state": {
-                                    "type": "string",
-                                    "enum": ["off", "on", "color", "animation"]
-                                },
+                                "state": {"type": "string"},
                                 "params": {
                                     "anyOf": [
                                         {"type": "null"},
@@ -327,7 +324,8 @@ class CommandParser:
                                             "properties": {
                                                 "r": {"type": ["number", "string"]},
                                                 "g": {"type": ["number", "string"]},
-                                                "b": {"type": ["number", "string"]}
+                                                "b": {"type": ["number", "string"]},
+                                                "speed": {"type": ["number", "null"]}
                                             },
                                             "required": ["r", "g", "b"],
                                             "additionalProperties": False
@@ -336,6 +334,37 @@ class CommandParser:
                                 }
                             },
                             "required": ["state", "params"],
+                            "additionalProperties": False
+                        }
+                    ]
+                },
+                "createState": {
+                    "anyOf": [
+                        {"type": "null"},
+                        {
+                            "type": "object",
+                            "properties": {
+                                "name": {"type": "string"},
+                                "r": {"type": ["number", "string"]},
+                                "g": {"type": ["number", "string"]},
+                                "b": {"type": ["number", "string"]},
+                                "speed": {"type": ["number", "null"]},
+                                "description": {"type": ["string", "null"]}
+                            },
+                            "required": ["name", "r", "g", "b", "speed"],
+                            "additionalProperties": False
+                        }
+                    ]
+                },
+                "deleteState": {
+                    "anyOf": [
+                        {"type": "null"},
+                        {
+                            "type": "object",
+                            "properties": {
+                                "name": {"type": "string"}
+                            },
+                            "required": ["name"],
                             "additionalProperties": False
                         }
                     ]
@@ -351,18 +380,12 @@ class CommandParser:
                                     "items": {
                                         "type": "object",
                                         "properties": {
-                                            "state1": {
-                                                "type": "string",
-                                                "enum": ["off", "on", "color", "animation"]
-                                            },
+                                            "state1": {"type": "string"},
                                             "transition": {
                                                 "type": "string",
                                                 "enum": ["button_click", "button_double_click", "button_hold", "button_release", "voice_command"]
                                             },
-                                            "state2": {
-                                                "type": "string",
-                                                "enum": ["off", "on", "color", "animation"]
-                                            },
+                                            "state2": {"type": "string"},
                                             "state2Param": {
                                                 "anyOf": [
                                                     {"type": "null"},
@@ -429,7 +452,7 @@ class CommandParser:
                     ]
                 }
             },
-            "required": ["setState", "appendRules", "deleteRules"],
+            "required": ["setState", "createState", "deleteState", "appendRules", "deleteRules"],
             "additionalProperties": False
         }
 
@@ -531,10 +554,26 @@ class CommandParser:
             }
 
             # CRITICAL: Execute in correct order!
-            # 1. setState first (immediate change)
-            # 2. deleteRules second (remove old rules)
-            # 3. appendRules third (add new rules)
-            # This prevents deleting newly added rules!
+            # 1. createState first (create states before they can be used)
+            # 2. deleteState second (delete states)
+            # 3. setState third (immediate state change)
+            # 4. deleteRules fourth (remove old rules)
+            # 5. appendRules fifth (add new rules that may reference new states)
+            # This prevents issues with state references!
+
+            if parsed.get('createState'):
+                results['toolCalls'].append({
+                    'id': 'create_state_1',
+                    'name': 'create_state',
+                    'arguments': parsed['createState']
+                })
+
+            if parsed.get('deleteState'):
+                results['toolCalls'].append({
+                    'id': 'delete_state_1',
+                    'name': 'delete_state',
+                    'arguments': parsed['deleteState']
+                })
 
             if parsed.get('setState'):
                 results['toolCalls'].append({
@@ -623,10 +662,7 @@ class CommandParser:
                         {
                             "type": "object",
                             "properties": {
-                                "state": {
-                                    "type": "string",
-                                    "enum": ["off", "on", "color", "animation"]
-                                },
+                                "state": {"type": "string"},
                                 "params": {
                                     "anyOf": [
                                         {"type": "null"},
@@ -635,7 +671,8 @@ class CommandParser:
                                             "properties": {
                                                 "r": {"type": ["number", "string"]},
                                                 "g": {"type": ["number", "string"]},
-                                                "b": {"type": ["number", "string"]}
+                                                "b": {"type": ["number", "string"]},
+                                                "speed": {"type": ["number", "null"]}
                                             },
                                             "required": ["r", "g", "b"],
                                             "additionalProperties": False
@@ -644,6 +681,37 @@ class CommandParser:
                                 }
                             },
                             "required": ["state", "params"],
+                            "additionalProperties": False
+                        }
+                    ]
+                },
+                "createState": {
+                    "anyOf": [
+                        {"type": "null"},
+                        {
+                            "type": "object",
+                            "properties": {
+                                "name": {"type": "string"},
+                                "r": {"type": ["number", "string"]},
+                                "g": {"type": ["number", "string"]},
+                                "b": {"type": ["number", "string"]},
+                                "speed": {"type": ["number", "null"]},
+                                "description": {"type": ["string", "null"]}
+                            },
+                            "required": ["name", "r", "g", "b", "speed"],
+                            "additionalProperties": False
+                        }
+                    ]
+                },
+                "deleteState": {
+                    "anyOf": [
+                        {"type": "null"},
+                        {
+                            "type": "object",
+                            "properties": {
+                                "name": {"type": "string"}
+                            },
+                            "required": ["name"],
                             "additionalProperties": False
                         }
                     ]
@@ -659,18 +727,12 @@ class CommandParser:
                                     "items": {
                                         "type": "object",
                                         "properties": {
-                                            "state1": {
-                                                "type": "string",
-                                                "enum": ["off", "on", "color", "animation"]
-                                            },
+                                            "state1": {"type": "string"},
                                             "transition": {
                                                 "type": "string",
                                                 "enum": ["button_click", "button_double_click", "button_hold", "button_release", "voice_command"]
                                             },
-                                            "state2": {
-                                                "type": "string",
-                                                "enum": ["off", "on", "color", "animation"]
-                                            },
+                                            "state2": {"type": "string"},
                                             "state2Param": {
                                                 "anyOf": [
                                                     {"type": "null"},
@@ -737,7 +799,7 @@ class CommandParser:
                     ]
                 }
             },
-            "required": ["reasoning", "needsClarification", "clarifyingQuestion", "setState", "appendRules", "deleteRules"],
+            "required": ["reasoning", "needsClarification", "clarifyingQuestion", "setState", "createState", "deleteState", "appendRules", "deleteRules"],
             "additionalProperties": False
         }
 

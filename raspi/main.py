@@ -476,6 +476,44 @@ class AdaptLight:
                 print(f"  💾 Clearing all variables")
                 self.state_machine.clear_data()
 
+        elif tool_name == 'create_state':
+            # Create a new state with r, g, b, speed parameters
+            if args.get('name'):
+                from core.state import State
+                name = args.get('name')
+                r = args.get('r')
+                g = args.get('g')
+                b = args.get('b')
+                speed = args.get('speed')
+                description = args.get('description', '')
+
+                print(f"  ✨ Creating new state: {name}")
+                print(f"    → r={r}, g={g}, b={b}, speed={speed}")
+                if description:
+                    print(f"    → Description: {description}")
+
+                # Create and add the state
+                state = State(name=name, r=r, g=g, b=b, speed=speed, description=description)
+                self.state_machine.states.add_state(state)
+                print(f"    ✅ State '{name}' created successfully")
+
+        elif tool_name == 'delete_state':
+            # Delete a custom state by name
+            if args.get('name'):
+                name = args.get('name')
+
+                # Prevent deletion of default states
+                if name in ['on', 'off']:
+                    print(f"  ❌ Cannot delete default state: {name}")
+                    return
+
+                print(f"  🗑️  Deleting state: {name}")
+                success = self.state_machine.states.delete_state(name)
+                if success:
+                    print(f"    ✅ State '{name}' deleted successfully")
+                else:
+                    print(f"    ❌ State '{name}' not found")
+
         elif tool_name == 'reset_rules':
             # Reset rules back to default (on/off toggle)
             print(f"  🔄 Resetting rules to default")

@@ -39,7 +39,7 @@ Your output MUST conform to this exact JSON schema:
         {
           "type": "object",
           "properties": {
-            "state": {"type": "string", "enum": ["off", "on", "color", "animation"]},
+            "state": {"type": "string"},
             "params": {
               "anyOf": [
                 {"type": "null"},
@@ -48,7 +48,8 @@ Your output MUST conform to this exact JSON schema:
                   "properties": {
                     "r": {"type": ["number", "string"]},
                     "g": {"type": ["number", "string"]},
-                    "b": {"type": ["number", "string"]}
+                    "b": {"type": ["number", "string"]},
+                    "speed": {"type": ["number", "null"]}
                   },
                   "required": ["r", "g", "b"],
                   "additionalProperties": false
@@ -57,6 +58,37 @@ Your output MUST conform to this exact JSON schema:
             }
           },
           "required": ["state", "params"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "createState": {
+      "anyOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "properties": {
+            "name": {"type": "string"},
+            "r": {"type": ["number", "string"]},
+            "g": {"type": ["number", "string"]},
+            "b": {"type": ["number", "string"]},
+            "speed": {"type": ["number", "null"]},
+            "description": {"type": ["string", "null"]}
+          },
+          "required": ["name", "r", "g", "b", "speed"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "deleteState": {
+      "anyOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "properties": {
+            "name": {"type": "string"}
+          },
+          "required": ["name"],
           "additionalProperties": false
         }
       ]
@@ -72,9 +104,9 @@ Your output MUST conform to this exact JSON schema:
               "items": {
                 "type": "object",
                 "properties": {
-                  "state1": {"type": "string", "enum": ["off", "on", "color", "animation"]},
+                  "state1": {"type": "string"},
                   "transition": {"type": "string", "enum": ["button_click", "button_double_click", "button_hold", "button_release", "voice_command"]},
-                  "state2": {"type": "string", "enum": ["off", "on", "color", "animation"]},
+                  "state2": {"type": "string"},
                   "state2Param": {
                     "anyOf": [
                       {"type": "null"},
@@ -127,18 +159,90 @@ Your output MUST conform to this exact JSON schema:
       ]
     }
   },
-  "required": ["setState", "appendRules", "deleteRules"],
+  "required": ["setState", "createState", "deleteState", "appendRules", "deleteRules"],
   "additionalProperties": false
 }
 ```
 
 **Critical Rules:**
-- All three top-level fields (setState, appendRules, deleteRules) MUST be present
+- All five top-level fields (setState, createState, deleteState, appendRules, deleteRules) MUST be present
 - Use `null` for any field you don't need
 - You can have multiple non-null fields (e.g., both deleteRules AND appendRules)
-- For deleteRules: all 6 fields (transition, state1, state2, indices, delete_all, reset_rules) must be present, use null for unused ones
+- For deleteRules: all fields must be present, use null for unused ones
 - For appendRules: each rule must have all 6 fields (state1, transition, state2, state2Param, condition, action)
 - For state2Param objects: must include r, g, b (required), and speed (optional - include for animations only)
+- For createState: must include name, r, g, b, speed (required fields), and optional description
+- For deleteState: must include name
+
+## UNIFIED STATE SYSTEM
+
+All states in this system use the same unified structure with four parameters:
+- **r**: Red value (0-255) or expression string
+- **g**: Green value (0-255) or expression string
+- **b**: Blue value (0-255) or expression string
+- **speed**: Animation speed in milliseconds, or null for static states
+
+### Default States
+The system starts with two default states:
+- **off**: r=0, g=0, b=0, speed=null (black/off)
+- **on**: r=255, g=255, b=255, speed=null (white/on)
+
+### Creating Custom States
+Use `createState` to create new named states that can be referenced in rules:
+
+```json
+{
+  "setState": null,
+  "createState": {
+    "name": "reading",
+    "r": 255,
+    "g": 200,
+    "b": 150,
+    "speed": null,
+    "description": "Warm white for reading"
+  },
+  "deleteState": null,
+  "appendRules": null,
+  "deleteRules": null
+}
+```
+
+Then use the state in rules:
+```json
+{
+  "setState": null,
+  "createState": null,
+  "deleteState": null,
+  "appendRules": {
+    "rules": [
+      {"state1": "off", "transition": "button_click", "state2": "reading", "state2Param": null, "condition": null, "action": null}
+    ]
+  },
+  "deleteRules": null
+}
+```
+
+### Deleting Custom States
+Use `deleteState` to remove a custom state:
+```json
+{
+  "setState": null,
+  "createState": null,
+  "deleteState": {"name": "reading"},
+  "appendRules": null,
+  "deleteRules": null
+}
+```
+
+**Important**: You cannot delete the default "on" and "off" states.
+
+### Static vs Animated States
+- **Static states**: Set speed to null. The r, g, b values are evaluated once when entering the state.
+- **Animated states**: Set speed to a number (milliseconds per frame). The r, g, b expressions are evaluated every frame with access to time variables (t, frame).
+
+Examples:
+- Static red: `{"name": "red", "r": 255, "g": 0, "b": 0, "speed": null}`
+- Pulsing red: `{"name": "pulse", "r": "abs(sin(t/1000))*255", "g": 0, "b": 0, "speed": 50}`
 
 ## CURRENT SYSTEM STATE
 
@@ -217,23 +321,22 @@ This is why we DON'T need to delete default rules!
 ## RULE FORMAT
 
 When using **appendRules**, create rule objects with these fields:
-- **state1**: The current/starting state name (string) - must be "off", "on", "color", or "animation"
+- **state1**: The current/starting state name (string) - can be any state name (including custom states)
 - **transition**: The trigger/event that causes the transition (string) - must be "button_click", "button_double_click", "button_hold", "button_release", or "voice_command"
-- **state2**: The next/destination state name (string) - must be "off", "on", "color", or "animation"
-- **state2Param**: Parameters for state2 (can be object with specific values, expressions, or null)
-  - **MUST include {r, g, b}** when it's an object, optionally include {speed}
-  - For color states: omit speed or set to null - both work: `{r: 255, g: 0, b: 0}` or `{r: 255, g: 0, b: 0, speed: null}`
-  - For animation states: include speed as a number (milliseconds): `{r: "expr", g: "expr", b: "expr", speed: 50}`
+- **state2**: The next/destination state name (string) - can be any state name (including custom states)
+- **state2Param**: Parameters to override the state's defaults (can be object or null)
+  - Use **null** to use the state's default parameters (most common for named states)
+  - Use **{r, g, b, speed}** object to override the state's parameters for this specific transition
+  - When providing params: r, g, b are required, speed is optional
 - **condition**: Optional condition expression (string or null) - must evaluate to true for rule to trigger
 - **action**: Optional action expression (string or null) - executed after condition passes, before state transition
 
-**CRITICAL: Always explicitly include all required fields:**
-- **color state**: state2Param with {r, g, b} - speed is optional
-  - Use specific values for static colors: `{r: 255, g: 0, b: 0}`
-  - Use null ONLY to preserve current color (e.g., freezing an animation)
-- **animation state**: MUST have state2Param with {r, g, b, speed: number}
-  - NEVER omit speed for animations - always provide it as a number
-- **on** or **off** states: Use null for state2Param (no parameters needed)
+**CRITICAL: state2Param usage:**
+- **Named states (on, off, custom)**: Use `null` for state2Param to use the state's default parameters
+  - Example: `{"state1": "off", "transition": "button_click", "state2": "reading", "state2Param": null, ...}`
+- **Override parameters**: Use `{r, g, b, speed}` to override state defaults for this specific transition
+  - Static override: `{"state2": "on", "state2Param": {"r": 255, "g": 0, "b": 0, "speed": null}, ...}`
+  - Animated override: `{"state2": "off", "state2Param": {"r": "random()", "g": "random()", "b": "random()", "speed": 100}, ...}`
 
 ### For toggle behaviors (like "click to turn on X"), create TWO rules:
 1. From current state to the new state

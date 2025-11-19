@@ -1,14 +1,9 @@
 """
 Light state behavior functions for AdaptLight.
 
-This module is a port of states.js and contains the behavior
-functions for each state:
-- turnLightOn(): Turn LEDs on (white)
-- turnLightOff(): Turn LEDs off
-- setColor(params): Set RGB color
-- startAnimation(params): Start expression-based animation
-
-All functions control the LED hardware instead of DOM elements.
+This module implements a unified state system where all states
+use the same parameters (r, g, b, speed) and a single execution function.
+Static states have speed=None, animated states have speed in milliseconds.
 """
 
 from hardware.led_controller import LEDController
@@ -34,35 +29,37 @@ def set_state_machine(machine):
     state_machine_ref = machine
 
 
-def turn_light_on():
-    """Turn light on (pure white light)."""
-    if led_controller:
-        led_controller.set_color(255, 255, 200)  # Warm white
-        print("Light turned ON")
-    else:
-        print("LED controller not initialized")
-
-
-def turn_light_off():
-    """Turn light off."""
-    # Stop any running animations first
-    if state_machine_ref:
-        state_machine_ref.stop_interval()
-
-    if led_controller:
-        led_controller.set_color(0, 0, 0)
-        print("Light turned OFF")
-    else:
-        print("LED controller not initialized")
-
-
-def set_color(params):
+def execute_unified_state(params):
     """
-    Set light color based on RGB values.
+    Execute a unified state with r, g, b, and optional speed parameters.
+
+    This is the core function that handles ALL states in the system.
+    - If speed is None: set static color
+    - If speed is a number: start animation
+
+    Args:
+        params: Dict with r, g, b (values or expressions) and optional speed
+    """
+    if not params or not isinstance(params, dict):
+        print("State requires parameters dict with r, g, b, and optional speed")
+        return
+
+    speed = params.get('speed')
+
+    if speed is None:
+        # Static color mode
+        _execute_static_state(params)
+    else:
+        # Animation mode
+        _execute_animated_state(params)
+
+
+def _execute_static_state(params):
+    """
+    Execute a static color state (speed=None).
 
     Args:
         params: Dict with r, g, b values (can be numbers or expressions)
-                or array [r, g, b]
     """
     if state_machine_ref:
         state_machine_ref.stop_interval()
@@ -74,39 +71,29 @@ def set_color(params):
     # Get current color for expression context
     current_r, current_g, current_b = led_controller.get_current_color()
 
-    # Parse params
-    if isinstance(params, dict):
-        r = params.get('r', current_r)
-        g = params.get('g', current_g)
-        b = params.get('b', current_b)
+    r = params.get('r', 0)
+    g = params.get('g', 0)
+    b = params.get('b', 0)
 
-        # Evaluate expressions if they are strings
-        if isinstance(r, str):
-            r = evaluate_color_expression(r, current_r, current_g, current_b, 'r')
-        if isinstance(g, str):
-            g = evaluate_color_expression(g, current_r, current_g, current_b, 'g')
-        if isinstance(b, str):
-            b = evaluate_color_expression(b, current_r, current_g, current_b, 'b')
-
-    elif isinstance(params, (list, tuple)) and len(params) >= 3:
-        r, g, b = params[0], params[1], params[2]
-    else:
-        r, g, b = current_r, current_g, current_b
+    # Evaluate expressions if they are strings
+    if isinstance(r, str):
+        r = evaluate_color_expression(r, current_r, current_g, current_b, 'r')
+    if isinstance(g, str):
+        g = evaluate_color_expression(g, current_r, current_g, current_b, 'g')
+    if isinstance(b, str):
+        b = evaluate_color_expression(b, current_r, current_g, current_b, 'b')
 
     # Set the color
     led_controller.set_color(int(r), int(g), int(b))
-    print(f"Light color set to: RGB({r}, {g}, {b})")
+    print(f"Static state set to: RGB({r}, {g}, {b})")
 
 
-def start_animation(params):
+def _execute_animated_state(params):
     """
-    Start an expression-based animation.
+    Execute an animated state (speed is a number in milliseconds).
 
     Args:
         params: Dict with r, g, b expressions and speed
-                Format: {r: "expr", g: "expr", b: "expr", speed: 50}
-                Variables: r, g, b (current), t (time), frame (frame count)
-                Functions: sin, cos, abs, min, max, floor, ceil, round, sqrt, pow, PI
     """
     if not state_machine_ref:
         print("State machine not initialized")
@@ -114,10 +101,6 @@ def start_animation(params):
 
     # Stop any existing animation
     state_machine_ref.stop_interval()
-
-    if not params or not isinstance(params, dict):
-        print("Animation requires parameters object with r, g, b expressions and speed")
-        return
 
     if not led_controller:
         print("LED controller not initialized")
@@ -175,38 +158,30 @@ def start_animation(params):
 
     # Start the interval
     if state_machine_ref:
-        state_machine_ref.start_interval(animation_fn, speed)  # speed is already in milliseconds
+        state_machine_ref.start_interval(animation_fn, speed)
 
 
 def initialize_default_states(state_machine):
     """
-    Register default states with the state machine.
+    Create default 'on' and 'off' states with the state machine.
 
     Args:
         state_machine: StateMachine instance
     """
     from core.state import State
 
+    # Create default states using unified parameters
+    # Note: on = white (255, 255, 255), off = black (0, 0, 0)
     default_states = [
-        State('off', 'turn light off, no extra parameters', turn_light_off),
-        State('on', 'turn light on, no extra parameters', turn_light_on),
-        State('color',
-              'display a custom color. Parameters: {r: value, g: value, b: value} where values '
-              'can be numbers or expressions. Expression variables: r, g, b (current RGB values), '
-              'random() (returns 0-255). Functions: sin, cos, abs, min, max, floor, ceil, round, '
-              'sqrt, pow, PI. Examples: {r: 255, g: 0, b: 0} or {r: "random()", g: "random()", '
-              'b: "random()"} or {r: "r + 10", g: "g", b: "b"} or {r: "b", g: "r", b: "g"}',
-              set_color),
-        State('animation',
-              'play an animated light pattern using expressions. Parameters: {r: "expr", g: "expr", '
-              'b: "expr", speed: 50}. Variables: r,g,b (current RGB), t (time in ms), frame (frame '
-              'count). Functions: sin, cos, abs, min, max, floor, ceil, round, sqrt, pow, PI. '
-              'Example: {r: "abs(sin(t/1000)) * 255", g: "abs(cos(t/1000)) * 255", b: "128", speed: 50}',
-              start_animation)
+        State('off', r=0, g=0, b=0, speed=None,
+              description='turn light off - black (0,0,0)'),
+        State('on', r=255, g=255, b=255, speed=None,
+              description='turn light on - white (255,255,255)'),
     ]
 
     for state in default_states:
-        state_machine.register_state(state.name, state.description, state.on_enter)
+        state_machine.states.add_state(state)
+        print(f"Default state created: {state.name} - RGB({state.r}, {state.g}, {state.b})")
 
     print(f"Default states initialized: {len(default_states)}")
 

@@ -13,34 +13,55 @@ For example: 'on' state turns LEDs on, 'color' state sets RGB values.
 class State:
     """Represents a single state in the state machine."""
 
-    def __init__(self, name: str, description: str = '', on_enter=None):
+    def __init__(self, name: str, r=None, g=None, b=None, speed=None, description: str = ''):
         """
-        Initialize a state.
+        Initialize a state with unified parameters.
 
         Args:
             name: Unique identifier for this state
+            r: Red value (0-255) or expression string
+            g: Green value (0-255) or expression string
+            b: Blue value (0-255) or expression string
+            speed: Animation speed in milliseconds (None for static states)
             description: Human-readable description for AI parsing
-            on_enter: Callable to execute when entering this state
         """
         self.name = name
-        self.description = description
-        self.on_enter = on_enter
+        self.r = r
+        self.g = g
+        self.b = b
+        self.speed = speed
+        self.description = description or self._generate_description()
+
+    def _generate_description(self):
+        """Generate a default description based on state parameters."""
+        if self.speed is not None:
+            return f"Animation state with r={self.r}, g={self.g}, b={self.b}, speed={self.speed}ms"
+        else:
+            return f"Static color state with r={self.r}, g={self.g}, b={self.b}"
 
     def enter(self, params=None):
         """
-        Execute the onEnter function for this state.
+        Execute state behavior when entering this state.
 
         Args:
-            params: Optional parameters to pass to the onEnter function
+            params: Optional parameters to override state defaults
         """
-        if self.on_enter and callable(self.on_enter):
-            print(f"Entering state: {self.name}" +
-                  (f" with params: {params}" if params else ""))
+        # Import here to avoid circular dependency
+        from states.light_states import execute_unified_state
 
-            if params:
-                self.on_enter(params)
-            else:
-                self.on_enter()
+        # Use provided params or fall back to state defaults
+        if params is None:
+            params = {
+                'r': self.r,
+                'g': self.g,
+                'b': self.b,
+                'speed': self.speed
+            }
+
+        print(f"Entering state: {self.name}" +
+              (f" with params: {params}" if params else ""))
+
+        execute_unified_state(params)
 
 
 class States:
@@ -73,6 +94,24 @@ class States:
             if state.name == name:
                 return state
         return None
+
+    def delete_state(self, name: str) -> bool:
+        """
+        Delete a state by its name.
+
+        Args:
+            name: Name of the state to delete
+
+        Returns:
+            True if state was deleted, False if not found
+        """
+        for i, state in enumerate(self.states):
+            if state.name == name:
+                deleted = self.states.pop(i)
+                print(f"State deleted: {deleted.name}")
+                return True
+        print(f"State not found: {name}")
+        return False
 
     def clear_states(self):
         """Clear all states."""
