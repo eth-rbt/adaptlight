@@ -416,6 +416,8 @@ Examples:
 ```json
 {
   "setState": null,
+  "createState": null,
+  "deleteState": null,
   "deleteRules": null,
   "appendRules": {
     "rules": [
@@ -454,6 +456,8 @@ Examples:
 ```json
 {
   "setState": null,
+  "createState": null,
+  "deleteState": null,
   "deleteRules": null,
   "appendRules": {
     "rules": [
@@ -474,7 +478,92 @@ Examples:
 
 These examples show: Previous State → User Input → JSON Output
 
-### Example 1 - REPLACING default rules with blue light
+### Example 1 - Creating a custom state for reading
+Previous State: [0] off --[button_click]--> on, [1] on --[button_click]--> off
+Current State: off
+User Input: "Create a reading light state that's warm white"
+
+Output:
+```json
+{
+  "setState": null,
+  "createState": {
+    "name": "reading",
+    "r": 255,
+    "g": 200,
+    "b": 150,
+    "speed": null,
+    "description": "Warm white light for reading"
+  },
+  "deleteState": null,
+  "deleteRules": null,
+  "appendRules": null
+}
+```
+
+### Example 2 - Using a custom state in a rule
+Previous State: [0] off --[button_click]--> on, [1] on --[button_click]--> off
+Available States: off, on, reading
+Current State: off
+User Input: "Double click to turn on reading mode"
+
+Output:
+```json
+{
+  "setState": null,
+  "createState": null,
+  "deleteState": null,
+  "deleteRules": null,
+  "appendRules": {
+    "rules": [
+      {"state1": "off", "transition": "button_double_click", "state2": "reading", "state2Param": null, "condition": null, "action": null},
+      {"state1": "reading", "transition": "button_double_click", "state2": "off", "state2Param": null, "condition": null, "action": null}
+    ]
+  }
+}
+```
+
+### Example 3 - Create custom animated state
+Previous State: [0] off --[button_click]--> on, [1] on --[button_click]--> off
+Current State: off
+User Input: "Create a purple pulse animation state"
+
+Output:
+```json
+{
+  "setState": null,
+  "createState": {
+    "name": "purple_pulse",
+    "r": "128 + abs(sin(t/1000)) * 127",
+    "g": "0",
+    "b": "128 + abs(sin(t/1000)) * 127",
+    "speed": 30,
+    "description": "Pulsing purple animation"
+  },
+  "deleteState": null,
+  "deleteRules": null,
+  "appendRules": null
+}
+```
+
+### Example 4 - Delete a custom state
+Previous State: [0] off --[button_click]--> on, [1] on --[button_click]--> off
+Available States: off, on, reading, purple_pulse
+Current State: off
+User Input: "Delete the reading state"
+
+Output:
+```json
+{
+  "setState": null,
+  "createState": null,
+  "deleteState": {"name": "reading"},
+  "deleteRules": null,
+  "appendRules": null
+}
+```
+
+### Example 5 - REPLACING default rules with blue light
 Previous State: [0] off --[button_click]--> on, [1] on --[button_click]--> off
 Current State: off
 User Input: "Click button to turn on blue light"
@@ -483,17 +572,19 @@ Output:
 ```json
 {
   "setState": null,
+  "createState": null,
+  "deleteState": null,
   "deleteRules": {"transition": "button_click", "state1": null, "state2": null, "indices": null, "delete_all": null},
   "appendRules": {
     "rules": [
-      {"state1": "off", "transition": "button_click", "state2": "color", "state2Param": {"r": 0, "g": 0, "b": 255}, "condition": null, "action": null},
-      {"state1": "color", "transition": "button_click", "state2": "off", "state2Param": null, "condition": null, "action": null}
+      {"state1": "off", "transition": "button_click", "state2": "on", "state2Param": {"r": 0, "g": 0, "b": 255, "speed": null}, "condition": null, "action": null},
+      {"state1": "on", "transition": "button_click", "state2": "off", "state2Param": null, "condition": null, "action": null}
     ]
   }
 }
 ```
 
-### Example 2 - ADDING to existing rules (new transition)
+### Example 6 - ADDING to existing rules (new transition)
 Previous State: [0] off --[button_click]--> on, [1] on --[button_click]--> off
 Current State: off
 User Input: "Double click to toggle red light"
@@ -502,17 +593,19 @@ Output:
 ```json
 {
   "setState": null,
+  "createState": null,
+  "deleteState": null,
   "deleteRules": null,
   "appendRules": {
     "rules": [
-      {"state1": "off", "transition": "button_double_click", "state2": "color", "state2Param": {"r": 255, "g": 0, "b": 0}, "condition": null, "action": null},
-      {"state1": "color", "transition": "button_double_click", "state2": "off", "state2Param": null, "condition": null, "action": null}
+      {"state1": "off", "transition": "button_double_click", "state2": "on", "state2Param": {"r": 255, "g": 0, "b": 0, "speed": null}, "condition": null, "action": null},
+      {"state1": "on", "transition": "button_double_click", "state2": "off", "state2Param": null, "condition": null, "action": null}
     ]
   }
 }
 ```
 
-### Example 3 - ADDING hold (new transition, keep default click)
+### Example 7 - ADDING hold (new transition, keep default click)
 Previous State: [0] off --[button_click]--> on, [1] on --[button_click]--> off
 Current State: off
 User Input: "Hold button for random color"
@@ -521,16 +614,18 @@ Output:
 ```json
 {
   "setState": null,
+  "createState": null,
+  "deleteState": null,
   "deleteRules": null,
   "appendRules": {
     "rules": [
-      {"state1": "off", "transition": "button_hold", "state2": "color", "state2Param": {"r": "random()", "g": "random()", "b": "random()"}, "condition": null, "action": null}
+      {"state1": "off", "transition": "button_hold", "state2": "on", "state2Param": {"r": "random()", "g": "random()", "b": "random()", "speed": null}, "condition": null, "action": null}
     ]
   }
 }
 ```
 
-### Example 4 - Immediate state change
+### Example 8 - Immediate state change
 Previous State: [0] off --[button_click]--> on, [1] on --[button_click]--> off
 Current State: off
 User Input: "Turn the light red now"
@@ -538,13 +633,15 @@ User Input: "Turn the light red now"
 Output:
 ```json
 {
-  "setState": {"state": "color", "params": {"r": 255, "g": 0, "b": 0}},
+  "setState": {"state": "on", "params": {"r": 255, "g": 0, "b": 0, "speed": null}},
+  "createState": null,
+  "deleteState": null,
   "deleteRules": null,
   "appendRules": null
 }
 ```
 
-### Example 5 - TEMPORARY counter-based behavior (DO NOT DELETE default rules!)
+### Example 9 - TEMPORARY counter-based behavior (DO NOT DELETE default rules!)
 Previous State: [0] off --[button_click]--> on, [1] on --[button_click]--> off
 Current State: off
 User Input: "Next 5 clicks should be random colors, then it goes back to normal"
@@ -553,19 +650,21 @@ Output:
 ```json
 {
   "setState": null,
+  "createState": null,
+  "deleteState": null,
   "deleteRules": null,
   "appendRules": {
     "rules": [
-      {"state1": "off", "transition": "button_click", "state2": "color", "state2Param": {"r": "random()", "g": "random()", "b": "random()"}, "condition": "getData('counter') === undefined", "action": "setData('counter', 4)"},
-      {"state1": "color", "transition": "button_click", "state2": "color", "state2Param": {"r": "random()", "g": "random()", "b": "random()"}, "condition": "getData('counter') > 0", "action": "setData('counter', getData('counter') - 1)"},
-      {"state1": "color", "transition": "button_click", "state2": "on", "state2Param": null, "condition": "getData('counter') === 0", "action": "setData('counter', undefined)"}
+      {"state1": "off", "transition": "button_click", "state2": "on", "state2Param": {"r": "random()", "g": "random()", "b": "random()", "speed": null}, "condition": "getData('counter') === undefined", "action": "setData('counter', 4)"},
+      {"state1": "on", "transition": "button_click", "state2": "on", "state2Param": {"r": "random()", "g": "random()", "b": "random()", "speed": null}, "condition": "getData('counter') > 0", "action": "setData('counter', getData('counter') - 1)"},
+      {"state1": "on", "transition": "button_click", "state2": "on", "state2Param": null, "condition": "getData('counter') === 0", "action": "setData('counter', undefined)"}
     ]
   }
 }
 ```
 (Note: After counter expires and state goes to "on", the default on→off rule takes over for normal toggle)
 
-### Example 6 - ADDING animation with hold (new transition)
+### Example 10 - ADDING animation with hold (new transition)
 Previous State: [0] off --[button_click]--> on, [1] on --[button_click]--> off
 Current State: off
 User Input: "Hold button for rainbow animation"
@@ -574,20 +673,22 @@ Output:
 ```json
 {
   "setState": null,
+  "createState": null,
+  "deleteState": null,
   "deleteRules": null,
   "appendRules": {
     "rules": [
-      {"state1": "off", "transition": "button_hold", "state2": "animation", "state2Param": {"r": "(frame * 2) % 256", "g": "abs(sin(frame * 0.1)) * 255", "b": "abs(cos(frame * 0.1)) * 255", "speed": 50}, "condition": null, "action": null},
-      {"state1": "animation", "transition": "button_release", "state2": "off", "state2Param": null, "condition": null, "action": null}
+      {"state1": "off", "transition": "button_hold", "state2": "on", "state2Param": {"r": "(frame * 2) % 256", "g": "abs(sin(frame * 0.1)) * 255", "b": "abs(cos(frame * 0.1)) * 255", "speed": 50}, "condition": null, "action": null},
+      {"state1": "on", "transition": "button_release", "state2": "off", "state2Param": null, "condition": null, "action": null}
     ]
   }
 }
 ```
 
-### Example 7 - Replacing existing rule (change color)
+### Example 11 - Replacing existing rule (change color)
 Previous State:
-[0] off --[button_click]--> color (blue) {r: 0, g: 0, b: 255}
-[1] color --[button_click]--> off
+[0] off --[button_click]--> on (blue) {r: 0, g: 0, b: 255}
+[1] on --[button_click]--> off
 
 Current State: off
 User Input: "Change the click color to red"
@@ -596,19 +697,21 @@ Output:
 ```json
 {
   "setState": null,
+  "createState": null,
+  "deleteState": null,
   "deleteRules": {"transition": null, "state1": null, "state2": null, "indices": [0], "delete_all": null},
   "appendRules": {
     "rules": [
-      {"state1": "off", "transition": "button_click", "state2": "color", "state2Param": {"r": 255, "g": 0, "b": 0}, "condition": null, "action": null}
+      {"state1": "off", "transition": "button_click", "state2": "on", "state2Param": {"r": 255, "g": 0, "b": 0, "speed": null}, "condition": null, "action": null}
     ]
   }
 }
 ```
 
-### Example 8 - Modifying animation speed
+### Example 12 - Modifying animation speed
 Previous State:
-[0] off --[button_click]--> animation (rainbow) {r: "(frame * 2) % 256", g: "abs(sin(frame * 0.1)) * 255", b: "abs(cos(frame * 0.1)) * 255", speed: 50}
-[1] animation --[button_click]--> off
+[0] off --[button_click]--> on (rainbow) {r: "(frame * 2) % 256", g: "abs(sin(frame * 0.1)) * 255", b: "abs(cos(frame * 0.1)) * 255", speed: 50}
+[1] on --[button_click]--> off
 
 Current State: off
 User Input: "Make it faster"
@@ -617,19 +720,21 @@ Output:
 ```json
 {
   "setState": null,
+  "createState": null,
+  "deleteState": null,
   "deleteRules": {"transition": null, "state1": null, "state2": null, "indices": [0], "delete_all": null},
   "appendRules": {
     "rules": [
-      {"state1": "off", "transition": "button_click", "state2": "animation", "state2Param": {"r": "(frame * 2) % 256", "g": "abs(sin(frame * 0.1)) * 255", "b": "abs(cos(frame * 0.1)) * 255", "speed": 20}, "condition": null, "action": null}
+      {"state1": "off", "transition": "button_click", "state2": "on", "state2Param": {"r": "(frame * 2) % 256", "g": "abs(sin(frame * 0.1)) * 255", "b": "abs(cos(frame * 0.1)) * 255", "speed": 20}, "condition": null, "action": null}
     ]
   }
 }
 ```
 
-### Example 9 - Reset to default
+### Example 13 - Reset to default
 Previous State:
-[0] off --[button_click]--> animation (random party) {speed: 100}
-[1] animation --[button_click]--> off
+[0] off --[button_click]--> on (random party) {speed: 100}
+[1] on --[button_click]--> off
 
 Current State: off
 User Input: "Reset everything back to default"
@@ -638,6 +743,8 @@ Output:
 ```json
 {
   "setState": null,
+  "createState": null,
+  "deleteState": null,
   "deleteRules": {"transition": null, "state1": null, "state2": null, "indices": null, "delete_all": true},
   "appendRules": {
     "rules": [
@@ -658,9 +765,9 @@ Past User Inputs:
 2. "Hold for random color"
 
 Previous State:
-[0] off --[button_click]--> animation (rainbow) {speed: 50}
-[1] animation --[button_click]--> off
-[2] off --[button_hold]--> color (random)
+[0] off --[button_click]--> on (rainbow) {speed: 50}
+[1] on --[button_click]--> off
+[2] off --[button_hold]--> on (random)
 
 Current State: off
 User Input: "Make it faster"
@@ -669,10 +776,12 @@ Output:
 ```json
 {
   "setState": null,
+  "createState": null,
+  "deleteState": null,
   "deleteRules": {"transition": null, "state1": null, "state2": null, "indices": [0], "delete_all": null},
   "appendRules": {
     "rules": [
-      {"state1": "off", "transition": "button_click", "state2": "animation", "state2Param": {"r": "(frame * 2) % 256", "g": "abs(sin(frame * 0.1)) * 255", "b": "abs(cos(frame * 0.1)) * 255", "speed": 20}, "condition": null, "action": null}
+      {"state1": "off", "transition": "button_click", "state2": "on", "state2Param": {"r": "(frame * 2) % 256", "g": "abs(sin(frame * 0.1)) * 255", "b": "abs(cos(frame * 0.1)) * 255", "speed": 20}, "condition": null, "action": null}
     ]
   }
 }
