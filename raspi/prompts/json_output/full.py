@@ -241,6 +241,64 @@ The following lists show what is currently available in the system, past user in
 
 {dynamic_content}
 
+## EXIT RULES (CRITICAL!)
+
+**CRITICAL: Always provide an exit path when adding transitions to new states!**
+
+When adding rules that transition TO a state, ensure there's a way OUT:
+- **ALWAYS add exit rules** for the destination state (unless one already exists)
+- The system has a safety net that auto-adds click-to-off rules if you forget
+- But it's better to be explicit and thoughtful about exit paths
+
+**Examples:**
+
+Immediate state change: "Turn the light red now"
+```json
+{
+  "deleteState": null,
+  "createState": {
+    "name": "red",
+    "r": 255,
+    "g": 0,
+    "b": 0,
+    "speed": null,
+    "description": "Bright red color"
+  },
+  "deleteRules": null,
+  "appendRules": {
+    "rules": [
+      {"state1": "red", "transition": "button_click", "state2": "off", "condition": null, "action": null}
+    ]
+  },
+  "setState": {"state": "red"}
+}
+```
+
+Timer transition: "In 10 seconds turn light red"
+```json
+{
+  "deleteState": null,
+  "createState": {
+    "name": "red",
+    "r": 255,
+    "g": 0,
+    "b": 0,
+    "speed": null,
+    "description": "Bright red color"
+  },
+  "deleteRules": null,
+  "appendRules": {
+    "rules": [
+      {"state1": "off", "transition": "timer", "state2": "red", "condition": null, "action": null},
+      {"state1": "red", "transition": "button_click", "state2": "off", "condition": null, "action": null}
+    ]
+  },
+  "setState": null
+}
+```
+
+**Why:** Without exit rules, users get stuck in states with no way to change them!
+
 ## RULE BEHAVIOR
 
 **CRITICAL: Understanding When to Delete vs Add Rules**

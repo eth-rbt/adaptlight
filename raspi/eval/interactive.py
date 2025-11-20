@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from voice.command_parser import CommandParser
 from core.state import State, States
+from core.state_machine import StateMachine
 
 
 class InteractiveEvaluator:
@@ -37,15 +38,10 @@ class InteractiveEvaluator:
             claude_api_key=claude_api_key
         )
 
-        # Initialize state collection
-        self.states = States()
+        # Initialize actual state machine with timer support
+        self.state_machine = StateMachine()
         self._initialize_default_states()
-
-        # Initialize state machine state
-        self.rules = self._get_default_rules()
-        self.current_state = 'off'
-        self.state_params = None
-        self.variables = {}
+        self._initialize_default_rules()
 
         # Available transitions
         self.available_transitions = [
@@ -53,35 +49,36 @@ class InteractiveEvaluator:
             {"name": "button_double_click", "description": "Double click"},
             {"name": "button_hold", "description": "Hold button"},
             {"name": "button_release", "description": "Release after hold"},
-            {"name": "voice_command", "description": "Voice command"}
+            {"name": "voice_command", "description": "Voice command"},
+            {"name": "timer", "description": "One-time delay"},
+            {"name": "interval", "description": "Recurring periodic"},
+            {"name": "schedule", "description": "Absolute time of day"}
         ]
 
     def _initialize_default_states(self):
         """Initialize with default states."""
         # Basic states
-        self.states.add_state(State('off', r=0, g=0, b=0, description='LEDs off'))
-        self.states.add_state(State('on', r=255, g=255, b=255, description='White light'))
+        self.state_machine.states.add_state(State('off', r=0, g=0, b=0, description='LEDs off'))
+        self.state_machine.states.add_state(State('on', r=255, g=255, b=255, description='White light'))
 
-    def _get_default_rules(self):
-        """Get default on/off toggle rules."""
-        return [
-            {
-                "state1": "off",
-                "transition": "button_click",
-                "state2": "on",
-                "state2Param": None,
-                "condition": None,
-                "action": None
-            },
-            {
-                "state1": "on",
-                "transition": "button_click",
-                "state2": "off",
-                "state2Param": None,
-                "condition": None,
-                "action": None
-            }
-        ]
+    def _initialize_default_rules(self):
+        """Add default on/off toggle rules."""
+        self.state_machine.add_rule({
+            "state1": "off",
+            "transition": "button_click",
+            "state2": "on",
+            "condition": None,
+            "action": None,
+            "trigger_config": None
+        })
+        self.state_machine.add_rule({
+            "state1": "on",
+            "transition": "button_click",
+            "state2": "off",
+            "condition": None,
+            "action": None,
+            "trigger_config": None
+        })
 
     def _print_separator(self, char='=', length=70):
         """Print a separator line."""
@@ -89,14 +86,14 @@ class InteractiveEvaluator:
 
     def _print_current_state(self):
         """Print the current state machine state."""
-        print(f"\n📍 CURRENT STATE: {self.current_state}")
-        if self.state_params:
-            print(f"   Parameters: {self.state_params}")
+        print(f"\n📍 CURRENT STATE: {self.state_machine.current_state}")
+        if self.state_machine.current_state_params:
+            print(f"   Parameters: {self.state_machine.current_state_params}")
 
     def _print_states(self):
         """Print all registered states."""
-        print(f"\n🎨 REGISTERED STATES ({len(self.states.get_states())} states):")
-        for state in self.states.get_states():
+        print(f"\n🎨 REGISTERED STATES ({len(self.state_machine.states.get_states())} states):")
+        for state in self.state_machine.states.get_states():
             params = []
             if state.r is not None:
                 params.append(f"r={state.r}")
@@ -114,20 +111,24 @@ class InteractiveEvaluator:
 
     def _print_rules(self):
         """Print current rules."""
-        print(f"\n📋 RULES ({len(self.rules)} rules):")
-        if not self.rules:
+        rules = self.state_machine.get_rules()
+        print(f"\n📋 RULES ({len(rules)} rules):")
+        if not rules:
             print("  (no rules)")
             return
 
-        for idx, rule in enumerate(self.rules):
-            state1 = rule.get('state1', '?')
-            transition = rule.get('transition', '?')
-            state2 = rule.get('state2', '?')
-            condition = rule.get('condition')
-            action = rule.get('action')
+        for idx, rule in enumerate(rules):
+            state1 = rule.state1
+            transition = rule.transition
+            state2 = rule.state2
+            condition = rule.condition
+            action = rule.action
+            trigger_config = rule.trigger_config
 
             rule_str = f"  [{idx}] {state1} --[{transition}]--> {state2}"
 
+            if trigger_config:
+                rule_str += f"\n      └─ config: {trigger_config}"
             if condition:
                 rule_str += f"\n      └─ if: {condition}"
             if action:
@@ -137,12 +138,13 @@ class InteractiveEvaluator:
 
     def _print_variables(self):
         """Print current variables."""
-        print(f"\n💾 VARIABLES ({len(self.variables)} variables):")
-        if not self.variables:
+        variables = self.state_machine.state_data
+        print(f"\n💾 VARIABLES ({len(variables)} variables):")
+        if not variables:
             print("  (no variables)")
             return
 
-        for key, value in self.variables.items():
+        for key, value in variables.items():
             print(f"  • {key}: {value}")
 
     def _print_status(self):
@@ -174,55 +176,53 @@ class InteractiveEvaluator:
     def _execute_tool(self, tool_name, args):
         """Execute a single tool call."""
         if tool_name == 'append_rules':
-            # Add rules to the TOP of the list (prepend)
+            # Add rules using the state machine (which handles timer scheduling)
             new_rules = args.get('rules', [])
-            self.rules = new_rules + self.rules
-            print(f"      ✓ Added {len(new_rules)} rule(s) to the top")
+            for rule in new_rules:
+                self.state_machine.add_rule(rule)
+            print(f"      ✓ Added {len(new_rules)} rule(s)")
 
         elif tool_name == 'delete_rules':
             # Delete rules based on criteria
             if args.get('reset_rules'):
-                self.rules = self._get_default_rules()
+                self.state_machine.clear_rules()
+                self._initialize_default_rules()
                 print(f"      ✓ Reset to default rules")
             elif args.get('delete_all'):
-                self.rules = []
+                self.state_machine.clear_rules()
                 print(f"      ✓ Deleted all rules")
             elif args.get('indices'):
                 # Delete by indices (reverse order to avoid index shifting)
                 for idx in sorted(args['indices'], reverse=True):
-                    if 0 <= idx < len(self.rules):
-                        del self.rules[idx]
+                    self.state_machine.remove_rule(idx)
                 print(f"      ✓ Deleted rules at indices: {args['indices']}")
             else:
-                # Delete by criteria
-                original_count = len(self.rules)
+                # Delete by criteria - need to filter and delete
+                rules = self.state_machine.get_rules()
                 indices_to_delete = []
 
-                for i in range(len(self.rules) - 1, -1, -1):
-                    rule = self.rules[i]
+                for i, rule in enumerate(rules):
                     should_delete = False
-
-                    if args.get('state1') and rule.get('state1') == args['state1']:
+                    if args.get('state1') and rule.state1 == args['state1']:
                         should_delete = True
-                    if args.get('transition') and rule.get('transition') == args['transition']:
+                    if args.get('transition') and rule.transition == args['transition']:
                         should_delete = True
-                    if args.get('state2') and rule.get('state2') == args['state2']:
+                    if args.get('state2') and rule.state2 == args['state2']:
                         should_delete = True
 
                     if should_delete:
                         indices_to_delete.append(i)
 
-                for idx in indices_to_delete:
-                    del self.rules[idx]
+                # Delete in reverse order
+                for idx in sorted(indices_to_delete, reverse=True):
+                    self.state_machine.remove_rule(idx)
 
-                deleted_count = original_count - len(self.rules)
-                print(f"      ✓ Deleted {deleted_count} rule(s)")
+                print(f"      ✓ Deleted {len(indices_to_delete)} rule(s)")
 
         elif tool_name == 'set_state':
             # Change current state immediately
-            self.current_state = args.get('state')
-            self.state_params = None  # setState no longer takes params
-            print(f"      ✓ Set current state to: {self.current_state}")
+            self.state_machine.set_state(args.get('state'))
+            print(f"      ✓ Set current state to: {self.state_machine.current_state}")
 
         elif tool_name == 'create_state':
             # Create a new state
@@ -234,13 +234,13 @@ class InteractiveEvaluator:
                 speed=args.get('speed'),
                 description=args.get('description', '')
             )
-            self.states.add_state(state)
+            self.state_machine.states.add_state(state)
             print(f"      ✓ Created state: {args['name']}")
 
         elif tool_name == 'delete_state':
             # Delete a state
             name = args.get('name')
-            if self.states.delete_state(name):
+            if self.state_machine.states.delete_state(name):
                 print(f"      ✓ Deleted state: {name}")
             else:
                 print(f"      ⚠ State not found: {name}")
@@ -250,15 +250,16 @@ class InteractiveEvaluator:
             action = args.get('action')
             if action == 'set':
                 variables = args.get('variables', {})
-                self.variables.update(variables)
+                for key, value in variables.items():
+                    self.state_machine.set_data(key, value)
                 print(f"      ✓ Set {len(variables)} variable(s)")
             elif action == 'delete':
                 keys = args.get('keys', [])
                 for key in keys:
-                    self.variables.pop(key, None)
+                    self.state_machine.state_data.pop(key, None)
                 print(f"      ✓ Deleted {len(keys)} variable(s)")
             elif action == 'clear_all':
-                self.variables = {}
+                self.state_machine.clear_data()
                 print(f"      ✓ Cleared all variables")
 
         elif tool_name == 'manage_states':
@@ -275,19 +276,19 @@ class InteractiveEvaluator:
                         speed=state_data.get('speed'),
                         description=state_data.get('description', '')
                     )
-                    self.states.add_state(state)
+                    self.state_machine.states.add_state(state)
                 print(f"      ✓ Added/updated {len(states_to_add)} state(s)")
 
             elif action == 'delete':
                 names = args.get('names', [])
                 deleted = 0
                 for name in names:
-                    if self.states.delete_state(name):
+                    if self.state_machine.states.delete_state(name):
                         deleted += 1
                 print(f"      ✓ Deleted {deleted} state(s)")
 
             elif action == 'clear_all':
-                self.states.clear_states()
+                self.state_machine.states.clear_states()
                 print(f"      ✓ Cleared all states")
 
         else:
@@ -346,15 +347,18 @@ class InteractiveEvaluator:
                 # Parse the command
                 print("\n🔄 Parsing command...")
 
-                available_states = self.states.get_states_for_prompt()
+                available_states = self.state_machine.states.get_states_for_prompt()
+
+                # Convert Rule objects to dicts for the parser
+                rules_as_dicts = [rule.to_dict() for rule in self.state_machine.get_rules()]
 
                 result = self.parser.parse_command(
                     user_input,
                     available_states,
                     self.available_transitions,
-                    self.rules,
-                    self.current_state,
-                    self.variables
+                    rules_as_dicts,
+                    self.state_machine.current_state,
+                    self.state_machine.state_data
                 )
 
                 # Check if parsing succeeded

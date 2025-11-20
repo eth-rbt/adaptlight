@@ -294,9 +294,26 @@ class MockStateMachine:
 
         elif tool_name == 'set_state':
             # Change current state immediately
-            self.current_state = args.get('state')
+            new_state = args.get('state')
+            self.current_state = new_state
             # Note: setState no longer takes params, only state name
             self.state_params = None
+
+            # Safety check: ensure there's at least one exit rule from this state
+            # to prevent users from getting stuck
+            has_exit_rule = any(r.get('state1') == new_state for r in self.rules)
+            if not has_exit_rule:
+                # Auto-add a simple click-to-off exit rule
+                exit_rule = {
+                    "state1": new_state,
+                    "transition": "button_click",
+                    "state2": "off",
+                    "state2Param": None,
+                    "condition": None,
+                    "action": None
+                }
+                self.rules.insert(0, exit_rule)
+                print(f"  ⚠️  Auto-added exit rule: {new_state} --[button_click]--> off (safety net)")
 
         elif tool_name == 'manage_variables':
             # Manage variables

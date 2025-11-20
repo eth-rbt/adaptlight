@@ -32,6 +32,12 @@ All states use r, g, b, speed parameters:
 
 Rules reference states by name only. State parameters are stored in the state definition.
 
+**CRITICAL EXIT RULES:** When adding ANY transition TO a state, ALWAYS add an exit rule FROM that state (unless one exists). Examples:
+- "Turn red now" → create_state + set_state + append_rules for red→off
+- "In 10 sec turn red" → create_state + append_rules for timer→red AND red→off
+- "Click for blue" → create_state + append_rules for click→blue AND blue→off
+Safety net exists but be explicit!
+
 ## RULES
 
 **When to DELETE vs ADD:**

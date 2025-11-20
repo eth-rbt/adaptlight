@@ -141,6 +141,11 @@ Your output MUST conform to this exact JSON schema:
 - For appendRules: each rule must have all 5 fields (state1, transition, state2, condition, action)
 - State parameters are defined in the state itself, not in rules
 
+**CRITICAL EXIT RULES:** When adding ANY transition TO a state, ALWAYS add an exit rule FROM that state (unless one exists). Examples:
+- "Turn red now" → createState + setState + appendRules for red→off
+- "In 10 sec turn red" → createState + appendRules for timer→red AND red→off
+Safety net exists but be explicit!
+
 ## WHEN TO DELETE RULES
 
 **CRITICAL**: Think carefully before deleting! Use conditions to layer behavior instead of deleting when possible.

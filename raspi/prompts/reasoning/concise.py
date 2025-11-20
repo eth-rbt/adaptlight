@@ -166,6 +166,8 @@ All states use r, g, b, speed parameters:
 
 Rules reference states by name only. State parameters are stored in the state definition, not in rules.
 
+**CRITICAL:** When using setState, ALWAYS add an exit rule (unless one exists) to prevent getting stuck. Example: "Turn red now" → createState + setState + appendRules for red→off. Safety net exists but be explicit!
+
 ## EXAMPLES
 
 **Ambiguous - Ask:**

@@ -244,6 +244,34 @@ All states use r, g, b, speed parameters:
 
 Rules reference states by name only. State parameters are stored in the state definition, not in rules.
 
+## EXIT RULES (CRITICAL!)
+
+**CRITICAL: Always provide an exit path when adding transitions to new states!**
+
+When adding rules that transition TO a state, ensure there's a way OUT:
+- **ALWAYS add exit rules** for the destination state (unless one already exists)
+- The system has a safety net that auto-adds click-to-off rules if you forget
+- But it's better to be explicit and thoughtful about exit paths
+
+**Examples:**
+
+Immediate state change: "Turn the light red now"
+- Create red state with r=255, g=0, b=0
+- Set current state to red
+- Add rule: red --[button_click]--> off
+
+Timer transition: "In 10 seconds turn light red"
+- Create red state with r=255, g=0, b=0
+- Add rule: off --[timer]--> red
+- Add rule: red --[button_click]--> off  ← EXIT RULE!
+
+Button transition: "Click to turn blue"
+- Create blue state with r=0, g=0, b=255
+- Add rule: off --[button_click]--> blue
+- Add rule: blue --[button_click]--> off  ← EXIT RULE!
+
+**Why:** Without exit rules, users get stuck in states with no way to change them!
+
 ## REASONING BEST PRACTICES
 
 **Your reasoning field should:**

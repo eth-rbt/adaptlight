@@ -181,7 +181,7 @@ DETERMINISTIC_TESTS = [
     },
     {
         "name": "Immediate state change",
-        "description": "Turn red now should change state immediately",
+        "description": "Turn red now should change state immediately AND add exit rule",
         "previous_state": {
             "rules": DEFAULT_RULES.copy(),
             "current_state": "off",
@@ -193,6 +193,11 @@ DETERMINISTIC_TESTS = [
                 "transition": None,  # No transition, just check current state
                 "expected_state": "red",  # Unified system creates named state "red"
                 "expected_params": None  # setState no longer passes params
+            },
+            {
+                "transition": "button_click",  # Should be able to exit
+                "expected_state": "off",  # Should go to off (either from LLM or safety net)
+                "expected_params": None
             }
         ]
     },

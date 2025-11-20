@@ -163,22 +163,35 @@ class StateMachine:
         delay_seconds = delay_ms / 1000.0
 
         def fire_once():
-            print(f"Timer fired for rule {rule.id}: {rule}")
+            print("\n" + "="*70)
+            print("⏰ TIMER FIRED")
+            print("="*70)
+            print(f"Rule [{rule.id}]: {rule.state1} --[timer]--> {rule.state2} (delay: {delay_ms}ms)")
+
             # Execute the transition
+            old_state = self.current_state
             if self.current_state == rule.state1 or rule.state1 == '*':
                 if self.evaluate_rule_expression(rule.condition, 'condition'):
                     if rule.action:
                         self.evaluate_rule_expression(rule.action, 'action')
                     self.set_state(rule.state2)
+                    print(f"State changed: {old_state} → {self.current_state}")
+                else:
+                    print(f"Condition not met, state remains: {self.current_state}")
+            else:
+                print(f"State mismatch (expected {rule.state1}, got {self.current_state}), transition skipped")
 
             # Auto-cleanup if configured
             if auto_cleanup and rule in self.rules:
                 self.rules.remove(rule)
-                print(f"Rule {rule.id} auto-cleaned up")
+                print(f"Rule auto-removed")
 
             # Remove from active timers
             if rule.id in self.active_timers:
                 del self.active_timers[rule.id]
+
+            print("="*70)
+            print("➤ ", end='', flush=True)
 
         timer = threading.Timer(delay_seconds, fire_once)
         timer.start()
@@ -195,23 +208,38 @@ class StateMachine:
         interval_seconds = delay_ms / 1000.0
 
         def fire_repeatedly():
-            print(f"Interval fired for rule {rule.id}: {rule}")
+            print("\n" + "="*70)
+            print("🔄 INTERVAL FIRED")
+            print("="*70)
+            print(f"Rule [{rule.id}]: {rule.state1} --[interval]--> {rule.state2} (every {delay_ms}ms)")
+
             # Execute the transition
+            old_state = self.current_state
             if self.current_state == rule.state1 or rule.state1 == '*':
                 if self.evaluate_rule_expression(rule.condition, 'condition'):
                     if rule.action:
                         self.evaluate_rule_expression(rule.action, 'action')
                     self.set_state(rule.state2)
+                    print(f"State changed: {old_state} → {self.current_state}")
+                else:
+                    print(f"Condition not met, state remains: {self.current_state}")
+            else:
+                print(f"State mismatch (expected {rule.state1}, got {self.current_state}), transition skipped")
 
             # Reschedule if rule still exists and repeat is enabled
             if rule in self.rules and repeat:
                 timer = threading.Timer(interval_seconds, fire_repeatedly)
                 timer.start()
                 self.active_timers[rule.id] = timer
+                print(f"Interval will fire again in {delay_ms}ms")
             else:
                 # Remove from active timers if not repeating
                 if rule.id in self.active_timers:
                     del self.active_timers[rule.id]
+                print(f"Interval stopped")
+
+            print("="*70)
+            print("➤ ", end='', flush=True)
 
         timer = threading.Timer(interval_seconds, fire_repeatedly)
         timer.start()
@@ -240,13 +268,27 @@ class StateMachine:
             return (target - now).total_seconds()
 
         def fire_scheduled():
-            print(f"Schedule fired for rule {rule.id}: {rule} at {target_hour:02d}:{target_minute:02d}")
+            from datetime import datetime
+            now = datetime.now()
+
+            print("\n" + "="*70)
+            print("📅 SCHEDULE FIRED")
+            print("="*70)
+            print(f"Rule [{rule.id}]: {rule.state1} --[schedule]--> {rule.state2}")
+            print(f"Scheduled time: {target_hour:02d}:{target_minute:02d}, Current time: {now.strftime('%H:%M:%S')}")
+
             # Execute the transition
+            old_state = self.current_state
             if self.current_state == rule.state1 or rule.state1 == '*':
                 if self.evaluate_rule_expression(rule.condition, 'condition'):
                     if rule.action:
                         self.evaluate_rule_expression(rule.action, 'action')
                     self.set_state(rule.state2)
+                    print(f"State changed: {old_state} → {self.current_state}")
+                else:
+                    print(f"Condition not met, state remains: {self.current_state}")
+            else:
+                print(f"State mismatch (expected {rule.state1}, got {self.current_state}), transition skipped")
 
             # If repeat_daily, reschedule for tomorrow
             if rule in self.rules and repeat_daily:
@@ -254,14 +296,17 @@ class StateMachine:
                 timer = threading.Timer(delay, fire_scheduled)
                 timer.start()
                 self.active_timers[rule.id] = timer
-                print(f"Rescheduled for tomorrow at {target_hour:02d}:{target_minute:02d}")
+                print(f"Rescheduled for tomorrow at {target_hour:02d}:{target_minute:02d} (in {delay/3600:.1f} hours)")
             else:
                 # One-time schedule, remove rule and timer
                 if rule in self.rules:
                     self.rules.remove(rule)
-                    print(f"One-time schedule completed, rule {rule.id} removed")
+                    print(f"One-time schedule completed, rule removed")
                 if rule.id in self.active_timers:
                     del self.active_timers[rule.id]
+
+            print("="*70)
+            print("➤ ", end='', flush=True)
 
         # Schedule first occurrence
         delay = calculate_next_occurrence()

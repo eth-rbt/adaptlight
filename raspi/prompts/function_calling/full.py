@@ -38,6 +38,46 @@ All states use r, g, b, speed parameters:
 
 Rules reference states by name only. State parameters are stored in the state definition, not in rules.
 
+## EXIT RULES (CRITICAL!)
+
+**CRITICAL: Always provide an exit path when adding transitions to new states!**
+
+When adding rules that transition TO a state, ensure there's a way OUT:
+- **ALWAYS add exit rules** for the destination state (unless one already exists)
+- The system has a safety net that auto-adds click-to-off rules if you forget
+- But it's better to be explicit and thoughtful about exit paths
+
+**Examples:**
+
+Immediate state change: "Turn the light red now"
+```
+create_state(name="red", r=255, g=0, b=0, speed=null, description="Bright red color")
+set_state(state="red")
+append_rules(rules=[
+    {state1: "red", transition: "button_click", state2: "off", condition: null, action: null}
+])
+```
+
+Timer transition: "In 10 seconds turn light red"
+```
+create_state(name="red", r=255, g=0, b=0, speed=null, description="Bright red color")
+append_rules(rules=[
+    {state1: "off", transition: "timer", state2: "red", condition: null, action: null},
+    {state1: "red", transition: "button_click", state2: "off", condition: null, action: null}  ← EXIT RULE!
+])
+```
+
+Button transition: "Click to turn blue"
+```
+create_state(name="blue", r=0, g=0, b=255, speed=null, description="Blue color")
+append_rules(rules=[
+    {state1: "off", transition: "button_click", state2: "blue", condition: null, action: null},
+    {state1: "blue", transition: "button_click", state2: "off", condition: null, action: null}  ← EXIT RULE!
+])
+```
+
+**Why:** Without exit rules, users get stuck in states with no way to change them!
+
 ## RULE BEHAVIOR
 
 **CRITICAL: Understanding When to Delete vs Add Rules**
