@@ -16,20 +16,22 @@ class CommandParser:
     """Parses natural language commands into state machine rules using OpenAI GPT-5."""
 
     def __init__(self, api_key=None, parsing_method='json_output', prompt_variant='full', model='gpt-4o',
-                 reasoning_effort='medium', verbosity=0, audio_player=None):
+                 reasoning_effort='medium', verbosity=0, audio_player=None, claude_api_key=None):
         """
         Initialize command parser.
 
         Args:
             api_key: OpenAI API key
-            parsing_method: Parsing method to use ('json_output', 'reasoning', or 'function_calling')
+            parsing_method: Parsing method to use ('json_output', 'reasoning', 'function_calling', or 'claude')
             prompt_variant: Prompt variant to use ('full' or 'concise')
-            model: OpenAI model to use (e.g., 'gpt-4o', 'gpt-5-mini')
+            model: Model to use (e.g., 'gpt-4o', 'gpt-5-mini', 'claude-3-5-sonnet-20241022')
             reasoning_effort: Reasoning effort level ('low', 'medium', 'high')
             verbosity: Verbosity level for reasoning mode (0-2)
             audio_player: Optional AudioPlayer instance for TTS playback
+            claude_api_key: Anthropic API key for Claude (optional)
         """
         self.api_key = api_key
+        self.claude_api_key = claude_api_key
         self.conversation_history = []
         self.max_history = 2  # Keep last 2 commands with actions for context
         self.parsing_method = parsing_method
@@ -39,6 +41,7 @@ class CommandParser:
         self.verbosity = verbosity
         self.audio_player = audio_player
 
+        # Initialize OpenAI client
         try:
             from openai import OpenAI
             self.client = OpenAI(api_key=api_key)
@@ -46,6 +49,16 @@ class CommandParser:
         except ImportError:
             self.client = None
             print("Warning: OpenAI library not available")
+
+        # Initialize Claude client if using Claude
+        self.claude_client = None
+        if parsing_method == 'claude' or claude_api_key:
+            try:
+                from anthropic import Anthropic
+                self.claude_client = Anthropic(api_key=claude_api_key)
+                print(f"Claude client initialized with model: {model}")
+            except ImportError:
+                print("Warning: Anthropic library not available. Install with: pip install anthropic")
 
         # No longer using function calling - using JSON output instead
         # Keeping tool definitions commented out for reference
@@ -259,22 +272,35 @@ class CommandParser:
                 'success': bool
             }
         """
-        if not self.client:
-            print("OpenAI client not available")
-            return {'toolCalls': [], 'message': None, 'reasoning': None, 'success': False}
-
         # Route to the appropriate parsing method
-        if self.parsing_method == 'json_output':
+        if self.parsing_method == 'claude':
+            if not self.claude_client:
+                print("Claude client not available")
+                return {'toolCalls': [], 'message': None, 'reasoning': None, 'success': False}
+            return self._parse_claude(
+                user_input, available_states, available_transitions,
+                current_rules, current_state, global_variables
+            )
+        elif self.parsing_method == 'json_output':
+            if not self.client:
+                print("OpenAI client not available")
+                return {'toolCalls': [], 'message': None, 'reasoning': None, 'success': False}
             return self._parse_json_output(
                 user_input, available_states, available_transitions,
                 current_rules, current_state, global_variables
             )
         elif self.parsing_method == 'reasoning':
+            if not self.client:
+                print("OpenAI client not available")
+                return {'toolCalls': [], 'message': None, 'reasoning': None, 'success': False}
             return self._parse_reasoning(
                 user_input, available_states, available_transitions,
                 current_rules, current_state, global_variables
             )
         elif self.parsing_method == 'function_calling':
+            if not self.client:
+                print("OpenAI client not available")
+                return {'toolCalls': [], 'message': None, 'reasoning': None, 'success': False}
             return self._parse_function_calling(
                 user_input, available_states, available_transitions,
                 current_rules, current_state, global_variables
@@ -315,25 +341,9 @@ class CommandParser:
                         {
                             "type": "object",
                             "properties": {
-                                "state": {"type": "string"},
-                                "params": {
-                                    "anyOf": [
-                                        {"type": "null"},
-                                        {
-                                            "type": "object",
-                                            "properties": {
-                                                "r": {"type": ["number", "string"]},
-                                                "g": {"type": ["number", "string"]},
-                                                "b": {"type": ["number", "string"]},
-                                                "speed": {"type": ["number", "null"]}
-                                            },
-                                            "required": ["r", "g", "b"],
-                                            "additionalProperties": False
-                                        }
-                                    ]
-                                }
+                                "state": {"type": "string"}
                             },
-                            "required": ["state", "params"],
+                            "required": ["state"],
                             "additionalProperties": False
                         }
                     ]
@@ -351,7 +361,7 @@ class CommandParser:
                                 "speed": {"type": ["number", "null"]},
                                 "description": {"type": ["string", "null"]}
                             },
-                            "required": ["name", "r", "g", "b", "speed"],
+                            "required": ["name", "r", "g", "b", "speed", "description"],
                             "additionalProperties": False
                         }
                     ]
@@ -386,36 +396,10 @@ class CommandParser:
                                                 "enum": ["button_click", "button_double_click", "button_hold", "button_release", "voice_command"]
                                             },
                                             "state2": {"type": "string"},
-                                            "state2Param": {
-                                                "anyOf": [
-                                                    {"type": "null"},
-                                                    {
-                                                        "type": "object",
-                                                        "properties": {
-                                                            "r": {"type": ["number", "string"]},
-                                                            "g": {"type": ["number", "string"]},
-                                                            "b": {"type": ["number", "string"]}
-                                                        },
-                                                        "required": ["r", "g", "b"],
-                                                        "additionalProperties": False
-                                                    },
-                                                    {
-                                                        "type": "object",
-                                                        "properties": {
-                                                            "r": {"type": ["number", "string"]},
-                                                            "g": {"type": ["number", "string"]},
-                                                            "b": {"type": ["number", "string"]},
-                                                            "speed": {"type": ["number", "null"]}
-                                                        },
-                                                        "required": ["r", "g", "b", "speed"],
-                                                        "additionalProperties": False
-                                                    }
-                                                ]
-                                            },
                                             "condition": {"type": ["string", "null"]},
                                             "action": {"type": ["string", "null"]}
                                         },
-                                        "required": ["state1", "transition", "state2", "state2Param", "condition", "action"],
+                                        "required": ["state1", "transition", "state2", "condition", "action"],
                                         "additionalProperties": False
                                     }
                                 }
@@ -514,19 +498,10 @@ class CommandParser:
             print(f"Parsed JSON: {json.dumps(parsed, indent=2)}")
 
             # Clean up the JSON before converting to tool calls
-            # Remove speed field from state2Param if it's null (for color states)
             def cleanup_json(data):
-                """Remove null speed fields from state2Param objects"""
+                """Remove null speed fields from params and clean deleteRules"""
                 if isinstance(data, dict):
-                    # Clean appendRules
-                    if data.get('appendRules') and data['appendRules'].get('rules'):
-                        for rule in data['appendRules']['rules']:
-                            if rule.get('state2Param') and isinstance(rule['state2Param'], dict):
-                                # Only delete if key exists and value is None
-                                if 'speed' in rule['state2Param'] and rule['state2Param']['speed'] is None:
-                                    del rule['state2Param']['speed']
-
-                    # Clean setState params (though it shouldn't have speed)
+                    # Clean setState params - remove null speed
                     if data.get('setState') and data['setState'].get('params') and isinstance(data['setState']['params'], dict):
                         # Only delete if key exists and value is None
                         if 'speed' in data['setState']['params'] and data['setState']['params']['speed'] is None:
@@ -662,25 +637,9 @@ class CommandParser:
                         {
                             "type": "object",
                             "properties": {
-                                "state": {"type": "string"},
-                                "params": {
-                                    "anyOf": [
-                                        {"type": "null"},
-                                        {
-                                            "type": "object",
-                                            "properties": {
-                                                "r": {"type": ["number", "string"]},
-                                                "g": {"type": ["number", "string"]},
-                                                "b": {"type": ["number", "string"]},
-                                                "speed": {"type": ["number", "null"]}
-                                            },
-                                            "required": ["r", "g", "b"],
-                                            "additionalProperties": False
-                                        }
-                                    ]
-                                }
+                                "state": {"type": "string"}
                             },
-                            "required": ["state", "params"],
+                            "required": ["state"],
                             "additionalProperties": False
                         }
                     ]
@@ -698,7 +657,7 @@ class CommandParser:
                                 "speed": {"type": ["number", "null"]},
                                 "description": {"type": ["string", "null"]}
                             },
-                            "required": ["name", "r", "g", "b", "speed"],
+                            "required": ["name", "r", "g", "b", "speed", "description"],
                             "additionalProperties": False
                         }
                     ]
@@ -733,36 +692,10 @@ class CommandParser:
                                                 "enum": ["button_click", "button_double_click", "button_hold", "button_release", "voice_command"]
                                             },
                                             "state2": {"type": "string"},
-                                            "state2Param": {
-                                                "anyOf": [
-                                                    {"type": "null"},
-                                                    {
-                                                        "type": "object",
-                                                        "properties": {
-                                                            "r": {"type": ["number", "string"]},
-                                                            "g": {"type": ["number", "string"]},
-                                                            "b": {"type": ["number", "string"]}
-                                                        },
-                                                        "required": ["r", "g", "b"],
-                                                        "additionalProperties": False
-                                                    },
-                                                    {
-                                                        "type": "object",
-                                                        "properties": {
-                                                            "r": {"type": ["number", "string"]},
-                                                            "g": {"type": ["number", "string"]},
-                                                            "b": {"type": ["number", "string"]},
-                                                            "speed": {"type": ["number", "null"]}
-                                                        },
-                                                        "required": ["r", "g", "b", "speed"],
-                                                        "additionalProperties": False
-                                                    }
-                                                ]
-                                            },
                                             "condition": {"type": ["string", "null"]},
                                             "action": {"type": ["string", "null"]}
                                         },
-                                        "required": ["state1", "transition", "state2", "state2Param", "condition", "action"],
+                                        "required": ["state1", "transition", "state2", "condition", "action"],
                                         "additionalProperties": False
                                     }
                                 }
@@ -964,6 +897,81 @@ class CommandParser:
             traceback.print_exc()
             return {'toolCalls': [], 'message': None, 'success': False}
 
+    def _parse_claude(self, user_input: str, available_states: str,
+                     available_transitions: List[Dict], current_rules: List[Dict],
+                     current_state: str = "off", global_variables: Dict = None) -> Dict:
+        """
+        Parse command using Claude with tool calling.
+
+        Returns:
+            Dict with format: {'toolCalls': [...], 'message': str, 'success': bool}
+        """
+        # Build dynamic content for the prompt
+        dynamic_content = self._build_dynamic_content(
+            available_states, available_transitions, current_rules,
+            current_state, global_variables or {}
+        )
+
+        # Load Claude-specific prompts
+        import importlib
+        claude_prompts = importlib.import_module('prompts.claude')
+        system_prompt = claude_prompts.get_system_prompt(dynamic_content)
+        tools = claude_prompts.get_tools()
+
+        try:
+            # Call Claude API with tools
+            print(f"Calling Claude API with model: {self.model} (Tool Calling)")
+
+            response = self.claude_client.messages.create(
+                model=self.model,
+                max_tokens=4096,
+                tools=tools,
+                messages=[
+                    {"role": "user", "content": f"{system_prompt}\n\nUser command: {user_input}"}
+                ]
+            )
+
+            # Extract tool calls from response
+            results = {
+                'toolCalls': [],
+                'message': None,
+                'success': True
+            }
+
+            # Process response content
+            for content_block in response.content:
+                if content_block.type == 'text':
+                    results['message'] = content_block.text
+                elif content_block.type == 'tool_use':
+                    results['toolCalls'].append({
+                        'id': content_block.id,
+                        'name': content_block.name,
+                        'arguments': content_block.input
+                    })
+
+            print(f"Claude returned {len(results['toolCalls'])} tool call(s)")
+            for tool_call in results['toolCalls']:
+                print(f"  - {tool_call['name']}: {json.dumps(tool_call['arguments'])}")
+
+            # Add to conversation history
+            history_entry = {
+                'input': user_input,
+                'tool_calls': results['toolCalls'],
+                'state': current_state,
+                'rules': current_rules
+            }
+            self.conversation_history.append(history_entry)
+            if len(self.conversation_history) > self.max_history:
+                self.conversation_history.pop(0)
+
+            return results
+
+        except Exception as e:
+            print(f"Error calling Claude: {e}")
+            import traceback
+            traceback.print_exc()
+            return {'toolCalls': [], 'message': None, 'success': False}
+
     def speak_clarification(self, question_text: str):
         """
         Use OpenAI TTS to speak a clarifying question.
@@ -1081,14 +1089,13 @@ class CommandParser:
         if current_rules:
             content += "### Current Rules\n"
             for idx, rule in enumerate(current_rules):
-                params = ""
-                if rule.get('state2Param') or rule.get('state2_param'):
-                    param_value = rule.get('state2Param') or rule.get('state2_param')
-                    params = f" (with params: {json.dumps(param_value)})"
                 condition = ""
                 if rule.get('condition'):
                     condition = f" [condition: {rule['condition']}]"
-                content += f"[{idx}] {rule['state1']} --[{rule['transition']}]--> {rule['state2']}{params}{condition}\n"
+                action = ""
+                if rule.get('action'):
+                    action = f" [action: {rule['action']}]"
+                content += f"[{idx}] {rule['state1']} --[{rule['transition']}]--> {rule['state2']}{condition}{action}\n"
             content += "\n"
         else:
             content += "### Current Rules\nNo rules defined yet.\n\n"

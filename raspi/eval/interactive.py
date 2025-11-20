@@ -25,7 +25,7 @@ class InteractiveEvaluator:
     """Interactive REPL for testing the state management system."""
 
     def __init__(self, api_key, parsing_method='json_output', prompt_variant='full',
-                 model='gpt-4o', reasoning_effort='medium', verbosity=0):
+                 model='gpt-4o', reasoning_effort='medium', verbosity=0, claude_api_key=None):
         """Initialize the interactive evaluator."""
         self.parser = CommandParser(
             api_key=api_key,
@@ -33,7 +33,8 @@ class InteractiveEvaluator:
             prompt_variant=prompt_variant,
             model=model,
             reasoning_effort=reasoning_effort,
-            verbosity=verbosity
+            verbosity=verbosity,
+            claude_api_key=claude_api_key
         )
 
         # Initialize state collection
@@ -223,6 +224,27 @@ class InteractiveEvaluator:
             self.state_params = None  # setState no longer takes params
             print(f"      ✓ Set current state to: {self.current_state}")
 
+        elif tool_name == 'create_state':
+            # Create a new state
+            state = State(
+                name=args['name'],
+                r=args.get('r'),
+                g=args.get('g'),
+                b=args.get('b'),
+                speed=args.get('speed'),
+                description=args.get('description', '')
+            )
+            self.states.add_state(state)
+            print(f"      ✓ Created state: {args['name']}")
+
+        elif tool_name == 'delete_state':
+            # Delete a state
+            name = args.get('name')
+            if self.states.delete_state(name):
+                print(f"      ✓ Deleted state: {name}")
+            else:
+                print(f"      ⚠ State not found: {name}")
+
         elif tool_name == 'manage_variables':
             # Manage variables
             action = args.get('action')
@@ -380,10 +402,9 @@ def main():
     with open(config_file) as f:
         config = yaml.safe_load(f)
 
+    # Get API keys
     api_key = config.get('openai', {}).get('api_key')
-    if not api_key:
-        print("Error: openai.api_key not found in config.yaml")
-        sys.exit(1)
+    claude_api_key = config.get('claude', {}).get('api_key')
 
     # Get parsing configuration
     parsing_method = config.get('openai', {}).get('parsing_method', 'json_output')
@@ -391,6 +412,13 @@ def main():
     model = config.get('openai', {}).get('model', 'gpt-4o')
     reasoning_effort = config.get('openai', {}).get('reasoning_effort', 'medium')
     verbosity = config.get('openai', {}).get('verbosity', 0)
+
+    # If using Claude, override model
+    if parsing_method == 'claude':
+        model = config.get('claude', {}).get('model', 'claude-3-7-sonnet-20250219')
+        if not claude_api_key:
+            print("Error: claude.api_key not found in config.yaml but parsing_method is 'claude'")
+            sys.exit(1)
 
     print(f"\nConfiguration:")
     print(f"  Parsing method: {parsing_method}")
@@ -406,7 +434,8 @@ def main():
         prompt_variant=prompt_variant,
         model=model,
         reasoning_effort=reasoning_effort,
-        verbosity=verbosity
+        verbosity=verbosity,
+        claude_api_key=claude_api_key
     )
     evaluator.run()
 

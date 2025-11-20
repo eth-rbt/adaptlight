@@ -28,6 +28,8 @@ class StateMachine:
         self.state_data = {}
         self.interval = None
         self.interval_callback = None
+        self.active_timers = {}  # {rule_id: Timer object} for time-based rules
+        self.rule_id_counter = 0  # Unique ID for each rule
 
     def register_state(self, name: str, description: str = '', on_enter: Callable = None):
         """
@@ -70,18 +72,21 @@ class StateMachine:
         elif isinstance(rule, dict):
             rule_obj = Rule(
                 rule.get('state1'),
-                rule.get('state1_param') or rule.get('state1Param'),
                 rule.get('transition'),
                 rule.get('state2'),
-                rule.get('state2_param') or rule.get('state2Param'),
                 rule.get('condition'),
-                rule.get('action')
+                rule.get('action'),
+                rule.get('trigger_config')
             )
         elif isinstance(rule, list) and len(rule) == 3:
             # Legacy format: [state1, action, state2]
-            rule_obj = Rule(rule[0], None, rule[1], rule[2], None, None, None)
+            rule_obj = Rule(rule[0], rule[1], rule[2], None, None, None)
         else:
             raise ValueError("Invalid rule format")
+
+        # Assign unique ID
+        rule_obj.id = self.rule_id_counter
+        self.rule_id_counter += 1
 
         # Check if rule already exists
         existing_index = None
@@ -93,26 +98,177 @@ class StateMachine:
                 break
 
         if existing_index is not None:
+            # Cancel timer for old rule if it exists
+            old_rule = self.rules[existing_index]
+            self._cancel_timer(old_rule.id)
+
             self.rules[existing_index] = rule_obj
             print(f"Rule replaced: {rule_obj}")
         else:
             self.rules.append(rule_obj)
             print(f"Rule added: {rule_obj}")
 
+        # Schedule timer if this is a time-based rule
+        if rule_obj.transition in ['timer', 'interval', 'schedule']:
+            self._schedule_rule(rule_obj)
+
     def get_rules(self) -> List[Rule]:
         """Get all rules."""
         return self.rules
 
     def clear_rules(self):
-        """Clear all rules."""
+        """Clear all rules and cancel all timers."""
+        # Cancel all active timers
+        for rule_id, timer in list(self.active_timers.items()):
+            timer.cancel()
+        self.active_timers = {}
+
         self.rules = []
-        print("All rules cleared")
+        print("All rules cleared and timers cancelled")
 
     def remove_rule(self, index: int):
         """Remove a specific rule by index."""
         if 0 <= index < len(self.rules):
             removed = self.rules.pop(index)
+            # Cancel any active timer for this rule
+            if hasattr(removed, 'id'):
+                self._cancel_timer(removed.id)
             print(f"Rule removed: {removed}")
+
+    def _cancel_timer(self, rule_id: int):
+        """Cancel an active timer for a rule."""
+        if rule_id in self.active_timers:
+            self.active_timers[rule_id].cancel()
+            del self.active_timers[rule_id]
+            print(f"Timer cancelled for rule {rule_id}")
+
+    def _schedule_rule(self, rule: Rule):
+        """Schedule a time-based rule (timer, interval, or schedule)."""
+        import threading
+
+        if rule.transition == 'timer':
+            self._schedule_timer(rule)
+        elif rule.transition == 'interval':
+            self._schedule_interval(rule)
+        elif rule.transition == 'schedule':
+            self._schedule_time_of_day(rule)
+
+    def _schedule_timer(self, rule: Rule):
+        """Schedule a one-time timer."""
+        import threading
+
+        config = rule.trigger_config or {}
+        delay_ms = config.get('delay_ms', 1000)
+        auto_cleanup = config.get('auto_cleanup', False)
+        delay_seconds = delay_ms / 1000.0
+
+        def fire_once():
+            print(f"Timer fired for rule {rule.id}: {rule}")
+            # Execute the transition
+            if self.current_state == rule.state1 or rule.state1 == '*':
+                if self.evaluate_rule_expression(rule.condition, 'condition'):
+                    if rule.action:
+                        self.evaluate_rule_expression(rule.action, 'action')
+                    self.set_state(rule.state2)
+
+            # Auto-cleanup if configured
+            if auto_cleanup and rule in self.rules:
+                self.rules.remove(rule)
+                print(f"Rule {rule.id} auto-cleaned up")
+
+            # Remove from active timers
+            if rule.id in self.active_timers:
+                del self.active_timers[rule.id]
+
+        timer = threading.Timer(delay_seconds, fire_once)
+        timer.start()
+        self.active_timers[rule.id] = timer
+        print(f"Timer scheduled: {delay_ms}ms for rule {rule.id}")
+
+    def _schedule_interval(self, rule: Rule):
+        """Schedule a recurring interval."""
+        import threading
+
+        config = rule.trigger_config or {}
+        delay_ms = config.get('delay_ms', 1000)
+        repeat = config.get('repeat', True)
+        interval_seconds = delay_ms / 1000.0
+
+        def fire_repeatedly():
+            print(f"Interval fired for rule {rule.id}: {rule}")
+            # Execute the transition
+            if self.current_state == rule.state1 or rule.state1 == '*':
+                if self.evaluate_rule_expression(rule.condition, 'condition'):
+                    if rule.action:
+                        self.evaluate_rule_expression(rule.action, 'action')
+                    self.set_state(rule.state2)
+
+            # Reschedule if rule still exists and repeat is enabled
+            if rule in self.rules and repeat:
+                timer = threading.Timer(interval_seconds, fire_repeatedly)
+                timer.start()
+                self.active_timers[rule.id] = timer
+            else:
+                # Remove from active timers if not repeating
+                if rule.id in self.active_timers:
+                    del self.active_timers[rule.id]
+
+        timer = threading.Timer(interval_seconds, fire_repeatedly)
+        timer.start()
+        self.active_timers[rule.id] = timer
+        print(f"Interval scheduled: every {delay_ms}ms for rule {rule.id}")
+
+    def _schedule_time_of_day(self, rule: Rule):
+        """Schedule a rule to fire at a specific time of day."""
+        import threading
+        from datetime import datetime, timedelta
+
+        config = rule.trigger_config or {}
+        target_hour = config.get('hour', 0)
+        target_minute = config.get('minute', 0)
+        repeat_daily = config.get('repeat_daily', False)
+
+        def calculate_next_occurrence():
+            """Calculate seconds until next occurrence."""
+            now = datetime.now()
+            target = now.replace(hour=target_hour, minute=target_minute, second=0, microsecond=0)
+
+            # If target time has passed today, schedule for tomorrow
+            if target <= now:
+                target += timedelta(days=1)
+
+            return (target - now).total_seconds()
+
+        def fire_scheduled():
+            print(f"Schedule fired for rule {rule.id}: {rule} at {target_hour:02d}:{target_minute:02d}")
+            # Execute the transition
+            if self.current_state == rule.state1 or rule.state1 == '*':
+                if self.evaluate_rule_expression(rule.condition, 'condition'):
+                    if rule.action:
+                        self.evaluate_rule_expression(rule.action, 'action')
+                    self.set_state(rule.state2)
+
+            # If repeat_daily, reschedule for tomorrow
+            if rule in self.rules and repeat_daily:
+                delay = calculate_next_occurrence()
+                timer = threading.Timer(delay, fire_scheduled)
+                timer.start()
+                self.active_timers[rule.id] = timer
+                print(f"Rescheduled for tomorrow at {target_hour:02d}:{target_minute:02d}")
+            else:
+                # One-time schedule, remove rule and timer
+                if rule in self.rules:
+                    self.rules.remove(rule)
+                    print(f"One-time schedule completed, rule {rule.id} removed")
+                if rule.id in self.active_timers:
+                    del self.active_timers[rule.id]
+
+        # Schedule first occurrence
+        delay = calculate_next_occurrence()
+        timer = threading.Timer(delay, fire_scheduled)
+        timer.start()
+        self.active_timers[rule.id] = timer
+        print(f"Schedule set: {target_hour:02d}:{target_minute:02d} ({'daily' if repeat_daily else 'once'}), firing in {delay:.0f}s")
 
     def set_state(self, state_name: str, params=None):
         """
@@ -183,7 +339,7 @@ class StateMachine:
                 self.evaluate_rule_expression(matching_rule.action, 'action')
 
             # Transition to new state
-            self.set_state(matching_rule.state2, matching_rule.state2_param)
+            self.set_state(matching_rule.state2)
             return True
         else:
             if candidate_rules:

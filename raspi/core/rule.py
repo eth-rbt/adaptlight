@@ -14,27 +14,27 @@ from datetime import datetime, timezone
 class Rule:
     """Represents a state machine transition rule."""
 
-    def __init__(self, state1, state1_param, transition, state2, state2_param,
-                 condition=None, action=None):
+    def __init__(self, state1, transition, state2, condition=None, action=None, trigger_config=None):
         """
         Initialize a rule.
 
         Args:
             state1: Source state name
-            state1_param: Parameters for source state (optional)
             transition: Transition/event name that triggers this rule
             state2: Destination state name
-            state2_param: Parameters for destination state (optional)
             condition: Python expression that must evaluate to True (optional)
             action: Python expression to execute during transition (optional)
+            trigger_config: Timing configuration for time-based transitions (optional)
+                For timer: {"delay_ms": <ms>, "auto_cleanup": true/false}
+                For interval: {"delay_ms": <ms>, "repeat": true}
+                For schedule: {"hour": <0-23>, "minute": <0-59>, "repeat_daily": true/false}
         """
         self.state1 = state1
-        self.state1_param = state1_param
         self.transition = transition
         self.state2 = state2
-        self.state2_param = state2_param
         self.condition = condition
         self.action = action
+        self.trigger_config = trigger_config or {}
         self.timestamp = datetime.now(timezone.utc).isoformat()
 
     def matches(self, current_state: str, action: str) -> bool:
@@ -54,12 +54,11 @@ class Rule:
         """Convert to dictionary representation."""
         return {
             'state1': self.state1,
-            'state1_param': self.state1_param,
             'transition': self.transition,
             'state2': self.state2,
-            'state2_param': self.state2_param,
             'condition': self.condition,
             'action': self.action,
+            'trigger_config': self.trigger_config,
             'timestamp': self.timestamp
         }
 

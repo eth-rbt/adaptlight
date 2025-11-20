@@ -72,12 +72,25 @@ class States:
         self.states = []
 
     def add_state(self, state: State):
-        """Add a state to the collection."""
-        if isinstance(state, State):
-            self.states.append(state)
-            print(f"State added to collection: {state.name}")
-        else:
+        """
+        Add a state to the collection.
+
+        If a state with the same name already exists, it will be replaced/overwritten.
+        """
+        if not isinstance(state, State):
             raise TypeError("Can only add State objects")
+
+        # Check if state with this name already exists
+        for i, existing_state in enumerate(self.states):
+            if existing_state.name == state.name:
+                # Replace/overwrite the existing state
+                self.states[i] = state
+                print(f"State replaced: {state.name}")
+                return
+
+        # State doesn't exist, add it
+        self.states.append(state)
+        print(f"State added to collection: {state.name}")
 
     def get_states(self):
         """Get all states as a list."""
@@ -123,9 +136,15 @@ class States:
         Get formatted state information for OpenAI API calls.
 
         Returns:
-            Formatted string with state names and descriptions
+            Formatted string with state names, parameters, and descriptions
         """
         if not self.states:
             return "No states registered."
 
-        return '\n'.join(f"- {s.name}: {s.description}" for s in self.states)
+        lines = []
+        for s in self.states:
+            params = f"r={s.r}, g={s.g}, b={s.b}, speed={s.speed}"
+            desc = s.description if s.description else "No description"
+            lines.append(f"- {s.name}: {params} | {desc}")
+
+        return '\n'.join(lines)

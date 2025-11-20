@@ -2,6 +2,7 @@
 Function calling prompt for OpenAI command parsing (concise version).
 
 This uses OpenAI's native function calling API with streamlined instructions.
+Uses unified state system with dynamic states.
 """
 
 
@@ -21,6 +22,16 @@ def get_system_prompt(dynamic_content=""):
 
 {dynamic_content}
 
+## UNIFIED STATE SYSTEM
+
+All states use r, g, b, speed parameters:
+- **Default states**: "on" (255,255,255) and "off" (0,0,0)
+- **Custom states**: Create with create_state, reference by name in rules
+- **Static states**: speed=null
+- **Animated states**: speed=number (expressions with t, frame)
+
+Rules reference states by name only. State parameters are stored in the state definition.
+
 ## RULES
 
 **When to DELETE vs ADD:**
@@ -33,7 +44,7 @@ def get_system_prompt(dynamic_content=""):
 - Use conditions to layer temporary behavior on top of defaults
 
 **Common patterns:**
-- Random color: {r: "random()", g: "random()", b: "random()"}
+- Create state with random: create_state(name="random_color", r="random()", g="random()", b="random()", speed=null)
 - Counter conditions: getData('counter') === undefined
 - Counter actions: setData('counter', 5)
 
@@ -47,14 +58,68 @@ def get_tools():
     Get the tool/function definitions for OpenAI function calling.
 
     Returns:
-        List of tool definitions (same as full version)
+        List of tool definitions for unified state system
     """
     return [
         {
             "type": "function",
             "function": {
+                "name": "create_state",
+                "description": "Create a new custom state with r, g, b, speed parameters.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "Name of the state (e.g., 'reading', 'purple_pulse')"
+                        },
+                        "r": {
+                            "type": ["number", "string"],
+                            "description": "Red value (0-255) or expression"
+                        },
+                        "g": {
+                            "type": ["number", "string"],
+                            "description": "Green value (0-255) or expression"
+                        },
+                        "b": {
+                            "type": ["number", "string"],
+                            "description": "Blue value (0-255) or expression"
+                        },
+                        "speed": {
+                            "type": ["number", "null"],
+                            "description": "Animation speed in ms (null for static)"
+                        },
+                        "description": {
+                            "type": ["string", "null"],
+                            "description": "Optional description"
+                        }
+                    },
+                    "required": ["name", "r", "g", "b", "speed", "description"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "delete_state",
+                "description": "Delete a custom state (cannot delete 'on' or 'off').",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "Name of the state to delete"
+                        }
+                    },
+                    "required": ["name"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "append_rules",
-                "description": "Add new state transition rules to the state machine.",
+                "description": "Add new state transition rules to the state machine. Rules reference states by name only.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -65,7 +130,7 @@ def get_tools():
                                 "properties": {
                                     "state1": {
                                         "type": "string",
-                                        "enum": ["off", "on", "color", "animation"]
+                                        "description": "Starting state name"
                                     },
                                     "transition": {
                                         "type": "string",
@@ -73,19 +138,18 @@ def get_tools():
                                     },
                                     "state2": {
                                         "type": "string",
-                                        "enum": ["off", "on", "color", "animation"]
-                                    },
-                                    "state2Param": {
-                                        "description": "Parameters for state2 (null or object with r,g,b)"
+                                        "description": "Destination state name"
                                     },
                                     "condition": {
-                                        "type": ["string", "null"]
+                                        "type": ["string", "null"],
+                                        "description": "Optional condition expression"
                                     },
                                     "action": {
-                                        "type": ["string", "null"]
+                                        "type": ["string", "null"],
+                                        "description": "Optional action expression"
                                     }
                                 },
-                                "required": ["state1", "transition", "state2", "state2Param"]
+                                "required": ["state1", "transition", "state2", "condition", "action"]
                             }
                         }
                     },
@@ -103,12 +167,26 @@ def get_tools():
                     "properties": {
                         "indices": {
                             "type": "array",
-                            "items": {"type": "number"}
+                            "items": {"type": "number"},
+                            "description": "Specific rule indices to delete"
                         },
-                        "state1": {"type": "string", "enum": ["off", "on", "color", "animation"]},
-                        "transition": {"type": "string", "enum": ["button_click", "button_double_click", "button_hold", "button_release", "voice_command"]},
-                        "state2": {"type": "string", "enum": ["off", "on", "color", "animation"]},
-                        "delete_all": {"type": "boolean"}
+                        "state1": {
+                            "type": "string",
+                            "description": "Filter by starting state"
+                        },
+                        "transition": {
+                            "type": "string",
+                            "enum": ["button_click", "button_double_click", "button_hold", "button_release", "voice_command"],
+                            "description": "Filter by transition type"
+                        },
+                        "state2": {
+                            "type": "string",
+                            "description": "Filter by destination state"
+                        },
+                        "delete_all": {
+                            "type": "boolean",
+                            "description": "Delete all matching rules"
+                        }
                     }
                 }
             }
@@ -117,12 +195,24 @@ def get_tools():
             "type": "function",
             "function": {
                 "name": "set_state",
-                "description": "Change the current state immediately.",
+                "description": "Change the current state immediately. Can override state params.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "state": {"type": "string", "enum": ["off", "on", "color", "animation"]},
-                        "params": {"description": "Optional parameters (e.g., color values)"}
+                        "state": {
+                            "type": "string",
+                            "description": "State name to transition to"
+                        },
+                        "params": {
+                            "type": "object",
+                            "description": "Optional parameters to override (r, g, b, speed)",
+                            "properties": {
+                                "r": {"type": ["number", "string"]},
+                                "g": {"type": ["number", "string"]},
+                                "b": {"type": ["number", "string"]},
+                                "speed": {"type": ["number", "null"]}
+                            }
+                        }
                     },
                     "required": ["state"]
                 }

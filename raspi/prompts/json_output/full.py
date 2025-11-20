@@ -59,7 +59,7 @@ Your output MUST conform to this exact JSON schema:
             "speed": {"type": ["number", "null"]},
             "description": {"type": ["string", "null"]}
           },
-          "required": ["name", "r", "g", "b", "speed"],
+          "required": ["name", "r", "g", "b", "speed", "description"],
           "additionalProperties": false
         }
       ]
@@ -103,26 +103,10 @@ Your output MUST conform to this exact JSON schema:
                   "state1": {"type": "string"},
                   "transition": {"type": "string", "enum": ["button_click", "button_double_click", "button_hold", "button_release", "voice_command"]},
                   "state2": {"type": "string"},
-                  "state2Param": {
-                    "anyOf": [
-                      {"type": "null"},
-                      {
-                        "type": "object",
-                        "properties": {
-                          "r": {"type": ["number", "string"]},
-                          "g": {"type": ["number", "string"]},
-                          "b": {"type": ["number", "string"]},
-                          "speed": {"type": ["number", "null"]}
-                        },
-                        "required": ["r", "g", "b"],
-                        "additionalProperties": false
-                      }
-                    ]
-                  },
                   "condition": {"type": ["string", "null"]},
                   "action": {"type": ["string", "null"]}
                 },
-                "required": ["state1", "transition", "state2", "state2Param", "condition", "action"],
+                "required": ["state1", "transition", "state2", "condition", "action"],
                 "additionalProperties": false
               }
             }
@@ -153,6 +137,19 @@ Your output MUST conform to this exact JSON schema:
           "additionalProperties": false
         }
       ]
+    },
+    "setState": {
+      "anyOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "properties": {
+            "state": {"type": "string"}
+          },
+          "required": ["state"],
+          "additionalProperties": false
+        }
+      ]
     }
   },
   "required": ["deleteState", "createState", "deleteRules", "appendRules", "setState"],
@@ -165,8 +162,8 @@ Your output MUST conform to this exact JSON schema:
 - Use `null` for any field you don't need
 - You can have multiple non-null fields (e.g., both deleteRules AND appendRules)
 - For deleteRules: all fields must be present, use null for unused ones
-- For appendRules: each rule must have all 6 fields (state1, transition, state2, state2Param, condition, action)
-- For state2Param objects: must include r, g, b (required), and speed (optional - include for animations only)
+- For appendRules: each rule must have all 5 fields (state1, transition, state2, condition, action)
+- State parameters are defined in the state itself, not in rules
 - For createState: must include name, r, g, b, speed (required fields), and optional description
 - For deleteState: must include name
 
@@ -209,7 +206,7 @@ Then use the state in rules:
   "deleteState": null,
   "appendRules": {
     "rules": [
-      {"state1": "off", "transition": "button_click", "state2": "reading", "state2Param": null, "condition": null, "action": null}
+      {"state1": "off", "transition": "button_click", "state2": "reading", "condition": null, "action": null}
     ]
   },
   "deleteRules": null
@@ -313,37 +310,32 @@ This is why we DON'T need to delete default rules!
 ## RULE FORMAT
 
 When using **appendRules**, create rule objects with these fields:
-- **state1**: The current/starting state name (string) - can be any state name (including custom states)
+- **state1**: The current/starting state name (string) - can be any state name (including "on", "off", or custom states)
 - **transition**: The trigger/event that causes the transition (string) - must be "button_click", "button_double_click", "button_hold", "button_release", or "voice_command"
-- **state2**: The next/destination state name (string) - can be any state name (including custom states)
-- **state2Param**: Parameters to override the state's defaults (can be object or null)
-  - Use **null** to use the state's default parameters (most common for named states)
-  - Use **{r, g, b, speed}** object to override the state's parameters for this specific transition
-  - When providing params: r, g, b are required, speed is optional
+- **state2**: The next/destination state name (string) - can be any state name (including "on", "off", or custom states)
+  - State parameters (r, g, b, speed) are looked up from the state definition
+  - To use different parameters for the same state name, create a new named state with createState
 - **condition**: Optional condition expression (string or null) - must evaluate to true for rule to trigger
 - **action**: Optional action expression (string or null) - executed after condition passes, before state transition
 
-**CRITICAL: state2Param usage:**
-- **Named states (on, off, custom)**: Use `null` for state2Param to use the state's default parameters
-  - Example: `{"state1": "off", "transition": "button_click", "state2": "reading", "state2Param": null, ...}`
-- **Override parameters**: Use `{r, g, b, speed}` to override state defaults for this specific transition
-  - Static override: `{"state2": "on", "state2Param": {"r": 255, "g": 0, "b": 0, "speed": null}, ...}`
-  - Animated override: `{"state2": "off", "state2Param": {"r": "random()", "g": "random()", "b": "random()", "speed": 100}, ...}`
+**CRITICAL: Rules reference states by name only:**
+- Rules just specify which state to transition to
+  - Example: `{"state1": "off", "transition": "button_click", "state2": "reading", "condition": null, "action": null}`
+  - The "reading" state's parameters (r, g, b, speed) are defined when creating the state with createState
+  - State parameters are stored in the state definition, not in rules
 
 ### For toggle behaviors (like "click to turn on X"), create TWO rules:
 1. From current state to the new state
 2. From the new state back to the previous state (usually "off")
 
-## PARAMETER FORMATS
+## STATE CREATION PARAMETERS
 
-For state2Param, you can use:
-1. **Specific values** for color state: {r: 255, g: 0, b: 0} (speed optional)
-2. **Expressions** for color state: {r: "expr", g: "expr", b: "expr"} (speed optional)
-3. **Expressions** for animation state: {r: "expr", g: "expr", b: "expr", speed: 50} (speed REQUIRED)
-4. **null** (no parameters for on/off states)
+When creating states with createState, use:
+1. **Static states**: {name: "stateName", r: 255, g: 0, b: 0, speed: null, description: "desc"}
+2. **Animated states**: {name: "stateName", r: "expr", g: "expr", b: "expr", speed: 50, description: "desc"}
 
-### Color State Parameters
-Format: {r: value, g: value, b: value} where r, g, b can be **numbers** or **expressions (strings)**
+### Static State Parameters
+Format: {r: value, g: value, b: value, speed: null} where r, g, b can be **numbers** or **expressions (strings)**
 (speed is optional - omit it for color states)
 
 Available variables in color expressions:
@@ -408,39 +400,19 @@ Examples:
 ```json
 {
   "deleteState": null,
-  "createState": null,
+  "createState": {"name": "random_color", "r": "random()", "g": "random()", "b": "random()", "speed": null, "description": null},
   "deleteRules": null,
   "appendRules": {
     "rules": [
-      {
-        "state1": "off",
-        "transition": "button_click",
-        "state2": "color",
-        "state2Param": {"r": "random()", "g": "random()", "b": "random()", "speed": null},
-        "condition": "getData('counter') === undefined",
-        "action": "setData('counter', 4)"
-      },
-      {
-        "state1": "color",
-        "transition": "button_click",
-        "state2": "color",
-        "state2Param": {"r": "random()", "g": "random()", "b": "random()", "speed": null},
-        "condition": "getData('counter') > 0",
-        "action": "setData('counter', getData('counter') - 1)"
-      },
-      {
-        "state1": "color",
-        "transition": "button_click",
-        "state2": "on",
-        "state2Param": null,
-        "condition": "getData('counter') === 0",
-        "action": "setData('counter', undefined)"
-      }
+      {"state1": "off", "transition": "button_click", "state2": "random_color", "condition": "getData('counter') === undefined", "action": "setData('counter', 4)"},
+      {"state1": "random_color", "transition": "button_click", "state2": "random_color", "condition": "getData('counter') > 0", "action": "setData('counter', getData('counter') - 1)"},
+      {"state1": "random_color", "transition": "button_click", "state2": "on", "condition": "getData('counter') === 0", "action": "setData('counter', undefined)"}
     ]
-  }
+  },
+  "setState": null
 }
 ```
-(Note: Default rules remain! After counter=0, state goes to "on" and default on→off rule handles subsequent clicks)
+(Note: Creates "random_color" state with random RGB. Default rules remain! After counter=0, state goes to "on" and default on→off rule handles subsequent clicks)
 
 ### Time-based Rules Example:
 
@@ -455,7 +427,7 @@ Examples:
         "state1": "off",
         "transition": "button_click",
         "state2": "color",
-        "state2Param": {"r": 255, "g": 255, "b": 0, "speed": null},
+        "condition": null, "action": null}, should have params: r= 255, "g": 255, "b": 0, "speed": null},
         "condition": "time.hour >= 8 && time.hour < 22",
         "action": null
       }
@@ -507,8 +479,8 @@ Output:
   "deleteRules": null,
   "appendRules": {
     "rules": [
-      {"state1": "off", "transition": "button_double_click", "state2": "reading", "state2Param": null, "condition": null, "action": null},
-      {"state1": "reading", "transition": "button_double_click", "state2": "off", "state2Param": null, "condition": null, "action": null}
+      {"state1": "off", "transition": "button_double_click", "state2": "reading", "condition": null, "action": null},
+      {"state1": "reading", "transition": "button_double_click", "state2": "off", "condition": null, "action": null}
     ]
   }
 }
@@ -568,8 +540,8 @@ Output:
   "deleteRules": {"transition": "button_click", "state1": null, "state2": null, "indices": null, "delete_all": null},
   "appendRules": {
     "rules": [
-      {"state1": "off", "transition": "button_click", "state2": "on", "state2Param": {"r": 0, "g": 0, "b": 255, "speed": null}, "condition": null, "action": null},
-      {"state1": "on", "transition": "button_click", "state2": "off", "state2Param": null, "condition": null, "action": null}
+      {"state1": "off", "transition": "button_click", "state2": "on", "condition": null, "action": null}, should have params: r= 0, "g": 0, "b": 255, "speed": null}, "condition": null, "action": null},
+      {"state1": "on", "transition": "button_click", "state2": "off", "condition": null, "action": null}
     ]
   }
 }
@@ -588,8 +560,8 @@ Output:
   "deleteRules": null,
   "appendRules": {
     "rules": [
-      {"state1": "off", "transition": "button_double_click", "state2": "on", "state2Param": {"r": 255, "g": 0, "b": 0, "speed": null}, "condition": null, "action": null},
-      {"state1": "on", "transition": "button_double_click", "state2": "off", "state2Param": null, "condition": null, "action": null}
+      {"state1": "off", "transition": "button_double_click", "state2": "on", "condition": null, "action": null}, should have params: r= 255, "g": 0, "b": 0, "speed": null}, "condition": null, "action": null},
+      {"state1": "on", "transition": "button_double_click", "state2": "off", "condition": null, "action": null}
     ]
   }
 }
@@ -608,7 +580,7 @@ Output:
   "deleteRules": null,
   "appendRules": {
     "rules": [
-      {"state1": "off", "transition": "button_hold", "state2": "on", "state2Param": {"r": "random()", "g": "random()", "b": "random()", "speed": null}, "condition": null, "action": null}
+      {"state1": "off", "transition": "button_hold", "state2": "on", "condition": null, "action": null}, should have params: r= "random()", "g": "random()", "b": "random()", "speed": null}, "condition": null, "action": null}
     ]
   }
 }
@@ -622,14 +594,11 @@ User Input: "Turn the light red now"
 Output:
 ```json
 {
-  "appendRules": null,
-  "setState": {"state": "on", "params": {"r": 255, "g": 0, "b": 0, "speed": null}},
-  "createState": null,
   "deleteState": null,
-  "createState": null,
+  "createState": {"name": "red", "r": 255, "g": 0, "b": 0, "speed": null, "description": null},
   "deleteRules": null,
   "appendRules": null,
-  "setState": null
+  "setState": {"state": "red"}
 }
 ```
 
@@ -642,18 +611,19 @@ Output:
 ```json
 {
   "deleteState": null,
-  "createState": null,
+  "createState": {"name": "random_color", "r": "random()", "g": "random()", "b": "random()", "speed": null, "description": null},
   "deleteRules": null,
   "appendRules": {
     "rules": [
-      {"state1": "off", "transition": "button_click", "state2": "on", "state2Param": {"r": "random()", "g": "random()", "b": "random()", "speed": null}, "condition": "getData('counter') === undefined", "action": "setData('counter', 4)"},
-      {"state1": "on", "transition": "button_click", "state2": "on", "state2Param": {"r": "random()", "g": "random()", "b": "random()", "speed": null}, "condition": "getData('counter') > 0", "action": "setData('counter', getData('counter') - 1)"},
-      {"state1": "on", "transition": "button_click", "state2": "on", "state2Param": null, "condition": "getData('counter') === 0", "action": "setData('counter', undefined)"}
+      {"state1": "off", "transition": "button_click", "state2": "random_color", "condition": "getData('counter') === undefined", "action": "setData('counter', 4)"},
+      {"state1": "random_color", "transition": "button_click", "state2": "random_color", "condition": "getData('counter') > 0", "action": "setData('counter', getData('counter') - 1)"},
+      {"state1": "random_color", "transition": "button_click", "state2": "on", "condition": "getData('counter') === 0", "action": "setData('counter', undefined)"}
     ]
-  }
+  },
+  "setState": null
 }
 ```
-(Note: After counter expires and state goes to "on", the default on→off rule takes over for normal toggle)
+(Note: Creates random_color state, uses conditions to layer on top of defaults. After counter expires, default on→off rule takes over)
 
 ### Example 10 - ADDING animation with hold (new transition)
 Previous State: [0] off --[button_click]--> on, [1] on --[button_click]--> off
@@ -668,8 +638,8 @@ Output:
   "deleteRules": null,
   "appendRules": {
     "rules": [
-      {"state1": "off", "transition": "button_hold", "state2": "on", "state2Param": {"r": "(frame * 2) % 256", "g": "abs(sin(frame * 0.1)) * 255", "b": "abs(cos(frame * 0.1)) * 255", "speed": 50}, "condition": null, "action": null},
-      {"state1": "on", "transition": "button_release", "state2": "off", "state2Param": null, "condition": null, "action": null}
+      {"state1": "off", "transition": "button_hold", "state2": "on", "condition": null, "action": null}, should have params: r= "(frame * 2) % 256", "g": "abs(sin(frame * 0.1)) * 255", "b": "abs(cos(frame * 0.1)) * 255", "speed": 50}, "condition": null, "action": null},
+      {"state1": "on", "transition": "button_release", "state2": "off", "condition": null, "action": null}
     ]
   }
 }
@@ -691,7 +661,7 @@ Output:
   "deleteRules": {"transition": null, "state1": null, "state2": null, "indices": [0], "delete_all": null},
   "appendRules": {
     "rules": [
-      {"state1": "off", "transition": "button_click", "state2": "on", "state2Param": {"r": 255, "g": 0, "b": 0, "speed": null}, "condition": null, "action": null}
+      {"state1": "off", "transition": "button_click", "state2": "on", "condition": null, "action": null}, should have params: r= 255, "g": 0, "b": 0, "speed": null}, "condition": null, "action": null}
     ]
   }
 }
@@ -713,7 +683,7 @@ Output:
   "deleteRules": {"transition": null, "state1": null, "state2": null, "indices": [0], "delete_all": null},
   "appendRules": {
     "rules": [
-      {"state1": "off", "transition": "button_click", "state2": "on", "state2Param": {"r": "(frame * 2) % 256", "g": "abs(sin(frame * 0.1)) * 255", "b": "abs(cos(frame * 0.1)) * 255", "speed": 20}, "condition": null, "action": null}
+      {"state1": "off", "transition": "button_click", "state2": "on", "condition": null, "action": null}, should have params: r= "(frame * 2) % 256", "g": "abs(sin(frame * 0.1)) * 255", "b": "abs(cos(frame * 0.1)) * 255", "speed": 20}, "condition": null, "action": null}
     ]
   }
 }
@@ -735,8 +705,8 @@ Output:
   "deleteRules": {"transition": null, "state1": null, "state2": null, "indices": null, "delete_all": true},
   "appendRules": {
     "rules": [
-      {"state1": "off", "transition": "button_click", "state2": "on", "state2Param": null, "condition": null, "action": null},
-      {"state1": "on", "transition": "button_click", "state2": "off", "state2Param": null, "condition": null, "action": null}
+      {"state1": "off", "transition": "button_click", "state2": "on", "condition": null, "action": null},
+      {"state1": "on", "transition": "button_click", "state2": "off", "condition": null, "action": null}
     ]
   }
 }
@@ -767,7 +737,7 @@ Output:
   "deleteRules": {"transition": null, "state1": null, "state2": null, "indices": [0], "delete_all": null},
   "appendRules": {
     "rules": [
-      {"state1": "off", "transition": "button_click", "state2": "on", "state2Param": {"r": "(frame * 2) % 256", "g": "abs(sin(frame * 0.1)) * 255", "b": "abs(cos(frame * 0.1)) * 255", "speed": 20}, "condition": null, "action": null}
+      {"state1": "off", "transition": "button_click", "state2": "on", "condition": null, "action": null}, should have params: r= "(frame * 2) % 256", "g": "abs(sin(frame * 0.1)) * 255", "b": "abs(cos(frame * 0.1)) * 255", "speed": 20}, "condition": null, "action": null}
     ]
   }
 }

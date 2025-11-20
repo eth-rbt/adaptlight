@@ -27,6 +27,7 @@ class RuleExecutor:
         self.current_state = initial_state
         self.state_params = initial_params
         self.variables = copy.deepcopy(initial_variables)
+        self.pending_rule_deletions = []  # Indices to delete after transition
 
     def execute_transition(self, transition):
         """
@@ -64,18 +65,7 @@ class RuleExecutor:
 
         # Execute action if present
         if matching_rule.get("action"):
-            # Handle simple setData calls for counter tests
-            action = matching_rule.get("action")
-            if "setData" in action and "counter" in action:
-                # Simple parsing for counter actions
-                if "setData('counter', 4)" in action or 'setData("counter", 4)' in action:
-                    self.variables["counter"] = 4
-                elif "setData('counter', undefined)" in action or 'setData("counter", undefined)' in action:
-                    # Remove counter variable
-                    self.variables.pop("counter", None)
-                elif "getData('counter') - 1" in action:
-                    if "counter" in self.variables:
-                        self.variables["counter"] -= 1
+            self._execute_action(matching_rule.get("action"))
 
         # Get new state and params
         new_state = matching_rule.get("state2")
@@ -100,33 +90,137 @@ class RuleExecutor:
         self.current_state = new_state
         self.state_params = new_params
 
+        # Apply pending rule deletions (deferred deletion)
+        self._apply_pending_deletions()
+
         return self.current_state, self.state_params
 
     def _evaluate_condition(self, condition):
         """
         Evaluate a condition expression.
 
-        For testing purposes, handles basic counter conditions:
-        - getData('counter') === undefined
-        - getData('counter') > 0
-        - getData('counter') === 0
+        Handles:
+        - getData('key') comparisons
+        - Arithmetic with ||  operator for defaults
+        - Comparison operators: <, >, <=, >=, ===, !==
         """
-        counter_value = self.variables.get('counter')
+        import re
 
-        # Handle getData('counter') === undefined
-        if "getData('counter') === undefined" in condition or 'getData("counter") === undefined' in condition:
-            return counter_value is None
+        if not condition:
+            return True
 
-        # Handle getData('counter') === 0
-        if "getData('counter') === 0" in condition or 'getData("counter") === 0' in condition:
-            return counter_value == 0
+        # Replace getData calls with actual values
+        getdata_pattern = r'getData\([\'"](\w+)[\'"]\)'
 
-        # Handle getData('counter') > 0
-        if "getData('counter') > 0" in condition or 'getData("counter") > 0' in condition:
-            return counter_value is not None and counter_value > 0
+        def replace_getdata(match):
+            key = match.group(1)
+            value = self.variables.get(key)
+            if value is None:
+                return 'None'
+            return str(value)
 
-        # Default: assume condition passes (for non-counter conditions)
-        return True
+        condition = re.sub(getdata_pattern, replace_getdata, condition)
+
+        # Handle || operator for default values: (None || 0) becomes 0
+        condition = re.sub(r'\(\s*None\s*\|\|\s*(\d+)\s*\)', r'\1', condition)
+
+        # Convert JavaScript comparison operators to Python
+        condition = condition.replace('===', '==')
+        condition = condition.replace('!==', '!=')
+        condition = condition.replace(' undefined', ' None')
+
+        # Try to evaluate the condition
+        try:
+            result = eval(condition, {"__builtins__": {}}, {})
+            return bool(result)
+        except:
+            # If evaluation fails, assume condition passes
+            print(f"  ⚠️  Could not evaluate condition: {condition}")
+            return True
+
+    def _execute_action(self, action):
+        """
+        Execute an action string.
+
+        Supports:
+        - setData('key', value)
+        - getData('key')
+        - deleteRulesByIndex([0, 1, 2])
+        """
+        import re
+
+        # Parse deleteRulesByIndex calls
+        delete_pattern = r'deleteRulesByIndex\(\[([\d,\s]+)\]\)'
+        delete_matches = re.findall(delete_pattern, action)
+        for match in delete_matches:
+            indices = [int(x.strip()) for x in match.split(',') if x.strip()]
+            self.pending_rule_deletions.extend(indices)
+
+        # Parse setData calls
+        # Match patterns like: setData('key', value) or setData("key", value)
+        # Use a more complex pattern to handle nested parentheses
+        setdata_pattern = r'setData\([\'"](\w+)[\'"]\s*,\s*([^;]+?)\)(?:;|$)'
+        setdata_matches = re.findall(setdata_pattern, action)
+        for key, value_expr in setdata_matches:
+            # Evaluate the value expression
+            evaluated_value = self._evaluate_expression(value_expr)
+            self.variables[key] = evaluated_value
+
+    def _evaluate_expression(self, expr):
+        """
+        Evaluate a simple expression.
+
+        Handles:
+        - Numbers: 5, 0
+        - getData calls: getData('key')
+        - Arithmetic: getData('key') + 1
+        - undefined/null
+        """
+        import re
+
+        expr = expr.strip()
+
+        # Handle undefined/null
+        if expr in ['undefined', 'null']:
+            return None
+
+        # Handle plain numbers
+        try:
+            return int(expr)
+        except ValueError:
+            pass
+
+        # Handle getData calls
+        getdata_pattern = r'getData\([\'"](\w+)[\'"]\)'
+        expr = re.sub(getdata_pattern, lambda m: str(self.variables.get(m.group(1), 0)), expr)
+
+        # Handle || operator for default values: (getData('key') || 0)
+        expr = re.sub(r'\(\s*0\s*\|\|\s*0\s*\)', '0', expr)  # Simplified
+
+        # Try to evaluate as arithmetic
+        try:
+            # Very simple eval for testing (only safe in test environment!)
+            return eval(expr, {"__builtins__": {}}, {})
+        except:
+            return 0
+
+    def _apply_pending_deletions(self):
+        """Apply pending rule deletions in reverse order to avoid index shifting."""
+        if not self.pending_rule_deletions:
+            return
+
+        # Sort in reverse order to delete from end to start
+        indices_to_delete = sorted(set(self.pending_rule_deletions), reverse=True)
+
+        for idx in indices_to_delete:
+            if 0 <= idx < len(self.rules):
+                del self.rules[idx]
+                print(f"  🗑️  Deleted rule at index {idx}")
+            else:
+                print(f"  ⚠️  Rule index {idx} out of bounds, skipping")
+
+        # Clear pending deletions
+        self.pending_rule_deletions = []
 
     def get_state(self):
         """Get current state as dict."""
@@ -257,7 +351,7 @@ class ParserEvaluator:
     """Evaluates command parser against test examples."""
 
     def __init__(self, api_key=None, parsing_method='json_output', prompt_variant='full', model='gpt-4o',
-                 reasoning_effort='medium', verbosity=0):
+                 reasoning_effort='medium', verbosity=0, claude_api_key=None):
         """Initialize evaluator with command parser."""
         self.parser = CommandParser(
             api_key=api_key,
@@ -265,7 +359,8 @@ class ParserEvaluator:
             prompt_variant=prompt_variant,
             model=model,
             reasoning_effort=reasoning_effort,
-            verbosity=verbosity
+            verbosity=verbosity,
+            claude_api_key=claude_api_key
         )
         self.results = {
             "passed": 0,
@@ -410,7 +505,11 @@ class ParserEvaluator:
             initial_states = prev_state.get('states', None)
 
             before_rules = copy.deepcopy(current_rules)
-            before_state = {"state": current_state, "variables": variables}
+            before_state = {
+                "state": current_state,
+                "variables": variables,
+                "states": copy.deepcopy(initial_states) if initial_states else {}
+            }
 
             # Build available states
             available_states = "off, on, color, animation"
@@ -451,7 +550,8 @@ class ParserEvaluator:
             after_state = {
                 "state": final_state['current_state'],
                 "params": final_state.get('state_params'),
-                "variables": final_state['variables']
+                "variables": final_state['variables'],
+                "states": final_state.get('states', {})
             }
 
             # Print final rules
@@ -594,10 +694,9 @@ def main():
     with open(config_file) as f:
         config = yaml.safe_load(f)
 
+    # Get API keys
     api_key = config.get('openai', {}).get('api_key')
-    if not api_key:
-        print("Error: openai.api_key not found in config.yaml")
-        sys.exit(1)
+    claude_api_key = config.get('claude', {}).get('api_key')
 
     # Get parsing configuration
     parsing_method = config.get('openai', {}).get('parsing_method', 'json_output')
@@ -605,6 +704,18 @@ def main():
     model = config.get('openai', {}).get('model', 'gpt-4o')
     reasoning_effort = config.get('openai', {}).get('reasoning_effort', 'medium')
     verbosity = config.get('openai', {}).get('verbosity', 0)
+
+    # If using Claude, override model and check for API key
+    if parsing_method == 'claude':
+        model = config.get('claude', {}).get('model', 'claude-3-7-sonnet-20250219')
+        if not claude_api_key:
+            print("Error: claude.api_key not found in config.yaml but parsing_method is 'claude'")
+            sys.exit(1)
+    else:
+        if not api_key:
+            print("Error: openai.api_key not found in config.yaml")
+            sys.exit(1)
+
     print(f"Using parsing method: {parsing_method}, variant: {prompt_variant}, model: {model}")
     print(f"Reasoning effort: {reasoning_effort}, verbosity: {verbosity}")
 
@@ -615,7 +726,8 @@ def main():
         prompt_variant=prompt_variant,
         model=model,
         reasoning_effort=reasoning_effort,
-        verbosity=verbosity
+        verbosity=verbosity,
+        claude_api_key=claude_api_key
     )
     results = evaluator.evaluate_all()
 

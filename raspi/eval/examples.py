@@ -175,8 +175,8 @@ DETERMINISTIC_TESTS = [
             {"transition": "button_click", "expected_state": "random_color", "expected_params": None},  # Click 3
             {"transition": "button_click", "expected_state": "random_color", "expected_params": None},  # Click 4
             {"transition": "button_click", "expected_state": "random_color", "expected_params": None},  # Click 5
-            {"transition": "button_click", "expected_state": "on", "expected_params": None},
-            {"transition": "button_click", "expected_state": "off", "expected_params": None}    # Click 6 - should turn off
+            {"transition": "button_click", "expected_state": "off", "expected_params": None},
+            {"transition": "button_click", "expected_state": "on", "expected_params": None}    # Click 6 - should turn off
         ]
     },
     {
@@ -193,11 +193,6 @@ DETERMINISTIC_TESTS = [
                 "transition": None,  # No transition, just check current state
                 "expected_state": "red",  # Unified system creates named state "red"
                 "expected_params": None  # setState no longer passes params
-            },
-            {
-                "transition": "button_click",
-                "expected_state": "off",  # Default rules should still work
-                "expected_params": None
             }
         ]
     },

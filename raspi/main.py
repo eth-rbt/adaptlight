@@ -448,10 +448,16 @@ class AdaptLight:
         elif tool_name == 'set_state':
             # Change the current state immediately
             if args.get('state'):
-                params_str = str(args.get('params')) if args.get('params') else 'none'
-                print(f"  🔄 Changing state to: {args['state']}")
-                print(f"    → Parameters: {params_str}")
-                self.state_machine.set_state(args['state'], args.get('params'))
+                state_name = args['state']
+                # Validate that state exists
+                state_obj = self.state_machine.get_state_object(state_name)
+                if state_obj is None:
+                    print(f"  ❌ ERROR: State '{state_name}' does not exist")
+                    print(f"     Available states: {', '.join([s.name for s in self.state_machine.states.get_states()])}")
+                    raise ValueError(f"State '{state_name}' does not exist. Create it first with createState or use an existing state.")
+
+                print(f"  🔄 Changing state to: {state_name}")
+                self.state_machine.set_state(state_name)
 
         elif tool_name == 'manage_variables':
             # Manage global variables
@@ -487,15 +493,19 @@ class AdaptLight:
                 speed = args.get('speed')
                 description = args.get('description', '')
 
-                print(f"  ✨ Creating new state: {name}")
+                # Check if state already exists
+                existing = self.state_machine.get_state_object(name)
+                action = "Overwriting" if existing else "Creating"
+
+                print(f"  ✨ {action} state: {name}")
                 print(f"    → r={r}, g={g}, b={b}, speed={speed}")
                 if description:
                     print(f"    → Description: {description}")
 
-                # Create and add the state
+                # Create and add/replace the state
                 state = State(name=name, r=r, g=g, b=b, speed=speed, description=description)
                 self.state_machine.states.add_state(state)
-                print(f"    ✅ State '{name}' created successfully")
+                print(f"    ✅ State '{name}' {'replaced' if existing else 'created'} successfully")
 
         elif tool_name == 'delete_state':
             # Delete a custom state by name

@@ -197,8 +197,8 @@ def initialize_default_rules(state_machine):
 
     default_rules = [
         # Toggle light on/off with button click
-        Rule('off', None, 'button_click', 'on', None),
-        Rule('on', None, 'button_click', 'off', None),
+        Rule('off', 'button_click', 'on', None, None),
+        Rule('on', 'button_click', 'off', None, None),
     ]
 
     for rule in default_rules:

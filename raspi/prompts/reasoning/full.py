@@ -3,6 +3,7 @@ Reasoning-based parsing prompt for OpenAI command parsing (full version).
 
 This prompt includes reasoning and clarification capabilities.
 The model will ask questions when commands are ambiguous or missing information.
+Uses unified state system with dynamic states.
 """
 
 
@@ -51,73 +52,33 @@ Your output MUST conform to this exact JSON schema:
       ],
       "description": "The question to ask the user (null if needsClarification is false)"
     },
-    "setState": {
+    "deleteState": {
       "anyOf": [
         {"type": "null"},
         {
           "type": "object",
           "properties": {
-            "state": {"type": "string", "enum": ["off", "on", "color", "animation"]},
-            "params": {
-              "anyOf": [
-                {"type": "null"},
-                {
-                  "type": "object",
-                  "properties": {
-                    "r": {"type": ["number", "string"]},
-                    "g": {"type": ["number", "string"]},
-                    "b": {"type": ["number", "string"]}
-                  },
-                  "required": ["r", "g", "b"],
-                  "additionalProperties": false
-                }
-              ]
-            }
+            "name": {"type": "string"}
           },
-          "required": ["state", "params"],
+          "required": ["name"],
           "additionalProperties": false
         }
       ]
     },
-    "appendRules": {
+    "createState": {
       "anyOf": [
         {"type": "null"},
         {
           "type": "object",
           "properties": {
-            "rules": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "state1": {"type": "string", "enum": ["off", "on", "color", "animation"]},
-                  "transition": {"type": "string", "enum": ["button_click", "button_double_click", "button_hold", "button_release", "voice_command"]},
-                  "state2": {"type": "string", "enum": ["off", "on", "color", "animation"]},
-                  "state2Param": {
-                    "anyOf": [
-                      {"type": "null"},
-                      {
-                        "type": "object",
-                        "properties": {
-                          "r": {"type": ["number", "string"]},
-                          "g": {"type": ["number", "string"]},
-                          "b": {"type": ["number", "string"]},
-                          "speed": {"type": ["number", "null"]}
-                        },
-                        "required": ["r", "g", "b"],
-                        "additionalProperties": false
-                      }
-                    ]
-                  },
-                  "condition": {"type": ["string", "null"]},
-                  "action": {"type": ["string", "null"]}
-                },
-                "required": ["state1", "transition", "state2", "state2Param", "condition", "action"],
-                "additionalProperties": false
-              }
-            }
+            "name": {"type": "string"},
+            "r": {"type": ["number", "string"]},
+            "g": {"type": ["number", "string"]},
+            "b": {"type": ["number", "string"]},
+            "speed": {"type": ["number", "null"]},
+            "description": {"type": ["string", "null"]}
           },
-          "required": ["rules"],
+          "required": ["name", "r", "g", "b", "speed", "description"],
           "additionalProperties": false
         }
       ]
@@ -143,9 +104,49 @@ Your output MUST conform to this exact JSON schema:
           "additionalProperties": false
         }
       ]
+    },
+    "appendRules": {
+      "anyOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "properties": {
+            "rules": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "state1": {"type": "string"},
+                  "transition": {"type": "string", "enum": ["button_click", "button_double_click", "button_hold", "button_release", "voice_command"]},
+                  "state2": {"type": "string"},
+                  "condition": {"type": ["string", "null"]},
+                  "action": {"type": ["string", "null"]}
+                },
+                "required": ["state1", "transition", "state2", "condition", "action"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": ["rules"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "setState": {
+      "anyOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "properties": {
+            "state": {"type": "string"}
+          },
+          "required": ["state"],
+          "additionalProperties": false
+        }
+      ]
     }
   },
-  "required": ["reasoning", "needsClarification", "clarifyingQuestion", "setState", "appendRules", "deleteRules"],
+  "required": ["reasoning", "needsClarification", "clarifyingQuestion", "deleteState", "createState", "deleteRules", "appendRules", "setState"],
   "additionalProperties": false
 }
 ```
@@ -154,7 +155,7 @@ Your output MUST conform to this exact JSON schema:
 - `reasoning`: ALWAYS explain your thought process (never null)
 - `needsClarification`: Set to `true` if asking a question, `false` if taking action
 - `clarifyingQuestion`: The question to ask (null if not asking)
-- When `needsClarification` is `true`: ALL action fields (setState, appendRules, deleteRules) MUST be null
+- When `needsClarification` is `true`: ALL action fields (deleteState, createState, deleteRules, appendRules, setState) MUST be null
 - When `needsClarification` is `false`: `clarifyingQuestion` MUST be null, and action fields contain the operations
 
 ## WHEN TO ASK FOR CLARIFICATION
@@ -233,6 +234,16 @@ User: "random color"
 
 {dynamic_content}
 
+## UNIFIED STATE SYSTEM
+
+All states use r, g, b, speed parameters:
+- **Default states**: "on" (255,255,255) and "off" (0,0,0)
+- **Custom states**: Create with createState, reference by name in rules
+- **Static states**: speed=null (evaluated once)
+- **Animated states**: speed=number (expressions evaluated every frame with t, frame variables)
+
+Rules reference states by name only. State parameters are stored in the state definition, not in rules.
+
 ## REASONING BEST PRACTICES
 
 **Your reasoning field should:**
@@ -250,12 +261,12 @@ Good reasoning (asking):
 
 Good reasoning (proceeding):
 ```
-"User wants blue light immediately ('now' keyword indicates urgency). Current state is 'off'. Using setState to change to color state with blue params {r:0, g:0, b:255}."
+"User wants blue light immediately ('now' keyword indicates urgency). Current state is 'off'. Using setState to change to 'on' state with blue params {r:0, g:0, b:255}."
 ```
 
 Good reasoning (with context):
 ```
-"User said 'make it faster'. Previous command was 'click for rainbow animation' with speed:50. Clear that 'it' refers to this animation. Reducing speed to 20 (lower = faster). Deleting old rule and adding new one with updated speed."
+"User said 'make it faster'. Previous command created rainbow animation with speed:50. Clear that 'it' refers to this animation. Reducing speed to 20 (lower = faster). Deleting old rule and adding new one with updated speed."
 ```
 
 ## CLARIFYING QUESTIONS BEST PRACTICES
@@ -298,9 +309,11 @@ Output:
   "reasoning": "User said 'make it blue' without specifying immediate action or rule-based behavior. No recent context to infer intent. This is ambiguous - could mean turn blue now OR create button rule for blue. Asking for clarification.",
   "needsClarification": true,
   "clarifyingQuestion": "Would you like to turn the light blue right now, or create a button rule to toggle blue light?",
-  "setState": null,
+  "deleteState": null,
+  "createState": null,
+  "deleteRules": null,
   "appendRules": null,
-  "deleteRules": null
+  "setState": null
 }
 ```
 
@@ -311,37 +324,58 @@ Current state: off
 Output:
 ```json
 {
-  "reasoning": "User wants immediate blue light ('now' keyword is explicit). Current state is 'off'. Using setState to change to color state with blue RGB values.",
+  "reasoning": "User wants immediate blue light ('now' keyword is explicit). Current state is 'off'. Creating blue state and setting to it.",
   "needsClarification": false,
   "clarifyingQuestion": null,
-  "setState": {"state": "color", "params": {"r": 0, "g": 0, "b": 255}},
+  "deleteState": null,
+  "createState": {"name": "blue", "r": 0, "g": 0, "b": 255, "speed": null, "description": null},
+  "deleteRules": null,
   "appendRules": null,
-  "deleteRules": null
+  "setState": {"state": "blue"}
 }
 ```
 
-### Example 3: Using Context - Proceed
-Previous: "click for rainbow animation with speed 50"
+### Example 3: Create Custom State
+User: "create a reading light that's warm white"
+Current state: off
+
+Output:
+```json
+{
+  "reasoning": "User wants to create a custom 'reading' state with warm white color. Using createState to define r=255, g=200, b=150 (warm white tones).",
+  "needsClarification": false,
+  "clarifyingQuestion": null,
+  "deleteState": null,
+  "createState": {"name": "reading", "r": 255, "g": 200, "b": 150, "speed": null, "description": "Warm white"},
+  "deleteRules": null,
+  "appendRules": null,
+  "setState": null
+}
+```
+
+### Example 4: Using Context - Proceed
+Previous: "hold button for rainbow animation"
 User: "make it faster"
 
 Output:
 ```json
 {
-  "reasoning": "User said 'make it faster'. From conversation history, 'it' refers to the rainbow animation from previous command. 'Faster' means lower speed value (less delay between frames). Deleting old button_click rule and adding new one with speed reduced from 50 to 20.",
+  "reasoning": "User said 'make it faster'. From conversation history, 'it' refers to the rainbow animation from previous command. Need to create rainbow animation state with faster speed, then update rule. Creating 'rainbow' state with speed reduced from 50 to 20 for faster animation.",
   "needsClarification": false,
   "clarifyingQuestion": null,
-  "setState": null,
-  "deleteRules": {"transition": "button_click", "state1": null, "state2": null, "indices": null, "delete_all": null},
+  "deleteState": null,
+  "createState": {"name": "rainbow", "r": "abs(sin(frame * 0.05)) * 255", "g": "abs(sin(frame * 0.05 + 2)) * 255", "b": "abs(sin(frame * 0.05 + 4)) * 255", "speed": 20, "description": null},
+  "deleteRules": {"transition": "button_hold", "state1": null, "state2": null, "indices": null, "delete_all": null},
   "appendRules": {
     "rules": [
-      {"state1": "off", "transition": "button_click", "state2": "animation", "state2Param": {"r": "(frame * 2) % 256", "g": "abs(sin(frame * 0.1)) * 255", "b": "abs(cos(frame * 0.1)) * 255", "speed": 20}, "condition": null, "action": null},
-      {"state1": "animation", "transition": "button_click", "state2": "off", "state2Param": null, "condition": null, "action": null}
+      {"state1": "off", "transition": "button_hold", "state2": "rainbow", "condition": null, "action": null}
     ]
-  }
+  },
+  "setState": null
 }
 ```
 
-### Example 4: Missing Info - Need Clarification
+### Example 5: Missing Info - Need Clarification
 User: "next 5 clicks should be random"
 
 Output:
@@ -350,13 +384,15 @@ Output:
   "reasoning": "User wants random behavior for 5 clicks, but didn't specify what should be random. Most likely random colors (common use case), but should confirm to avoid assumptions.",
   "needsClarification": true,
   "clarifyingQuestion": "Should the next 5 clicks show random colors?",
-  "setState": null,
+  "deleteState": null,
+  "createState": null,
+  "deleteRules": null,
   "appendRules": null,
-  "deleteRules": null
+  "setState": null
 }
 ```
 
-### Example 5: After Clarification - Proceed
+### Example 6: After Clarification - Proceed
 Previous clarification Q&A:
 Q: "Should the next 5 clicks show random colors?"
 A: "yes"
@@ -366,18 +402,20 @@ User's clarification: "yes"
 Output:
 ```json
 {
-  "reasoning": "User confirmed random colors for next 5 clicks. Using counter-based conditions: initial click sets counter to 4, each subsequent click decrements counter and shows random color, when counter hits 0 return to 'on' state, then default rules take over.",
+  "reasoning": "User confirmed random colors for next 5 clicks. Creating 'random_color' state with random() expressions. Using counter-based conditions: initial click sets counter to 4, each subsequent click decrements counter and uses random_color state, when counter hits 0 return to 'on' state, then default rules take over.",
   "needsClarification": false,
   "clarifyingQuestion": null,
-  "setState": null,
+  "deleteState": null,
+  "createState": {"name": "random_color", "r": "random()", "g": "random()", "b": "random()", "speed": null, "description": null},
   "deleteRules": null,
   "appendRules": {
     "rules": [
-      {"state1": "off", "transition": "button_click", "state2": "color", "state2Param": {"r": "random()", "g": "random()", "b": "random()"}, "condition": "getData('counter') === undefined", "action": "setData('counter', 4)"},
-      {"state1": "color", "transition": "button_click", "state2": "color", "state2Param": {"r": "random()", "g": "random()", "b": "random()"}, "condition": "getData('counter') > 0", "action": "setData('counter', getData('counter') - 1)"},
-      {"state1": "color", "transition": "button_click", "state2": "on", "state2Param": null, "condition": "getData('counter') === 0", "action": "setData('counter', undefined)"}
+      {"state1": "off", "transition": "button_click", "state2": "random_color", "condition": "getData('counter') === undefined", "action": "setData('counter', 4)"},
+      {"state1": "random_color", "transition": "button_click", "state2": "random_color", "condition": "getData('counter') > 0", "action": "setData('counter', getData('counter') - 1)"},
+      {"state1": "random_color", "transition": "button_click", "state2": "on", "condition": "getData('counter') === 0", "action": "setData('counter', undefined)"}
     ]
-  }
+  },
+  "setState": null
 }
 ```
 
