@@ -353,22 +353,28 @@ class ToolRegistry:
         if not self.state_machine:
             return {"error": "No state machine configured"}
 
+        from core.state import State
+
         name = input["name"]
-        r = input["r"]
-        g = input["g"]
-        b = input["b"]
+        r = input.get("r")
+        g = input.get("g")
+        b = input.get("b")
         speed = input.get("speed")
         description = input.get("description", "")
 
-        # Register the state
-        self.state_machine.register_state(name, description)
+        # Create a proper State object with RGB values
+        state = State(
+            name=name,
+            r=r,
+            g=g,
+            b=b,
+            speed=speed,
+            description=description
+        )
 
-        # Store state parameters (used by light_states.py)
-        if not hasattr(self.state_machine, 'state_params'):
-            self.state_machine.state_params = {}
-        self.state_machine.state_params[name] = {
-            "r": r, "g": g, "b": b, "speed": speed, "description": description
-        }
+        # Add to state machine's state collection
+        self.state_machine.states.add_state(state)
+        print(f"State registered: {name}")
 
         return {"success": True, "state": name}
 
