@@ -23,6 +23,7 @@ from hardware.hardware_config import HardwareConfig
 from states.light_states import initialize_default_states, initialize_default_rules, set_led_controller, set_state_machine
 from voice.voice_input import VoiceInput
 from voice.command_parser import CommandParser
+from voice.agent_executor import AgentExecutor
 from voice.audio_player import AudioPlayer
 from voice.voice_reactive_light import VoiceReactiveLight
 from event_logging.event_logger import EventLogger
@@ -54,6 +55,8 @@ class AdaptLight:
         self.record_button_controller = None
         self.voice_input = None
         self.command_parser = None
+        self.agent_executor = None  # New: multi-turn agentic mode
+        self.parsing_mode = 'json'  # 'json' or 'agent'
         self.audio_player = None
         self.event_logger = None
         self.log_manager = None
@@ -181,33 +184,59 @@ class AdaptLight:
             print("- Audio player")
             self.audio_player = AudioPlayer(volume=2.0)  # 200% volume for louder playback
 
-            print("- Command parser")
-            openai_config = self.config.get('openai', {})
-            openai_key = openai_config.get('api_key')
-            parsing_method = openai_config.get('parsing_method', 'json_output')
-            prompt_variant = openai_config.get('prompt_variant', 'full')
-            model = openai_config.get('model', 'gpt-4o')
-            reasoning_effort = openai_config.get('reasoning_effort', 'medium')
-            verbosity = openai_config.get('verbosity', 0)
-            self.command_parser = CommandParser(
-                api_key=openai_key,
-                parsing_method=parsing_method,
-                prompt_variant=prompt_variant,
-                model=model,
-                reasoning_effort=reasoning_effort,
-                verbosity=verbosity,
-                audio_player=self.audio_player
-            )
+            # Check parsing mode: 'json' (old) or 'agent' (new multi-turn)
+            self.parsing_mode = voice_config.get('parsing_mode', 'json')
+            print(f"- Parsing mode: {self.parsing_mode}")
+
+            if self.parsing_mode == 'agent':
+                # New: Multi-turn agentic mode using Claude
+                print("- Agent executor (multi-turn)")
+                claude_config = self.config.get('claude', {})
+                claude_key = claude_config.get('api_key')
+                claude_model = claude_config.get('model', 'claude-sonnet-4-20250514')
+                verbose = claude_config.get('verbose', False)
+
+                self.agent_executor = AgentExecutor(
+                    state_machine=self.state_machine,
+                    api_key=claude_key,
+                    model=claude_model,
+                    max_turns=10,
+                    verbose=verbose
+                )
+            else:
+                # Old: Single-shot JSON parsing
+                print("- Command parser (single-shot)")
+                openai_config = self.config.get('openai', {})
+                openai_key = openai_config.get('api_key')
+                parsing_method = openai_config.get('parsing_method', 'json_output')
+                prompt_variant = openai_config.get('prompt_variant', 'full')
+                model = openai_config.get('model', 'gpt-4o')
+                reasoning_effort = openai_config.get('reasoning_effort', 'medium')
+                verbosity = openai_config.get('verbosity', 0)
+                self.command_parser = CommandParser(
+                    api_key=openai_key,
+                    parsing_method=parsing_method,
+                    prompt_variant=prompt_variant,
+                    model=model,
+                    reasoning_effort=reasoning_effort,
+                    verbosity=verbosity,
+                    audio_player=self.audio_player
+                )
 
             print("- Voice input")
             # Get Replicate configuration
             replicate_config = self.config.get('replicate', {})
             replicate_token = replicate_config.get('api_token')
 
+            # Get OpenAI client for transcription (if using whisper)
+            openai_client = None
+            if self.command_parser:
+                openai_client = self.command_parser.client
+
             # Pass OpenAI client and Replicate token to VoiceInput for transcription
             self.voice_input = VoiceInput(
                 stt_provider=voice_config.get('stt_provider', 'whisper'),
-                openai_client=self.command_parser.client if self.command_parser else None,
+                openai_client=openai_client,
                 replicate_token=replicate_token
             )
             self.voice_input.set_command_callback(self.handle_voice_command)
@@ -263,8 +292,13 @@ class AdaptLight:
         """
         print(f"\nVoice command: {command_text}")
 
-        if not self.command_parser or not self.state_machine:
-            print("Command parser or state machine not initialized")
+        if not self.state_machine:
+            print("State machine not initialized")
+            return
+
+        # Check that we have either command_parser or agent_executor
+        if not self.command_parser and not self.agent_executor:
+            print("No command parser or agent executor initialized")
             return
 
         # Capture state before command execution
@@ -274,104 +308,185 @@ class AdaptLight:
         # Note: Loading animation is already started before transcription in handle_record_button()
 
         try:
-            # Gather system context for GPT-5
-            available_states = self.state_machine.states.get_states_for_prompt()
-            available_transitions = [
-                {'name': 'button_click', 'description': 'Single click'},
-                {'name': 'button_double_click', 'description': 'Double click'},
-                {'name': 'button_hold', 'description': 'Hold button'},
-                {'name': 'button_release', 'description': 'Release after hold'},
-                {'name': 'voice_command', 'description': 'Voice command trigger'}
-            ]
-            current_rules = [r.to_dict() for r in self.state_machine.get_rules()]
-            current_state = self.state_machine.get_state()
-            global_variables = self.state_machine.state_data
-
-            # Parse command using GPT-5 (returns tool calls)
-            result = self.command_parser.parse_command(
-                command_text,
-                available_states,
-                available_transitions,
-                current_rules,
-                current_state,
-                global_variables
-            )
-
-            # Stop loading animation after OpenAI responds
-            if self.led_controller:
-                self.led_controller.stop_loading_animation()
-                print("Loading animation stopped")
-
-            # Handle result
-            changes_made = False
-            if result['success']:
-                print("=" * 60)
-
-                # Print AI message if present
-                if result.get('message'):
-                    print(f"💬 AI Response: {result['message']}")
-
-                # Execute tool calls and track if changes were made
-                if result.get('toolCalls'):
-                    print(f"⚡ Executing {len(result['toolCalls'])} action(s):")
-                    for i, tool_call in enumerate(result['toolCalls'], 1):
-                        print(f"\n[{i}/{len(result['toolCalls'])}] {tool_call['name']}")
-                        self.execute_tool(tool_call['name'], tool_call['arguments'])
-
-                        # Track if any tools that modify state were called
-                        if tool_call['name'] in ['append_rules', 'delete_rules', 'set_state', 'manage_variables', 'reset_rules']:
-                            changes_made = True
-
-                print("=" * 60)
-
-                # Provide feedback based on whether changes were made
-                if changes_made:
-                    # Start sound first (non-blocking)
-                    if self.audio_player:
-                        self.audio_player.play_success_sound(blocking=False)
-                    # Then flash LEDs (happens simultaneously with sound)
-                    if self.led_controller:
-                        self.led_controller.flash_success()
-                else:
-                    # Only play error signal if no TTS was played
-                    tts_was_played = result.get('needsClarification', False)
-                    if not tts_was_played:
-                        # Start sound first (non-blocking)
-                        if self.audio_player:
-                            self.audio_player.play_error_sound(blocking=False)
-                        # Then flash LEDs (happens simultaneously with sound)
-                        if self.led_controller:
-                            self.led_controller.flash_error()
+            if self.parsing_mode == 'agent':
+                # New: Multi-turn agentic mode using Claude
+                self._handle_voice_command_agent(command_text, state_before)
             else:
-                print("❌ Failed to parse command")
-
-                # Start sound first (non-blocking)
-                if self.audio_player:
-                    self.audio_player.play_error_sound(blocking=False)
-
-                # Then flash LEDs (happens simultaneously with sound)
-                if self.led_controller:
-                    self.led_controller.flash_error()
-
-            # Capture state after command execution
-            state_after = self.state_machine.get_state()
-            state_params_after = self.state_machine.get_state_params()
-
-            # Log the voice command with state information
-            if self.event_logger:
-                self.event_logger.log_voice_command(
-                    command_text,
-                    result,
-                    state_before=state_before,
-                    state_after=state_after,
-                    state_params=state_params_after
-                )
+                # Old: Single-shot JSON parsing using OpenAI
+                self._handle_voice_command_json(command_text, state_before)
 
         except Exception as e:
             # Make sure to stop loading animation even if there's an error
             if self.led_controller:
                 self.led_controller.stop_loading_animation()
             raise e
+
+    def _handle_voice_command_agent(self, command_text: str, state_before: str):
+        """
+        Handle voice command using multi-turn agent executor.
+
+        Args:
+            command_text: Transcribed voice command
+            state_before: State before command execution
+        """
+        import asyncio
+
+        print("🤖 Using agent executor (multi-turn mode)")
+
+        # Capture state params before
+        state_params_before = self.state_machine.get_state_params()
+
+        # Run agent executor
+        result = asyncio.get_event_loop().run_until_complete(
+            self.agent_executor.run(command_text)
+        )
+
+        # Stop loading animation after agent responds
+        if self.led_controller:
+            self.led_controller.stop_loading_animation()
+            print("Loading animation stopped")
+
+        print("=" * 60)
+        print(f"💬 Agent Response: {result}")
+        print("=" * 60)
+
+        # Check if state changed (agent makes changes internally)
+        state_after = self.state_machine.get_state()
+        state_params_after = self.state_machine.get_state_params()
+        changes_made = state_before != state_after or state_params_before != state_params_after
+
+        # Also check if rules were modified by comparing counts
+        # (This is a simple heuristic - agent modifies state machine directly)
+        if not changes_made:
+            # Check if we can detect changes from the result text
+            change_indicators = ['created', 'added', 'set', 'deleted', 'removed', 'configured', 'updated']
+            if any(indicator in result.lower() for indicator in change_indicators):
+                changes_made = True
+
+        # Provide feedback
+        if changes_made:
+            if self.audio_player:
+                self.audio_player.play_success_sound(blocking=False)
+            if self.led_controller:
+                self.led_controller.flash_success()
+        else:
+            if self.audio_player:
+                self.audio_player.play_error_sound(blocking=False)
+            if self.led_controller:
+                self.led_controller.flash_error()
+
+        # Log the voice command
+        if self.event_logger:
+            self.event_logger.log_voice_command(
+                command_text,
+                {'success': True, 'message': result, 'mode': 'agent'},
+                state_before=state_before,
+                state_after=state_after,
+                state_params=state_params_after
+            )
+
+    def _handle_voice_command_json(self, command_text: str, state_before: str):
+        """
+        Handle voice command using single-shot JSON parsing.
+
+        Args:
+            command_text: Transcribed voice command
+            state_before: State before command execution
+        """
+        state_params_before = self.state_machine.get_state_params()
+
+        # Gather system context for GPT
+        available_states = self.state_machine.states.get_states_for_prompt()
+        available_transitions = [
+            {'name': 'button_click', 'description': 'Single click'},
+            {'name': 'button_double_click', 'description': 'Double click'},
+            {'name': 'button_hold', 'description': 'Hold button'},
+            {'name': 'button_release', 'description': 'Release after hold'},
+            {'name': 'voice_command', 'description': 'Voice command trigger'}
+        ]
+        current_rules = [r.to_dict() for r in self.state_machine.get_rules()]
+        current_state = self.state_machine.get_state()
+        global_variables = self.state_machine.state_data
+
+        # Parse command using GPT (returns tool calls)
+        result = self.command_parser.parse_command(
+            command_text,
+            available_states,
+            available_transitions,
+            current_rules,
+            current_state,
+            global_variables
+        )
+
+        # Stop loading animation after OpenAI responds
+        if self.led_controller:
+            self.led_controller.stop_loading_animation()
+            print("Loading animation stopped")
+
+        # Handle result
+        changes_made = False
+        if result['success']:
+            print("=" * 60)
+
+            # Print AI message if present
+            if result.get('message'):
+                print(f"💬 AI Response: {result['message']}")
+
+            # Execute tool calls and track if changes were made
+            if result.get('toolCalls'):
+                print(f"⚡ Executing {len(result['toolCalls'])} action(s):")
+                for i, tool_call in enumerate(result['toolCalls'], 1):
+                    print(f"\n[{i}/{len(result['toolCalls'])}] {tool_call['name']}")
+                    self.execute_tool(tool_call['name'], tool_call['arguments'])
+
+                    # Track if any tools that modify state were called
+                    if tool_call['name'] in ['append_rules', 'delete_rules', 'set_state', 'manage_variables', 'reset_rules']:
+                        changes_made = True
+
+            print("=" * 60)
+
+            # Provide feedback based on whether changes were made
+            if changes_made:
+                # Start sound first (non-blocking)
+                if self.audio_player:
+                    self.audio_player.play_success_sound(blocking=False)
+                # Then flash LEDs (happens simultaneously with sound)
+                if self.led_controller:
+                    self.led_controller.flash_success()
+            else:
+                # Only play error signal if no TTS was played
+                tts_was_played = result.get('needsClarification', False)
+                if not tts_was_played:
+                    # Start sound first (non-blocking)
+                    if self.audio_player:
+                        self.audio_player.play_error_sound(blocking=False)
+                    # Then flash LEDs (happens simultaneously with sound)
+                    if self.led_controller:
+                        self.led_controller.flash_error()
+        else:
+            print("❌ Failed to parse command")
+
+            # Start sound first (non-blocking)
+            if self.audio_player:
+                self.audio_player.play_error_sound(blocking=False)
+
+            # Then flash LEDs (happens simultaneously with sound)
+            if self.led_controller:
+                self.led_controller.flash_error()
+
+        # Capture state after command execution
+        state_after = self.state_machine.get_state()
+        state_params_after = self.state_machine.get_state_params()
+
+        # Log the voice command with state information
+        if self.event_logger:
+            self.event_logger.log_voice_command(
+                command_text,
+                result,
+                state_before=state_before,
+                state_after=state_after,
+                state_params=state_params_after
+            )
 
     def execute_tool(self, tool_name: str, args: dict):
         """
