@@ -13,6 +13,7 @@ import json
 from typing import Dict, Any, Callable, List, Optional
 
 from .custom_tools import CustomToolExecutor, DataSourceManager
+from .builtin_tools import register_builtin_tools
 
 
 class ToolRegistry:
@@ -41,7 +42,10 @@ class ToolRegistry:
         self.custom_tools = self.custom_tool_executor.tools
         self.data_sources = self.data_source_manager.sources
 
-        # Register built-in tools
+        # Register built-in fetch tools (weather, fetch_json, etc.)
+        register_builtin_tools(self.custom_tool_executor)
+
+        # Register agent tools
         self._register_builtin_tools()
 
     def _register_builtin_tools(self):

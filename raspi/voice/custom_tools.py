@@ -26,6 +26,7 @@ ALLOWED_IMPORTS = {
     're',
     'urllib',
     'urllib.parse',
+    'random',
 }
 
 # Restricted globals for safety
