@@ -202,6 +202,30 @@ DETERMINISTIC_TESTS = [
         ]
     },
     {
+        "name": "Timer with exit rule",
+        "description": "Timer transition should include exit rule to prevent stuck state",
+        "previous_state": {
+            "rules": DEFAULT_RULES.copy(),
+            "current_state": "off",
+            "variables": {}
+        },
+        "user_input": "In 10 seconds turn light red (state name: red)",
+        "test_sequence": [
+            {
+                "transition": "button_click",  # Should still be able to use default rules
+                "expected_state": "on",
+                "expected_params": None
+            },
+            {
+                "transition": "button_click",  # Back to off
+                "expected_state": "off",
+                "expected_params": None
+            }
+            # Note: We can't actually test the timer firing in this framework,
+            # but the safety net should ensure a red->off rule exists
+        ]
+    },
+    {
         "name": "Reset to default",
         "description": "Reset should restore simple on/off",
         "previous_state": {
@@ -352,6 +376,49 @@ NON_DETERMINISTIC_TESTS = [
             {
                 "transition": "button_double_click",
                 "expected_state": "green",  # Double click should work now
+                "expected_params": None
+            }
+        ]
+    },
+    {
+        "name": "Timer with automatic exit rule",
+        "description": "Timer transition should have exit rule added automatically",
+        "previous_state": {
+            "rules": DEFAULT_RULES.copy(),
+            "current_state": "off",
+            "variables": {},
+            "states": {
+                "on": {"r": 255, "g": 255, "b": 255, "speed": None},
+                "off": {"r": 0, "g": 0, "b": 0, "speed": None}
+            }
+        },
+        "user_input": "In 10 seconds turn light red (state name: red)",
+        "property_checks": [
+            {
+                "name": "Red state has exit rule",
+                "check": lambda before_rules, after_rules, before_state, after_state: (
+                    # Red state should exist
+                    "red" in after_state.get("states", {}) and
+                    # Timer rule should exist: off -> red
+                    any(r.get("state1") == "off" and
+                        r.get("state2") == "red"
+                        for r in after_rules) and
+                    # Exit rule should exist: red -> off (either from LLM or safety net)
+                    any(r.get("state1") == "red" and
+                        r.get("state2") == "off"
+                        for r in after_rules)
+                )
+            }
+        ],
+        "test_sequence": [
+            {
+                "transition": "button_click",  # Should still work (default rules)
+                "expected_state": "on",
+                "expected_params": None
+            },
+            {
+                "transition": "button_click",
+                "expected_state": "off",
                 "expected_params": None
             }
         ]

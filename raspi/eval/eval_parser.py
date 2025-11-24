@@ -257,6 +257,30 @@ class MockStateMachine:
             new_rules = args.get('rules', [])
             self.rules = new_rules + self.rules
 
+            # Safety check: ensure all destination states have exit rules
+            # Collect unique destination states from the new rules
+            destination_states = set()
+            for rule in new_rules:
+                state2 = rule.get('state2')
+                if state2 and state2 != 'off':  # Don't need exit from 'off'
+                    destination_states.add(state2)
+
+            # For each destination state, check if an exit rule exists
+            for dest_state in destination_states:
+                has_exit_rule = any(r.get('state1') == dest_state for r in self.rules)
+                if not has_exit_rule:
+                    # Auto-add a simple click-to-off exit rule
+                    exit_rule = {
+                        "state1": dest_state,
+                        "transition": "button_click",
+                        "state2": "off",
+                        "state2Param": None,
+                        "condition": None,
+                        "action": None
+                    }
+                    self.rules.insert(0, exit_rule)
+                    print(f"  ⚠️  Auto-added exit rule: {dest_state} --[button_click]--> off (safety net)")
+
         elif tool_name == 'delete_rules':
             # Delete rules based on criteria
             if args.get('reset_rules'):

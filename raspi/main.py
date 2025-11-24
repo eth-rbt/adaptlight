@@ -388,9 +388,34 @@ class AdaptLight:
             # Add new rules to the state machine
             if args.get('rules') and isinstance(args['rules'], list):
                 print(f"  ➕ Adding {len(args['rules'])} rule(s):")
-                for rule in args['rules']:
+                new_rules = args['rules']
+                for rule in new_rules:
                     self.state_machine.add_rule(rule)
                     print(f"    → {rule['state1']} --[{rule['transition']}]--> {rule['state2']}")
+
+                # Safety check: ensure all destination states have exit rules
+                # Collect unique destination states from the new rules
+                destination_states = set()
+                for rule in new_rules:
+                    state2 = rule.get('state2')
+                    if state2 and state2 != 'off':  # Don't need exit from 'off'
+                        destination_states.add(state2)
+
+                # For each destination state, check if an exit rule exists
+                all_rules = self.state_machine.get_rules()
+                for dest_state in destination_states:
+                    has_exit_rule = any(r.state1 == dest_state for r in all_rules)
+                    if not has_exit_rule:
+                        # Auto-add a simple click-to-off exit rule
+                        exit_rule = {
+                            "state1": dest_state,
+                            "transition": "button_click",
+                            "state2": "off",
+                            "condition": None,
+                            "action": None
+                        }
+                        self.state_machine.add_rule(exit_rule)
+                        print(f"  ⚠️  Auto-added exit rule: {dest_state} --[button_click]--> off (safety net)")
 
         elif tool_name == 'delete_rules':
             # Delete rules based on criteria
@@ -458,6 +483,22 @@ class AdaptLight:
 
                 print(f"  🔄 Changing state to: {state_name}")
                 self.state_machine.set_state(state_name)
+
+                # Safety check: ensure there's at least one exit rule from this state
+                # to prevent users from getting stuck
+                all_rules = self.state_machine.get_rules()
+                has_exit_rule = any(r.state1 == state_name for r in all_rules)
+                if not has_exit_rule and state_name != 'off':
+                    # Auto-add a simple click-to-off exit rule
+                    exit_rule = {
+                        "state1": state_name,
+                        "transition": "button_click",
+                        "state2": "off",
+                        "condition": None,
+                        "action": None
+                    }
+                    self.state_machine.add_rule(exit_rule)
+                    print(f"  ⚠️  Auto-added exit rule: {state_name} --[button_click]--> off (safety net)")
 
         elif tool_name == 'manage_variables':
             # Manage global variables
