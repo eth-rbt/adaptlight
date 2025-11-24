@@ -65,18 +65,28 @@ class StateMachine:
 
         Args:
             rule: Can be a Rule instance, dict, or legacy [state1, action, state2] array
+                  Dict format supports: state1, transition, state2, condition, action,
+                  trigger_config, priority, enabled
+                  Also supports 'from'/'on'/'to' aliases for state1/transition/state2
         """
         # Convert to Rule object if needed
         if isinstance(rule, Rule):
             rule_obj = rule
         elif isinstance(rule, dict):
+            # Support both old format (state1/transition/state2) and new format (from/on/to)
+            state1 = rule.get('state1') or rule.get('from')
+            transition = rule.get('transition') or rule.get('on')
+            state2 = rule.get('state2') or rule.get('to')
+
             rule_obj = Rule(
-                rule.get('state1'),
-                rule.get('transition'),
-                rule.get('state2'),
+                state1,
+                transition,
+                state2,
                 rule.get('condition'),
                 rule.get('action'),
-                rule.get('trigger_config')
+                rule.get('trigger_config'),
+                rule.get('priority', 0),
+                rule.get('enabled', True)
             )
         elif isinstance(rule, list) and len(rule) == 3:
             # Legacy format: [state1, action, state2]
@@ -356,16 +366,22 @@ class StateMachine:
         """
         Execute a transition based on an action.
 
+        Rules are evaluated in priority order (highest first).
+        First matching rule with a passing condition wins.
+
         Args:
             action: The action/transition to execute
 
         Returns:
             True if transition was executed, False otherwise
         """
-        # Find all matching rules (state + transition match)
+        # Find all matching rules (state + transition match, enabled only)
         candidate_rules = [r for r in self.rules if r.matches(self.current_state, action)]
 
-        # Filter by conditions - find first rule whose condition is true
+        # Sort by priority (highest first)
+        candidate_rules.sort(key=lambda r: r.priority, reverse=True)
+
+        # Find first rule whose condition is true
         matching_rule = None
         for rule in candidate_rules:
             if not rule.condition:
