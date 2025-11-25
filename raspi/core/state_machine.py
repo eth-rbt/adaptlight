@@ -356,11 +356,60 @@ class StateMachine:
         if not expr:
             return True if expr_type == 'condition' else None
 
-        # TODO: Implement safe expression evaluation with restricted scope
-        # Should allow: getData(), setData(), getTime(), Math functions
-        # Should deny: file access, network, dangerous operations
-        print(f"TODO: Evaluate {expr_type} expression: {expr}")
-        return True if expr_type == 'condition' else None
+        import math
+        from datetime import datetime
+
+        # State data access functions
+        def getData(key, default=None):
+            return self.state_data.get(key, default)
+
+        def setData(key, value):
+            self.state_data[key] = value
+            return value
+
+        def getTime():
+            now = datetime.now()
+            return {
+                'hour': now.hour,
+                'minute': now.minute,
+                'second': now.second,
+                'weekday': now.weekday(),
+                'is_weekend': now.weekday() >= 5
+            }
+
+        # Safe evaluation context
+        safe_context = {
+            '__builtins__': {},
+            'getData': getData,
+            'setData': setData,
+            'getTime': getTime,
+            'None': None,
+            'True': True,
+            'False': False,
+            # Math functions
+            'abs': abs,
+            'min': min,
+            'max': max,
+            'round': round,
+            'int': int,
+            'float': float,
+            'str': str,
+            'len': len,
+            # Math module
+            'sin': math.sin,
+            'cos': math.cos,
+            'floor': math.floor,
+            'ceil': math.ceil,
+        }
+
+        try:
+            result = eval(expr, safe_context, {})
+            if expr_type == 'condition':
+                return bool(result)
+            return result
+        except Exception as e:
+            print(f"Expression evaluation error ({expr_type}): {expr} -> {e}")
+            return True if expr_type == 'condition' else None
 
     def execute_transition(self, action: str) -> bool:
         """

@@ -196,6 +196,12 @@ class AdaptLight:
                 claude_model = claude_config.get('model', 'claude-sonnet-4-20250514')
                 verbose = claude_config.get('verbose', False)
 
+                # Debug: show if API key was loaded
+                if claude_key:
+                    print(f"  Claude API key: {claude_key[:20]}...{claude_key[-10:]}")
+                else:
+                    print("  WARNING: No Claude API key found in config!")
+
                 self.agent_executor = AgentExecutor(
                     state_machine=self.state_machine,
                     api_key=claude_key,

@@ -54,7 +54,11 @@ class AgentExecutor:
                 self.client = Anthropic(api_key=api_key)
                 print(f"AgentExecutor initialized with model: {model}")
             except ImportError:
-                print("Warning: Anthropic library not available. Install with: pip install anthropic")
+                print("ERROR: Anthropic library not available. Install with: pip install anthropic")
+            except Exception as e:
+                print(f"ERROR: Failed to initialize Anthropic client: {e}")
+        else:
+            print("ERROR: No Claude API key provided. Check config.yaml claude.api_key")
 
     def _get_system_state(self) -> str:
         """Get current system state for prompt injection."""

@@ -13,12 +13,12 @@ import math
 import random as random_module
 
 
-def evaluate_color_expression(expr: str, current_r: int, current_g: int, current_b: int, channel: str = 'r'):
+def evaluate_color_expression(expr, current_r: int, current_g: int, current_b: int, channel: str = 'r'):
     """
     Evaluate a color expression safely.
 
     Args:
-        expr: The expression string
+        expr: The expression string OR a numeric value
         current_r: Current red value
         current_g: Current green value
         current_b: Current blue value
@@ -27,6 +27,14 @@ def evaluate_color_expression(expr: str, current_r: int, current_g: int, current
     Returns:
         The evaluated result (int 0-255)
     """
+    # If expr is already a number, just return it clamped to 0-255
+    if isinstance(expr, (int, float)):
+        return max(0, min(255, int(expr)))
+
+    # If expr is None, return 0
+    if expr is None:
+        return 0
+
     # Whitelist of allowed Math functions
     safe_math = {
         'sin': math.sin,
@@ -78,16 +86,24 @@ def evaluate_color_expression(expr: str, current_r: int, current_g: int, current
         return fallback
 
 
-def create_safe_expression_function(expr: str):
+def create_safe_expression_function(expr):
     """
     Create a safe expression evaluation function.
 
     Args:
-        expr: The expression string
+        expr: The expression string OR a numeric value
 
     Returns:
         A function that evaluates the expression with given context
     """
+    # If expr is already a number, return a function that returns it
+    if isinstance(expr, (int, float)):
+        return lambda context: expr
+
+    # If expr is None, return a function that returns 0
+    if expr is None:
+        return lambda context: 0
+
     # Whitelist of allowed Math functions
     safe_math = {
         'sin': math.sin,
