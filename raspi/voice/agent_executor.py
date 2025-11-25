@@ -19,7 +19,7 @@ import asyncio
 from typing import Dict, Any, List, Optional
 
 from .tool_registry import ToolRegistry
-from prompts.agent_prompt import get_agent_system_prompt
+from prompts.agent import get_agent_system_prompt
 
 
 class AgentExecutor:

@@ -389,7 +389,7 @@ class ToolRegistry:
 
         # Remove from states
         if hasattr(self.state_machine, 'states'):
-            self.state_machine.states.remove_state(name)
+            self.state_machine.states.delete_state(name)
 
         # Remove state params
         if hasattr(self.state_machine, 'state_params') and name in self.state_machine.state_params:

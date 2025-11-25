@@ -1,5 +1,5 @@
 # Prompts package for AdaptLight
-from .agent_prompt import get_agent_system_prompt
+from .agent import get_agent_system_prompt
 from .parsing_prompt import get_system_prompt as get_parsing_prompt
 from .parsing_prompt_concise import get_system_prompt as get_concise_prompt
 
