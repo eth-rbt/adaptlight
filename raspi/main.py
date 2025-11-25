@@ -336,10 +336,8 @@ class AdaptLight:
         # Capture state params before
         state_params_before = self.state_machine.get_state_params()
 
-        # Run agent executor
-        result = asyncio.get_event_loop().run_until_complete(
-            self.agent_executor.run(command_text)
-        )
+        # Run agent executor (asyncio.run() works in threads, get_event_loop() doesn't)
+        result = asyncio.run(self.agent_executor.run(command_text))
 
         # Stop loading animation after agent responds
         if self.led_controller:
