@@ -19,14 +19,14 @@ import asyncio
 from typing import Dict, Any, List, Optional
 
 from .tool_registry import ToolRegistry
-from prompts.agent import get_agent_system_prompt
+from prompts.agent import get_agent_system_prompt, get_agent_system_prompt_with_examples
 
 
 class AgentExecutor:
     """Multi-turn agent executor for voice commands."""
 
     def __init__(self, state_machine=None, api_key: str = None, model: str = "claude-sonnet-4-20250514",
-                 max_turns: int = 10, verbose: bool = False):
+                 max_turns: int = 10, verbose: bool = False, prompt_variant: str = "examples"):
         """
         Initialize agent executor.
 
@@ -36,12 +36,14 @@ class AgentExecutor:
             model: Claude model to use
             max_turns: Maximum turns before stopping (safety limit)
             verbose: Print debug information
+            prompt_variant: 'concise' or 'examples' (default: examples)
         """
         self.state_machine = state_machine
         self.api_key = api_key
         self.model = model
         self.max_turns = max_turns
         self.verbose = verbose
+        self.prompt_variant = prompt_variant
 
         # Initialize tool registry
         self.tools = ToolRegistry(state_machine)
@@ -82,7 +84,10 @@ Variables: {json.dumps(variables, indent=2)}"""
     def _build_system_prompt(self) -> str:
         """Build the full system prompt with current state."""
         system_state = self._get_system_state()
-        return get_agent_system_prompt(system_state)
+        if self.prompt_variant == "examples":
+            return get_agent_system_prompt_with_examples(system_state)
+        else:
+            return get_agent_system_prompt(system_state)
 
     async def run(self, user_input: str) -> str:
         """

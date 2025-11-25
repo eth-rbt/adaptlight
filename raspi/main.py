@@ -195,19 +195,22 @@ class AdaptLight:
                 claude_key = claude_config.get('api_key')
                 claude_model = claude_config.get('model', 'claude-sonnet-4-20250514')
                 verbose = claude_config.get('verbose', False)
+                prompt_variant = claude_config.get('prompt_variant', 'examples')
 
                 # Debug: show if API key was loaded
                 if claude_key:
                     print(f"  Claude API key: {claude_key[:20]}...{claude_key[-10:]}")
                 else:
                     print("  WARNING: No Claude API key found in config!")
+                print(f"  Prompt variant: {prompt_variant}")
 
                 self.agent_executor = AgentExecutor(
                     state_machine=self.state_machine,
                     api_key=claude_key,
                     model=claude_model,
                     max_turns=10,
-                    verbose=verbose
+                    verbose=verbose,
+                    prompt_variant=prompt_variant
                 )
             else:
                 # Old: Single-shot JSON parsing
@@ -354,30 +357,20 @@ class AdaptLight:
         print(f"💬 Agent Response: {result}")
         print("=" * 60)
 
-        # Check if state changed (agent makes changes internally)
+        # Optional: speak the response through TTS
+        voice_config = self.config.get('voice', {})
+        if voice_config.get('speak_response', False) and self.audio_player:
+            self.audio_player.speak(result)
+
+        # Capture state after
         state_after = self.state_machine.get_state()
         state_params_after = self.state_machine.get_state_params()
-        changes_made = state_before != state_after or state_params_before != state_params_after
 
-        # Also check if rules were modified by comparing counts
-        # (This is a simple heuristic - agent modifies state machine directly)
-        if not changes_made:
-            # Check if we can detect changes from the result text
-            change_indicators = ['created', 'added', 'set', 'deleted', 'removed', 'configured', 'updated']
-            if any(indicator in result.lower() for indicator in change_indicators):
-                changes_made = True
-
-        # Provide feedback
-        if changes_made:
-            if self.audio_player:
-                self.audio_player.play_success_sound(blocking=False)
-            if self.led_controller:
-                self.led_controller.flash_success()
-        else:
-            if self.audio_player:
-                self.audio_player.play_error_sound(blocking=False)
-            if self.led_controller:
-                self.led_controller.flash_error()
+        # Always play success sound to indicate operation completed
+        if self.audio_player:
+            self.audio_player.play_success_sound(blocking=False)
+        if self.led_controller:
+            self.led_controller.flash_success()
 
         # Log the voice command
         if self.event_logger:
