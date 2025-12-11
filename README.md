@@ -1,6 +1,6 @@
 # adaptlight
 Adaptive light software - an interactive light simulator that uses AI to generate state machine code for controlling light behaviors.
-
+rsync -avz --exclude '__pycache__' --exclude '.git' --exclude '*.pyc' /Users/ethrbt/code/adaptlight/raspi/ lamp@100.114.12.83:~/Desktop/raspi
 ## Prerequisites
 
 - Node.js (v14 or higher)
