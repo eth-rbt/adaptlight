@@ -15,6 +15,10 @@ import time
 # Global references (set by main.py)
 led_controller: LEDController = None
 state_machine_ref = None
+voice_reactive_controller = None
+
+# Duration timer for states with duration_ms
+_duration_timer = None
 
 
 def set_led_controller(controller: LEDController):
@@ -29,6 +33,52 @@ def set_state_machine(machine):
     state_machine_ref = machine
 
 
+def set_voice_reactive(controller):
+    """Set the global voice reactive light controller."""
+    global voice_reactive_controller
+    voice_reactive_controller = controller
+
+
+def _cancel_duration_timer():
+    """Cancel any active duration timer."""
+    global _duration_timer
+    if _duration_timer is not None:
+        _duration_timer.cancel()
+        _duration_timer = None
+
+
+def _setup_duration_timer(duration_ms, then_state, state_name):
+    """
+    Set up a timer to transition to another state after duration expires.
+
+    Args:
+        duration_ms: Duration in milliseconds
+        then_state: State to transition to
+        state_name: Current state name (for logging)
+    """
+    global _duration_timer
+
+    _cancel_duration_timer()
+
+    def on_duration_complete():
+        global _duration_timer
+        _duration_timer = None
+
+        if state_machine_ref:
+            current = state_machine_ref.current_state
+            # Only transition if we're still in the expected state
+            if current == state_name:
+                print(f"\n⏱️ Duration expired for '{state_name}' ({duration_ms}ms) → transitioning to '{then_state}'")
+                state_machine_ref.set_state(then_state)
+            else:
+                print(f"⏱️ Duration expired but state changed ({state_name} → {current}), skipping transition")
+
+    delay_seconds = duration_ms / 1000.0
+    _duration_timer = threading.Timer(delay_seconds, on_duration_complete)
+    _duration_timer.start()
+    print(f"⏱️ Duration timer set: {duration_ms}ms, then → '{then_state}'")
+
+
 def execute_unified_state(params):
     """
     Execute a unified state with r, g, b, and optional speed parameters.
@@ -36,15 +86,52 @@ def execute_unified_state(params):
     This is the core function that handles ALL states in the system.
     - If speed is None: set static color
     - If speed is a number: start animation
+    - If duration_ms is set: auto-transition to 'then' state after duration
 
     Args:
-        params: Dict with r, g, b (values or expressions) and optional speed
+        params: Dict with r, g, b (values or expressions), optional speed,
+                optional duration_ms and then for auto-transition
     """
     if not params or not isinstance(params, dict):
         print("State requires parameters dict with r, g, b, and optional speed")
         return
 
-    speed = params.get('speed')
+    # Cancel any existing duration timer (new state entry cancels old timers)
+    _cancel_duration_timer()
+
+    # Voice reactive handling: start/stop the shared voice-reactive loop
+    voice_reactive_config = params.get('voice_reactive') if params else None
+    reactive_enabled = bool(voice_reactive_config and voice_reactive_config.get('enabled'))
+
+    if voice_reactive_controller:
+        if reactive_enabled:
+            vr = voice_reactive_config or {}
+
+            # Configure the reactive light before starting
+            color = vr.get('color')
+            if color and len(color) == 3:
+                voice_reactive_controller.set_color(tuple(color))
+            elif params:
+                # Fall back to state RGB so the loop uses the same palette
+                fallback = (params.get('r', 0), params.get('g', 0), params.get('b', 0))
+                voice_reactive_controller.set_color(tuple(fallback))
+
+            if vr.get('smoothing_alpha') is not None:
+                voice_reactive_controller.set_smoothing(vr.get('smoothing_alpha'))
+
+            voice_reactive_controller.set_amplitude_range(
+                vr.get('min_amplitude'),
+                vr.get('max_amplitude')
+            )
+
+            voice_reactive_controller.start()
+        else:
+            # Stop if we leave a reactive state
+            if voice_reactive_controller.is_running():
+                voice_reactive_controller.stop()
+
+    # Voice-reactive mode owns brightness; treat rest as static setup
+    speed = params.get('speed') if not reactive_enabled else None
 
     if speed is None:
         # Static color mode
@@ -52,6 +139,14 @@ def execute_unified_state(params):
     else:
         # Animation mode
         _execute_animated_state(params)
+
+    # Set up duration timer if specified
+    duration_ms = params.get('duration_ms')
+    then_state = params.get('then')
+    state_name = params.get('state_name', 'unknown')
+
+    if duration_ms is not None and then_state is not None:
+        _setup_duration_timer(duration_ms, then_state, state_name)
 
 
 def _execute_static_state(params):
@@ -132,11 +227,12 @@ def _execute_animated_state(params):
     # Animation update function
     def animation_fn():
         nonlocal r, g, b
-        t = int((time.time() - start_time) * 1000)  # Time in milliseconds
+        elapsed_ms = int((time.time() - start_time) * 1000)  # Time in milliseconds
 
         try:
             # Evaluate expressions with current context
-            context = {'r': r, 'g': g, 'b': b, 't': t, 'frame': frame[0]}
+            # 't' and 'elapsed_ms' are the same - elapsed time since state started
+            context = {'r': r, 'g': g, 'b': b, 't': elapsed_ms, 'elapsed_ms': elapsed_ms, 'frame': frame[0]}
             new_r = r_fn(context)
             new_g = g_fn(context)
             new_b = b_fn(context)

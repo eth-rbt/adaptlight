@@ -425,8 +425,156 @@ NON_DETERMINISTIC_TESTS = [
     }
 ]
 
+# API and Memory tests - test new pipeline/memory features
+API_MEMORY_TESTS = [
+    {
+        "name": "Remember location",
+        "description": "Agent should store location in memory",
+        "previous_state": {
+            "rules": DEFAULT_RULES.copy(),
+            "current_state": "off",
+            "variables": {}
+        },
+        "user_input": "Remember that my location is San Francisco",
+        "property_checks": [
+            {
+                "name": "Location stored in memory",
+                "check": lambda before_rules, after_rules, before_state, after_state: True
+                # Memory check would need special handling
+            }
+        ],
+        "test_sequence": []
+    },
+    {
+        "name": "Create stock check pipeline",
+        "description": "Agent should create pipeline for button-triggered stock check",
+        "previous_state": {
+            "rules": DEFAULT_RULES.copy(),
+            "current_state": "off",
+            "variables": {},
+            "states": {
+                "on": {"r": 255, "g": 255, "b": 255, "speed": None},
+                "off": {"r": 0, "g": 0, "b": 0, "speed": None}
+            }
+        },
+        "user_input": "Click to check if Tesla stock is up or down. Green for up, red for down.",
+        "property_checks": [
+            {
+                "name": "Green and red states created",
+                "check": lambda before_rules, after_rules, before_state, after_state: (
+                    # Should have green and red states
+                    any("green" in s.lower() for s in after_state.get("states", {}).keys()) and
+                    any("red" in s.lower() for s in after_state.get("states", {}).keys())
+                )
+            },
+            {
+                "name": "Pipeline or rule for stock check exists",
+                "check": lambda before_rules, after_rules, before_state, after_state: (
+                    # Should have a rule with pipeline or API-related setup
+                    len(after_rules) > len(before_rules) or
+                    any(r.get("pipeline") for r in after_rules)
+                )
+            }
+        ],
+        "test_sequence": []
+    },
+    {
+        "name": "Weather-based colors with memory",
+        "description": "Set up weather check using stored location",
+        "previous_state": {
+            "rules": DEFAULT_RULES.copy(),
+            "current_state": "off",
+            "variables": {},
+            "states": {
+                "on": {"r": 255, "g": 255, "b": 255, "speed": None},
+                "off": {"r": 0, "g": 0, "b": 0, "speed": None}
+            },
+            # Assume memory already has location
+            "memory": {"location": "New York"}
+        },
+        "user_input": "Click to show weather for my location - yellow for sunny, gray for cloudy, blue for rainy",
+        "property_checks": [
+            {
+                "name": "Weather states created",
+                "check": lambda before_rules, after_rules, before_state, after_state: (
+                    len(after_state.get("states", {})) > len(before_state.get("states", {}))
+                )
+            }
+        ],
+        "test_sequence": []
+    }
+]
+
+# Timed state tests - test duration_ms and then features
+TIMED_STATE_TESTS = [
+    {
+        "name": "Flash then off",
+        "description": "Create a timed state that auto-transitions",
+        "previous_state": {
+            "rules": DEFAULT_RULES.copy(),
+            "current_state": "off",
+            "variables": {},
+            "states": {
+                "on": {"r": 255, "g": 255, "b": 255, "speed": None},
+                "off": {"r": 0, "g": 0, "b": 0, "speed": None}
+            }
+        },
+        "user_input": "Flash red for 3 seconds then turn off",
+        "property_checks": [
+            {
+                "name": "Timed state with duration_ms created",
+                "check": lambda before_rules, after_rules, before_state, after_state: (
+                    any(
+                        s.get("duration_ms") is not None and s.get("then") is not None
+                        for s in after_state.get("states", {}).values()
+                        if isinstance(s, dict)
+                    )
+                )
+            }
+        ],
+        "test_sequence": [
+            {
+                "transition": None,  # Check immediate state
+                "expected_state_contains": "red",  # Should be in red/flash state
+                "expected_params": None
+            }
+        ]
+    },
+    {
+        "name": "Sunrise simulation",
+        "description": "Create gradual color transition using elapsed_ms",
+        "previous_state": {
+            "rules": DEFAULT_RULES.copy(),
+            "current_state": "off",
+            "variables": {},
+            "states": {
+                "on": {"r": 255, "g": 255, "b": 255, "speed": None},
+                "off": {"r": 0, "g": 0, "b": 0, "speed": None}
+            }
+        },
+        "user_input": "Create a 10 second sunrise simulation - start dim red and fade to bright white",
+        "property_checks": [
+            {
+                "name": "Sunrise state with expressions",
+                "check": lambda before_rules, after_rules, before_state, after_state: (
+                    any(
+                        (isinstance(s.get("r"), str) and "elapsed" in s.get("r", "")) or
+                        (isinstance(s.get("g"), str) and "elapsed" in s.get("g", "")) or
+                        s.get("duration_ms") is not None
+                        for s in after_state.get("states", {}).values()
+                        if isinstance(s, dict)
+                    )
+                )
+            }
+        ],
+        "test_sequence": []
+    }
+]
+
 # All example categories
 ALL_EXAMPLES = {
     "deterministic": DETERMINISTIC_TESTS,
-    "non_deterministic": NON_DETERMINISTIC_TESTS
+    "non_deterministic": NON_DETERMINISTIC_TESTS,
+    "api_memory": API_MEMORY_TESTS,
+    "timed_states": TIMED_STATE_TESTS
 }

@@ -50,18 +50,35 @@ Your output MUST conform to this exact JSON schema:
         {"type": "null"},
         {
           "type": "object",
-          "properties": {
-            "name": {"type": "string"},
-            "r": {"type": ["number", "string"]},
-            "g": {"type": ["number", "string"]},
-            "b": {"type": ["number", "string"]},
-            "speed": {"type": ["number", "null"]},
-            "description": {"type": ["string", "null"]}
-          },
-          "required": ["name", "r", "g", "b", "speed", "description"],
-          "additionalProperties": false
-        }
-      ]
+            "properties": {
+              "name": {"type": "string"},
+              "r": {"type": ["number", "string"]},
+              "g": {"type": ["number", "string"]},
+              "b": {"type": ["number", "string"]},
+              "speed": {"type": ["number", "null"]},
+              "description": {"type": ["string", "null"]},
+              "voice_reactive": {
+                "type": ["object", "null"],
+                "properties": {
+                  "enabled": {"type": "boolean"},
+                  "color": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "smoothing_alpha": {"type": ["number", "null"]},
+                  "min_amplitude": {"type": ["number", "null"]},
+                  "max_amplitude": {"type": ["number", "null"]}
+                },
+                "required": ["enabled"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["name", "r", "g", "b", "speed", "description"],
+            "additionalProperties": false
+          }
+        ]
     },
     "deleteRules": {
       "anyOf": [
@@ -212,6 +229,22 @@ Delete a custom state. Cannot delete "on" or "off".
 ```
 Create a custom named state that can be referenced in rules.
 **NOTE**: If state with this name already exists, it will be overwritten/replaced.
+
+To make a state mic-reactive, include the optional `voice_reactive` block:
+```json
+"createState": {
+  "name": "music_reactive",
+  "r": 0, "g": 200, "b": 255, "speed": null,
+  "description": "Teal glow that follows mic volume",
+  "voice_reactive": {
+    "enabled": true,
+    "color": [0, 200, 255],
+    "smoothing_alpha": 0.5,
+    "min_amplitude": 80,
+    "max_amplitude": 4000
+  }
+}
+```
 
 ### deleteRules
 **All fields are REQUIRED (use null for unused ones):**

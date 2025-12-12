@@ -21,6 +21,8 @@ from voice.agent_executor import AgentExecutor
 from voice.tool_registry import ToolRegistry
 from core.state import State
 from core.state_machine import StateMachine
+from core.memory import get_memory
+from core.pipeline_registry import get_pipeline_registry
 
 
 class InteractiveAgentEvaluator:
@@ -153,6 +155,32 @@ class InteractiveAgentEvaluator:
                 fires = source.get('fires_transition', '')
                 print(f"  • {name}: every {interval}ms → fires '{fires}'")
 
+    def _print_memory(self):
+        """Print stored memories."""
+        memory = get_memory()
+        memories = memory.list()
+        if memories:
+            print(f"\n🧠 MEMORY ({len(memories)} items):")
+            for key, value in memories.items():
+                value_str = str(value)
+                if len(value_str) > 50:
+                    value_str = value_str[:50] + "..."
+                print(f"  • {key}: {value_str}")
+
+    def _print_pipelines(self):
+        """Print defined pipelines."""
+        registry = get_pipeline_registry()
+        pipelines = registry.list()
+        if pipelines:
+            print(f"\n🔄 PIPELINES ({len(pipelines)} pipelines):")
+            for p in pipelines:
+                name = p.get("name", "unknown")
+                steps = p.get("steps", 0)
+                desc = p.get("description", "")
+                print(f"  • {name}: {steps} steps")
+                if desc:
+                    print(f"    └─ {desc}")
+
     def _print_status(self):
         """Print complete current status."""
         self._print_separator()
@@ -160,6 +188,8 @@ class InteractiveAgentEvaluator:
         self._print_states()
         self._print_rules()
         self._print_variables()
+        self._print_memory()
+        self._print_pipelines()
         self._print_custom_tools()
         self._print_data_sources()
         self._print_separator()
@@ -171,13 +201,19 @@ class InteractiveAgentEvaluator:
         self.state_machine.clear_data()
         self.state_machine.states.clear_states()
 
+        # Clear memory and pipelines
+        memory = get_memory()
+        memory.clear()
+        registry = get_pipeline_registry()
+        registry.clear()
+
         # Re-initialize defaults
         self._initialize_default_states()
         self._initialize_default_rules()
         self.state_machine.set_state('off')
 
         # Re-initialize executor with fresh tool registry
-        self.executor.tools = ToolRegistry(self.state_machine)
+        self.executor.tools = ToolRegistry(self.state_machine, api_key=self.executor.api_key)
 
     def _simulate_transition(self, transition):
         """Simulate a button/transition event."""
@@ -210,13 +246,17 @@ class InteractiveAgentEvaluator:
         print("  AdaptLight Agent Evaluator (Multi-turn Agentic Mode)")
         print("=" * 70)
         print("\nThis uses the new AgentExecutor with multi-turn tool calling.")
+        print("Supports: states, rules, memory, pipelines, APIs")
         print("\nCommands:")
         print("  - Type any natural language command")
         print("  - 'click', 'hold', 'release', 'double' - Simulate button events")
-        print("  - 'status' - Show current status")
-        print("  - 'reset' - Reset to default state")
+        print("  - 'status' - Show current status (states, rules, memory, pipelines)")
+        print("  - 'reset' - Reset to default state (clears memory & pipelines)")
         print("  - 'verbose' - Toggle verbose mode")
         print("  - 'quit', 'exit', 'q' - Exit the program")
+        print("\nTry commands like:")
+        print("  - 'Remember my location is San Francisco'")
+        print("  - 'Click to check if Tesla stock is up or down'")
 
         # Show initial status
         self._print_status()

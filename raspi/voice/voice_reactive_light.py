@@ -304,6 +304,19 @@ class VoiceReactiveLight:
         """
         self.smoothing_alpha = max(0.0, min(1.0, alpha))
 
+    def set_amplitude_range(self, min_amp=None, max_amp=None):
+        """
+        Adjust amplitude mapping range.
+
+        Args:
+            min_amp: Optional new noise floor
+            max_amp: Optional new max RMS for full brightness
+        """
+        if min_amp is not None:
+            self.min_amplitude = max(0, min_amp)
+        if max_amp is not None:
+            self.max_amplitude = max(self.min_amplitude + 1, max_amp)
+
     def is_running(self):
         """Check if voice reactive light is currently running."""
         return self.running

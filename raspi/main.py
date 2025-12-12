@@ -20,7 +20,14 @@ from core.state_machine import StateMachine
 from hardware.led_controller import LEDController
 from hardware.button_controller import ButtonController
 from hardware.hardware_config import HardwareConfig
-from states.light_states import initialize_default_states, initialize_default_rules, set_led_controller, set_state_machine
+from cobled import CobLed
+from states.light_states import (
+    initialize_default_states,
+    initialize_default_rules,
+    set_led_controller,
+    set_state_machine,
+    set_voice_reactive,
+)
 from voice.voice_input import VoiceInput
 from voice.command_parser import CommandParser
 from voice.agent_executor import AgentExecutor
@@ -113,11 +120,28 @@ class AdaptLight:
         # Initialize LED controller
         print("- LED controller")
         led_config = self.config.get('hardware', {})
-        self.led_controller = LEDController(
-            led_count=led_config.get('led_count', 16),
-            led_pin=HardwareConfig.LED_PIN,
-            brightness=led_config.get('led_brightness', 0.3)
-        )
+        led_type = led_config.get('led_type', 'neopixel')
+
+        if led_type == 'cob':
+            # COB PWM backend
+            self.led_controller = CobLed(
+                red_pin=led_config.get('cob_red_pin', 23),
+                green_pin=led_config.get('cob_green_pin', 27),
+                blue_pin=led_config.get('cob_blue_pin', 22),
+                max_duty_cycle=led_config.get('cob_max_duty_cycle', led_config.get('max_duty_cycle', 1.0)),
+                brightness=led_config.get('led_brightness', 0.3)
+            )
+            print(f"COB LED mode (pins R/G/B = {led_config.get('cob_red_pin', 23)}/"
+                  f"{led_config.get('cob_green_pin', 27)}/{led_config.get('cob_blue_pin', 22)}, "
+                  f"max duty={led_config.get('cob_max_duty_cycle', led_config.get('max_duty_cycle', 1.0))})")
+        else:
+            # NeoPixel backend (default)
+            self.led_controller = LEDController(
+                led_count=led_config.get('led_count', 16),
+                led_pin=HardwareConfig.LED_PIN,
+                brightness=led_config.get('led_brightness', 0.3)
+            )
+
         set_led_controller(self.led_controller)
 
         # Initialize default states
@@ -257,6 +281,7 @@ class AdaptLight:
                 color=(0, 255, 0),  # Green for voice input
                 smoothing_alpha=0.6  # More responsive
             )
+            set_voice_reactive(self.voice_reactive)
 
         print("\nInitialization complete!")
 
@@ -645,6 +670,7 @@ class AdaptLight:
                 b = args.get('b')
                 speed = args.get('speed')
                 description = args.get('description', '')
+                voice_reactive_cfg = args.get('voice_reactive') or {}
 
                 # Check if state already exists
                 existing = self.state_machine.get_state_object(name)
@@ -654,9 +680,19 @@ class AdaptLight:
                 print(f"    → r={r}, g={g}, b={b}, speed={speed}")
                 if description:
                     print(f"    → Description: {description}")
+                if voice_reactive_cfg.get('enabled'):
+                    print(f"    → Voice reactive: {voice_reactive_cfg}")
 
                 # Create and add/replace the state
-                state = State(name=name, r=r, g=g, b=b, speed=speed, description=description)
+                state = State(
+                    name=name,
+                    r=r,
+                    g=g,
+                    b=b,
+                    speed=speed,
+                    description=description,
+                    voice_reactive=voice_reactive_cfg
+                )
                 self.state_machine.states.add_state(state)
                 print(f"    ✅ State '{name}' {'replaced' if existing else 'created'} successfully")
 

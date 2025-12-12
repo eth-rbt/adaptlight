@@ -422,6 +422,216 @@ PATTERNS = {
                 ]
             }
         }
+    },
+
+    "timed": {
+        "name": "timed",
+        "description": "State that auto-transitions after a duration (no rules needed)",
+        "when_to_use": [
+            "for N seconds",
+            "flash for",
+            "temporarily",
+            "then go back",
+            "timeout",
+            "fade over"
+        ],
+        "template": {
+            "variables": ["duration_ms", "state_name", "then_state"],
+            "notes": [
+                "Use duration_ms + then on createState - no rules needed!",
+                "For gradual changes, use expressions with elapsed_ms",
+                "elapsed_ms gives milliseconds since state started"
+            ]
+        },
+        "example": {
+            "user_request": "Flash red for 5 seconds then turn off",
+            "variables": {
+                "duration_ms": 5000,
+                "state_name": "flash_red",
+                "then_state": "off"
+            },
+            "output": {
+                "createState": {
+                    "name": "flash_red",
+                    "r": 255,
+                    "g": 0,
+                    "b": 0,
+                    "speed": None,
+                    "duration_ms": 5000,
+                    "then": "off",
+                    "description": "Red flash for 5 seconds"
+                },
+                "setState": "flash_red"
+            }
+        }
+    },
+
+    "sunrise": {
+        "name": "sunrise",
+        "description": "Gradual color transition over time (sunrise/sunset simulation)",
+        "when_to_use": [
+            "sunrise",
+            "sunset",
+            "fade from",
+            "gradually",
+            "over N minutes",
+            "wake up light"
+        ],
+        "template": {
+            "variables": ["duration_ms", "start_color", "end_color"],
+            "notes": [
+                "Use elapsed_ms in expressions to calculate progress",
+                "Formula: start + (elapsed_ms / duration_ms) * (end - start)",
+                "Combine with duration_ms + then for auto-completion"
+            ]
+        },
+        "example": {
+            "user_request": "15-minute sunrise from dim red to bright white",
+            "variables": {
+                "duration_ms": 900000,
+                "start_color": {"r": 50, "g": 0, "b": 0},
+                "end_color": {"r": 255, "g": 255, "b": 255}
+            },
+            "output": {
+                "createState": {
+                    "name": "sunrise",
+                    "r": "min(255, 50 + (elapsed_ms / 900000) * 205)",
+                    "g": "min(255, (elapsed_ms / 900000) * 255)",
+                    "b": "min(255, (elapsed_ms / 900000) * 255)",
+                    "speed": 1000,
+                    "duration_ms": 900000,
+                    "then": "on",
+                    "description": "15-minute sunrise simulation"
+                },
+                "setState": "sunrise"
+            }
+        }
+    },
+
+    "api_reactive": {
+        "name": "api_reactive",
+        "description": "Fetch data from APIs and set light colors based on the data",
+        "when_to_use": [
+            "weather",
+            "temperature",
+            "stock",
+            "bitcoin",
+            "crypto",
+            "air quality",
+            "sunset",
+            "sunrise time",
+            "market",
+            "price"
+        ],
+        "template": {
+            "notes": [
+                "1. Call listAPIs() to see available APIs",
+                "2. Call fetchAPI(api, params) to get raw data",
+                "3. Create states with colors YOU choose based on the data",
+                "4. Set the appropriate state based on current values",
+                "5. Optionally use createDataSource() for periodic updates"
+            ]
+        },
+        "example": {
+            "user_request": "Make the light reflect the weather",
+            "steps": [
+                "1. fetchAPI('weather', {location: 'NYC'}) -> {temp_f: 45, condition: 'cloudy'}",
+                "2. createState('cold', r=0, g=100, b=255)",
+                "3. createState('warm', r=255, g=200, b=100)",
+                "4. // temp_f is 45, that's cold!",
+                "5. setState('cold')",
+                "6. done('It's 45°F - showing blue for cold!')"
+            ]
+        },
+        "more_examples": [
+            {
+                "user_request": "Check Bitcoin",
+                "steps": [
+                    "fetchAPI('crypto', {coin: 'bitcoin'}) -> {price_usd: 43250, change_24h: 2.5}",
+                    "createState('up', r=0, g=255, b=100)",
+                    "createState('down', r=255, g=100, b=100)",
+                    "// change_24h is positive!",
+                    "setState('up')",
+                    "done('Bitcoin up 2.5% - showing green!')"
+                ]
+            }
+        ]
+    },
+
+    "pipeline": {
+        "name": "pipeline",
+        "description": "Button-triggered API check with LLM parsing - fetch data, interpret with LLM, set state",
+        "when_to_use": [
+            "click to check",
+            "button triggers",
+            "show me on click",
+            "check when I press",
+            "click for stock",
+            "click for weather"
+        ],
+        "template": {
+            "notes": [
+                "1. Create states for possible outcomes (green/red, sunny/cloudy, etc.)",
+                "2. Define a pipeline with fetch, llm, and setState steps",
+                "3. Add a rule that triggers the pipeline on button_click",
+                "4. Use {{memory.key}} in pipelines to reference stored user data"
+            ],
+            "steps": [
+                {"do": "fetch", "api": "<api_name>", "params": {}, "as": "data"},
+                {"do": "llm", "input": "{{data}}", "prompt": "<interpretation prompt>", "as": "result"},
+                {"do": "setState", "from": "result", "map": {"<value1>": "<state1>", "<value2>": "<state2>"}}
+            ]
+        },
+        "example": {
+            "user_request": "Click to check if Tesla stock is up or down",
+            "variables": {
+                "stock_symbol": "TSLA",
+                "up_state": "green",
+                "down_state": "red"
+            },
+            "output": {
+                "createState": [
+                    {"name": "green", "r": 0, "g": 255, "b": 0, "description": "Stock is up"},
+                    {"name": "red", "r": 255, "g": 0, "b": 0, "description": "Stock is down"}
+                ],
+                "definePipeline": {
+                    "name": "check_stock",
+                    "steps": [
+                        {"do": "fetch", "api": "stock", "params": {"symbol": "TSLA"}, "as": "stock"},
+                        {"do": "llm", "input": "{{stock}}", "prompt": "Is change_percent positive or negative? Reply with just 'up' or 'down'", "as": "direction"},
+                        {"do": "setState", "from": "direction", "map": {"up": "green", "down": "red"}}
+                    ],
+                    "description": "Check Tesla stock direction"
+                },
+                "appendRules": [
+                    {"from": "*", "on": "button_click", "pipeline": "check_stock"}
+                ]
+            }
+        },
+        "more_examples": [
+            {
+                "user_request": "Click to show weather for my location",
+                "notes": "Uses {{memory.location}} to get stored location",
+                "output": {
+                    "createState": [
+                        {"name": "sunny", "r": 255, "g": 200, "b": 50},
+                        {"name": "cloudy", "r": 150, "g": 150, "b": 150},
+                        {"name": "rainy", "r": 0, "g": 100, "b": 200}
+                    ],
+                    "definePipeline": {
+                        "name": "check_weather",
+                        "steps": [
+                            {"do": "fetch", "api": "weather", "params": {"location": "{{memory.location}}"}, "as": "weather"},
+                            {"do": "llm", "input": "{{weather}}", "prompt": "Is it sunny, cloudy, or rainy? One word only.", "as": "condition"},
+                            {"do": "setState", "from": "condition", "map": {"sunny": "sunny", "cloudy": "cloudy", "rainy": "rainy"}}
+                        ]
+                    },
+                    "appendRules": [
+                        {"from": "*", "on": "button_click", "pipeline": "check_weather"}
+                    ]
+                }
+            }
+        ]
     }
 }
 

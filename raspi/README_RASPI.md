@@ -67,6 +67,11 @@ Edit `config.yaml` to configure your setup:
 - GND → Ground
 - **Note:** Enable SPI in `sudo raspi-config` → Interface Options → SPI
 
+**COB RGB (PWM) - optional:**
+- Default pins: Red → GPIO 23, Green → GPIO 27, Blue → GPIO 22
+- Configure `hardware.led_type: cob` and set `cob_max_duty_cycle` to cap brightness (0.0-1.0)
+- Duty cycles are clamped to the configured max to protect the COB package
+
 **Control Button (GPIO 2):**
 - One side → GPIO 2
 - Other side → Ground
@@ -175,5 +180,4 @@ This is a Python port of the JavaScript/browser version, with key differences:
 | Logging | None | Voice/button/state → S3 |
 
 Core state machine logic remains identical.
-
 

@@ -57,7 +57,24 @@ Your output MUST conform to this exact JSON schema:
             "g": {"type": ["number", "string"]},
             "b": {"type": ["number", "string"]},
             "speed": {"type": ["number", "null"]},
-            "description": {"type": ["string", "null"]}
+            "description": {"type": ["string", "null"]},
+            "voice_reactive": {
+              "type": ["object", "null"],
+              "properties": {
+                "enabled": {"type": "boolean"},
+                "color": {
+                  "type": "array",
+                  "items": {"type": "number"},
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                "smoothing_alpha": {"type": ["number", "null"]},
+                "min_amplitude": {"type": ["number", "null"]},
+                "max_amplitude": {"type": ["number", "null"]}
+              },
+              "required": ["enabled"],
+              "additionalProperties": false
+            }
           },
           "required": ["name", "r", "g", "b", "speed", "description"],
           "additionalProperties": false
@@ -440,6 +457,42 @@ Examples:
 - Time-based wave: {r: "abs(sin(t/1000)) * 255", g: "abs(cos(t/1000)) * 255", b: "128", speed: 30}
 - Rotate colors: {r: "b", g: "r", b: "g", speed: 200}
 - Increment red: {r: "(r + 1) % 256", g: "g", b: "b", speed: 100}
+
+### Voice-Reactive Option (per-state)
+Add this optional block to make the state's brightness follow microphone volume:
+- voice_reactive: {
+    enabled: true,
+    color: [r, g, b],          # optional base color (defaults to state r/g/b)
+    smoothing_alpha: 0.6,      # optional responsiveness (0-1)
+    min_amplitude: 100,        # optional noise floor
+    max_amplitude: 5000        # optional max RMS for full brightness
+  }
+
+Example: teal music-reactive state plus a rule to enter it
+```json
+{
+  "createState": {
+    "name": "music_reactive",
+    "r": 0,
+    "g": 200,
+    "b": 255,
+    "speed": null,
+    "description": "Mic-reactive teal glow for music",
+    "voice_reactive": {
+      "enabled": true,
+      "color": [0, 200, 255],
+      "smoothing_alpha": 0.5,
+      "min_amplitude": 80,
+      "max_amplitude": 4000
+    }
+  },
+  "appendRules": {
+    "rules": [
+      {"state1": "off", "transition": "voice_command", "state2": "music_reactive", "condition": null, "action": null}
+    ]
+  }
+}
+```
 
 ## CONDITIONS AND ACTIONS
 

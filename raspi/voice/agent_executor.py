@@ -46,7 +46,7 @@ class AgentExecutor:
         self.prompt_variant = prompt_variant
 
         # Initialize tool registry
-        self.tools = ToolRegistry(state_machine)
+        self.tools = ToolRegistry(state_machine, api_key=api_key)
 
         # Initialize Claude client
         self.client = None

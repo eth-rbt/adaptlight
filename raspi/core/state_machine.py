@@ -30,6 +30,7 @@ class StateMachine:
         self.interval_callback = None
         self.active_timers = {}  # {rule_id: Timer object} for time-based rules
         self.rule_id_counter = 0  # Unique ID for each rule
+        self.pipeline_executor = None  # Set by tool_registry to enable pipeline execution
 
     def register_state(self, name: str, description: str = '', on_enter: Callable = None):
         """
@@ -86,7 +87,8 @@ class StateMachine:
                 rule.get('action'),
                 rule.get('trigger_config'),
                 rule.get('priority', 0),
-                rule.get('enabled', True)
+                rule.get('enabled', True),
+                rule.get('pipeline')
             )
         elif isinstance(rule, list) and len(rule) == 3:
             # Legacy format: [state1, action, state2]
@@ -448,8 +450,14 @@ class StateMachine:
                 print(f"Executing action: {matching_rule.action}")
                 self.evaluate_rule_expression(matching_rule.action, 'action')
 
-            # Transition to new state
-            self.set_state(matching_rule.state2)
+            # Execute pipeline if present
+            if matching_rule.pipeline and self.pipeline_executor:
+                print(f"Executing pipeline: {matching_rule.pipeline}")
+                self._execute_pipeline(matching_rule.pipeline)
+
+            # Transition to new state (if state2 is set)
+            if matching_rule.state2:
+                self.set_state(matching_rule.state2)
             return True
         else:
             if candidate_rules:
@@ -458,6 +466,32 @@ class StateMachine:
             else:
                 print(f"No transition found for action '{action}' in state {self.current_state}")
             return False
+
+    def _execute_pipeline(self, pipeline_name: str):
+        """Execute a pipeline by name."""
+        if not self.pipeline_executor:
+            print(f"No pipeline executor configured, cannot run: {pipeline_name}")
+            return
+
+        from .pipeline_registry import get_pipeline_registry
+        registry = get_pipeline_registry()
+        pipeline = registry.get(pipeline_name)
+
+        if not pipeline:
+            print(f"Pipeline not found: {pipeline_name}")
+            return
+
+        # Execute in a thread to avoid blocking
+        import threading
+
+        def run_pipeline():
+            try:
+                self.pipeline_executor.execute(pipeline)
+            except Exception as e:
+                print(f"Pipeline execution error: {e}")
+
+        thread = threading.Thread(target=run_pipeline, daemon=True)
+        thread.start()
 
     def get_state(self) -> str:
         """Get the current state."""

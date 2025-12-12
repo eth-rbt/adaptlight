@@ -13,7 +13,8 @@ For example: 'on' state turns LEDs on, 'color' state sets RGB values.
 class State:
     """Represents a single state in the state machine."""
 
-    def __init__(self, name: str, r=None, g=None, b=None, speed=None, description: str = ''):
+    def __init__(self, name: str, r=None, g=None, b=None, speed=None,
+                 duration_ms=None, then=None, description: str = '', voice_reactive=None):
         """
         Initialize a state with unified parameters.
 
@@ -23,21 +24,46 @@ class State:
             g: Green value (0-255) or expression string
             b: Blue value (0-255) or expression string
             speed: Animation speed in milliseconds (None for static states)
+            duration_ms: How long this state runs before auto-transitioning (None = forever)
+            then: State to transition to when duration_ms expires (required if duration_ms set)
             description: Human-readable description for AI parsing
+            voice_reactive: Optional dict to enable mic-reactive brightness. Example:
+                           {"enabled": true, "color": [0,255,0], "smoothing_alpha": 0.6,
+                            "min_amplitude": 100, "max_amplitude": 5000}
         """
         self.name = name
         self.r = r
         self.g = g
         self.b = b
         self.speed = speed
+        self.duration_ms = duration_ms
+        self.then = then
+        self.voice_reactive = voice_reactive or {}
         self.description = description or self._generate_description()
 
     def _generate_description(self):
         """Generate a default description based on state parameters."""
+        base = ""
         if self.speed is not None:
-            return f"Animation state with r={self.r}, g={self.g}, b={self.b}, speed={self.speed}ms"
+            base = f"Animation state with r={self.r}, g={self.g}, b={self.b}, speed={self.speed}ms"
         else:
-            return f"Static color state with r={self.r}, g={self.g}, b={self.b}"
+            base = f"Static color state with r={self.r}, g={self.g}, b={self.b}"
+
+        if self.duration_ms is not None and self.then is not None:
+            base += f", runs for {self.duration_ms}ms then transitions to '{self.then}'"
+
+        # Add voice-reactive hint for the AI
+        if self.voice_reactive.get('enabled'):
+            vr = self.voice_reactive
+            color = vr.get('color')
+            smoothing = vr.get('smoothing_alpha')
+            base += " | voice-reactive brightness enabled"
+            if color:
+                base += f" (base color {color})"
+            if smoothing is not None:
+                base += f", smoothing_alpha={smoothing}"
+
+        return base
 
     def enter(self, params=None):
         """
@@ -55,7 +81,11 @@ class State:
                 'r': self.r,
                 'g': self.g,
                 'b': self.b,
-                'speed': self.speed
+                'speed': self.speed,
+                'duration_ms': self.duration_ms,
+                'then': self.then,
+                'voice_reactive': self.voice_reactive,
+                'state_name': self.name
             }
 
         print(f"Entering state: {self.name}" +
@@ -144,6 +174,20 @@ class States:
         lines = []
         for s in self.states:
             params = f"r={s.r}, g={s.g}, b={s.b}, speed={s.speed}"
+            if s.duration_ms is not None:
+                params += f", duration_ms={s.duration_ms}, then={s.then}"
+            if s.voice_reactive.get('enabled'):
+                vr = s.voice_reactive
+                params += f", voice_reactive={{enabled: True"
+                if vr.get('color') is not None:
+                    params += f", color: {vr.get('color')}"
+                if vr.get('smoothing_alpha') is not None:
+                    params += f", smoothing_alpha: {vr.get('smoothing_alpha')}"
+                if vr.get('min_amplitude') is not None:
+                    params += f", min_amplitude: {vr.get('min_amplitude')}"
+                if vr.get('max_amplitude') is not None:
+                    params += f", max_amplitude: {vr.get('max_amplitude')}"
+                params += "}"
             desc = s.description if s.description else "No description"
             lines.append(f"- {s.name}: {params} | {desc}")
 

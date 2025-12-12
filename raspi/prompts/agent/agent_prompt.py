@@ -40,11 +40,14 @@ def get_agent_system_prompt(system_state: str = "") -> str:
 - **getVariables()** - List current variables
 
 ### State Management
-- **createState(name, r, g, b, speed?, description?)** - Create a named light state
+- **createState(name, r, g, b, speed?, duration_ms?, then?, description?)** - Create a named light state
   - r, g, b: 0-255 or expression string like "random()" or "sin(frame * 0.1) * 255"
   - speed: null for static, milliseconds for animation (e.g., 50)
+  - duration_ms: how long state runs before auto-transitioning (null = forever)
+  - then: state to transition to when duration expires (required if duration_ms set)
   - Example: createState("red", 255, 0, 0, null)
   - Example animation: createState("pulse", "sin(frame*0.1)*255", 0, 0, 50)
+  - Example timed: createState("alert", 255, 0, 0, null, 5000, "off") - red for 5 seconds then off
 
 - **deleteState(name)** - Remove a state (cannot delete "on" or "off")
 - **setState(name)** - Change to a state immediately
@@ -66,7 +69,38 @@ def get_agent_system_prompt(system_state: str = "") -> str:
 - **setVariable(key, value)** - Set a variable
 - **getVariables()** - List all variables
 
-### External Data (for weather, APIs, etc.)
+### Preset APIs (for weather, stocks, etc.)
+- **listAPIs()** - List available preset APIs with parameters and example responses
+- **fetchAPI(api, params)** - Call a preset API to get raw data
+  Available APIs: weather, stock, crypto, sun, air_quality, time, fear_greed, github_repo, random
+  Example: fetchAPI("weather", {{location: "San Francisco"}}) → {{temp_f: 65, condition: "cloudy", ...}}
+  Example: fetchAPI("stock", {{symbol: "AAPL"}}) → {{price: 178.52, change_percent: 1.23, ...}}
+
+  The API returns data - YOU decide what colors to use based on that data!
+
+### Memory (persistent storage across sessions)
+- **remember(key, value)** - Store in memory (location, preferences, etc.)
+- **recall(key)** - Retrieve from memory (returns null if not found)
+- **forgetMemory(key)** - Delete from memory
+- **listMemory()** - List all stored memories
+
+### Pipelines (button-triggered API checks)
+- **definePipeline(name, steps, description?)** - Create a pipeline
+  Steps: fetch, llm, setState, setVar, wait, run
+- **runPipeline(name)** - Execute immediately
+- **deletePipeline(name)** - Delete a pipeline
+- **listPipelines()** - List all pipelines
+
+Pipeline steps:
+- fetch: {{"do": "fetch", "api": "stock", "params": {{}}, "as": "data"}}
+- llm: {{"do": "llm", "input": "{{{{data}}}}", "prompt": "...", "as": "result"}}
+- setState: {{"do": "setState", "from": "result", "map": {{"up": "green"}}}}
+- Use {{{{memory.key}}}} to access stored memories
+
+### User Interaction
+- **askUser(question)** - Ask user a question when you need info (location, etc.)
+
+### Custom Tools (for APIs not in presets)
 - **defineTool(name, code, description?)** - Create a custom Python tool
   Code should return a dict. Has access to: requests, json, math, datetime
   Example: defineTool("get_temp", "import requests; r=requests.get('url'); return {{'temp': 72}}")
@@ -91,7 +125,9 @@ Call getPattern() to see examples. Available patterns:
 - **hold_release**: Hold to activate, release to stop
 - **timer**: Delayed state change ("in 10 seconds...")
 - **schedule**: Time-of-day triggers ("at 8pm...")
-- **data_reactive**: React to external data (weather, APIs)
+- **data_reactive**: React to external data (APIs)
+- **timed**: Auto-transitioning states ("flash for 5 seconds then off")
+- **sunrise**: Gradual color transitions ("15-minute sunrise simulation")
 
 ## KEY CONCEPTS
 

@@ -6,6 +6,10 @@ Manages all tools available to the Claude agent, including:
 - Rule management tools (appendRules, deleteRules, getRules)
 - Information tools (getPattern, getStates)
 - External data tools (defineTool, createDataSource)
+- Preset API tools (listAPIs, fetchAPI)
+- Memory tools (remember, recall, forgetMemory, listMemory)
+- Pipeline tools (definePipeline, runPipeline, deletePipeline, listPipelines)
+- User interaction tools (askUser)
 - Completion tool (done)
 """
 
@@ -14,29 +18,58 @@ from typing import Dict, Any, Callable, List, Optional
 
 from .custom_tools import CustomToolExecutor, DataSourceManager
 from .builtin_tools import register_builtin_tools
+from apis.api_executor import APIExecutor
+from apis.preset_apis import PRESET_APIS, list_apis, get_api_info
+from core.memory import get_memory
+from core.pipeline_registry import get_pipeline_registry
+from core.pipeline import PipelineExecutor
 
 
 class ToolRegistry:
     """Registry of tools available to the agent."""
 
-    def __init__(self, state_machine=None):
+    def __init__(self, state_machine=None, api_key: str = None):
         """
         Initialize tool registry.
 
         Args:
             state_machine: StateMachine instance to operate on
+            api_key: Anthropic API key for LLM parsing in pipelines
         """
         self.state_machine = state_machine
+        self.api_key = api_key
         self.tools: Dict[str, Dict[str, Any]] = {}
 
         # Custom tools executor for Claude-defined API integrations
         self.custom_tool_executor = CustomToolExecutor(timeout=30.0)
+
+        # Preset API executor for curated APIs
+        self.api_executor = APIExecutor(timeout=15.0)
 
         # Data source manager for periodic fetching
         self.data_source_manager = DataSourceManager(
             self.custom_tool_executor,
             state_machine
         )
+
+        # Memory for persistent storage
+        self.memory = get_memory()
+
+        # Pipeline registry and executor
+        self.pipeline_registry = get_pipeline_registry()
+        self.pipeline_executor = PipelineExecutor(
+            api_executor=self.api_executor,
+            llm_parser=self._get_llm_parser(),
+            state_machine=state_machine,
+            memory=self.memory
+        )
+
+        # Wire up pipeline executor to state machine for rule-triggered pipelines
+        if state_machine:
+            state_machine.pipeline_executor = self.pipeline_executor
+
+        # Pending question for askUser (set by handler, read by agent loop)
+        self.pending_question: Optional[str] = None
 
         # Aliases for backward compatibility
         self.custom_tools = self.custom_tool_executor.tools
@@ -48,19 +81,26 @@ class ToolRegistry:
         # Register agent tools
         self._register_builtin_tools()
 
+    def _get_llm_parser(self):
+        """Get LLM parser instance for pipeline steps."""
+        if self.api_key:
+            from llm.llm_parser import LLMParser
+            return LLMParser(api_key=self.api_key)
+        return None
+
     def _register_builtin_tools(self):
         """Register all built-in tools."""
 
         # Information gathering tools
         self.register_tool(
             name="getPattern",
-            description="Look up a pattern template. Available patterns: counter, toggle, cycle, hold_release, timer, schedule, data_reactive",
+            description="Look up a pattern template. Available patterns: counter, toggle, cycle, hold_release, timer, schedule, data_reactive, timed, sunrise, api_reactive, pipeline",
             input_schema={
                 "type": "object",
                 "properties": {
                     "name": {
                         "type": "string",
-                        "enum": ["counter", "toggle", "cycle", "hold_release", "timer", "schedule", "data_reactive"],
+                        "enum": ["counter", "toggle", "cycle", "hold_release", "timer", "schedule", "data_reactive", "timed", "sunrise", "api_reactive", "pipeline"],
                         "description": "Name of the pattern to look up"
                     }
                 },
@@ -94,7 +134,7 @@ class ToolRegistry:
         # State management tools
         self.register_tool(
             name="createState",
-            description="Create a named light state. Use expressions like 'random()' or 'sin(frame * 0.1) * 255' for dynamic colors.",
+            description="Create a named light state. Use expressions like 'random()' or 'sin(frame * 0.1) * 255' for dynamic colors. Use duration_ms + then for auto-transitioning states.",
             input_schema={
                 "type": "object",
                 "properties": {
@@ -103,6 +143,8 @@ class ToolRegistry:
                     "g": {"type": ["number", "string"], "description": "Green value (0-255) or expression"},
                     "b": {"type": ["number", "string"], "description": "Blue value (0-255) or expression"},
                     "speed": {"type": ["number", "null"], "description": "Animation speed in ms (null for static)"},
+                    "duration_ms": {"type": ["number", "null"], "description": "How long state runs before auto-transitioning (null = forever)"},
+                    "then": {"type": ["string", "null"], "description": "State to transition to when duration_ms expires"},
                     "description": {"type": ["string", "null"], "description": "Human-readable description"}
                 },
                 "required": ["name", "r", "g", "b"]
@@ -277,6 +319,185 @@ class ToolRegistry:
             handler=self._handle_trigger_data_source
         )
 
+        # Preset API tools
+        self.register_tool(
+            name="listAPIs",
+            description="List available preset APIs. Returns API names, descriptions, parameters, and example responses.",
+            input_schema={
+                "type": "object",
+                "properties": {},
+                "required": []
+            },
+            handler=self._handle_list_apis
+        )
+
+        self.register_tool(
+            name="fetchAPI",
+            description="Call a preset API to get raw data. Use listAPIs() to see available APIs. You decide what colors to use based on the data.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "api": {
+                        "type": "string",
+                        "enum": list(PRESET_APIS.keys()),
+                        "description": "Name of the preset API"
+                    },
+                    "params": {
+                        "type": "object",
+                        "description": "Parameters for the API call (e.g., {location: 'NYC'} for weather)"
+                    }
+                },
+                "required": ["api"]
+            },
+            handler=self._handle_fetch_api
+        )
+
+        # Memory tools
+        self.register_tool(
+            name="remember",
+            description="Store something in memory (persists across sessions). Use for user preferences like location, favorite colors, stock symbols, etc.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "key": {"type": "string", "description": "Memory key (e.g., 'location', 'favorite_stock')"},
+                    "value": {"description": "Value to store (any type)"}
+                },
+                "required": ["key", "value"]
+            },
+            handler=self._handle_remember
+        )
+
+        self.register_tool(
+            name="recall",
+            description="Retrieve something from memory. Returns null if not found.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "key": {"type": "string", "description": "Memory key to retrieve"}
+                },
+                "required": ["key"]
+            },
+            handler=self._handle_recall
+        )
+
+        self.register_tool(
+            name="forgetMemory",
+            description="Delete something from memory.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "key": {"type": "string", "description": "Memory key to delete"}
+                },
+                "required": ["key"]
+            },
+            handler=self._handle_forget_memory
+        )
+
+        self.register_tool(
+            name="listMemory",
+            description="List all stored memories.",
+            input_schema={
+                "type": "object",
+                "properties": {},
+                "required": []
+            },
+            handler=self._handle_list_memory
+        )
+
+        # Pipeline tools
+        self.register_tool(
+            name="definePipeline",
+            description="Define a pipeline for button-triggered actions. Pipelines can fetch APIs, parse with LLM, and set states.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Pipeline name"},
+                    "steps": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "do": {
+                                    "type": "string",
+                                    "enum": ["fetch", "llm", "setState", "setVar", "wait", "run"],
+                                    "description": "Step type"
+                                },
+                                "api": {"type": "string", "description": "For fetch: API name"},
+                                "params": {"type": "object", "description": "For fetch: API parameters"},
+                                "input": {"type": "string", "description": "For llm: input data (use {{var}})"},
+                                "prompt": {"type": "string", "description": "For llm: prompt text"},
+                                "state": {"type": "string", "description": "For setState: state name"},
+                                "from": {"type": "string", "description": "For setState: variable to map from"},
+                                "map": {"type": "object", "description": "For setState: value->state mapping"},
+                                "key": {"type": "string", "description": "For setVar: variable name"},
+                                "value": {"description": "For setVar: variable value"},
+                                "ms": {"type": "number", "description": "For wait: milliseconds"},
+                                "pipeline": {"type": "string", "description": "For run: pipeline name"},
+                                "as": {"type": "string", "description": "Store result in variable"},
+                                "if": {"type": "string", "description": "Condition for step execution"}
+                            },
+                            "required": ["do"]
+                        },
+                        "description": "Pipeline steps"
+                    },
+                    "description": {"type": "string", "description": "Human-readable description"}
+                },
+                "required": ["name", "steps"]
+            },
+            handler=self._handle_define_pipeline
+        )
+
+        self.register_tool(
+            name="runPipeline",
+            description="Execute a pipeline immediately.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Pipeline name to execute"}
+                },
+                "required": ["name"]
+            },
+            handler=self._handle_run_pipeline
+        )
+
+        self.register_tool(
+            name="deletePipeline",
+            description="Delete a pipeline.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Pipeline name to delete"}
+                },
+                "required": ["name"]
+            },
+            handler=self._handle_delete_pipeline
+        )
+
+        self.register_tool(
+            name="listPipelines",
+            description="List all defined pipelines.",
+            input_schema={
+                "type": "object",
+                "properties": {},
+                "required": []
+            },
+            handler=self._handle_list_pipelines
+        )
+
+        # User interaction tools
+        self.register_tool(
+            name="askUser",
+            description="Ask the user a question and wait for their response. Use when you need information like location, preferences, etc.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "question": {"type": "string", "description": "Question to ask the user"}
+                },
+                "required": ["question"]
+            },
+            handler=self._handle_ask_user
+        )
+
         # Completion tool
         self.register_tool(
             name="done",
@@ -360,7 +581,13 @@ class ToolRegistry:
         g = input.get("g")
         b = input.get("b")
         speed = input.get("speed")
+        duration_ms = input.get("duration_ms")
+        then = input.get("then")
         description = input.get("description", "")
+
+        # Validate: if duration_ms is set, then must also be set
+        if duration_ms is not None and then is None:
+            return {"error": "If duration_ms is set, 'then' must also be specified"}
 
         # Create a proper State object with RGB values
         state = State(
@@ -369,6 +596,8 @@ class ToolRegistry:
             g=g,
             b=b,
             speed=speed,
+            duration_ms=duration_ms,
+            then=then,
             description=description
         )
 
@@ -572,6 +801,100 @@ class ToolRegistry:
 
         return result
 
+    def _handle_list_apis(self, input: Dict) -> Dict:
+        """Handle listAPIs tool call - list available preset APIs."""
+        apis = list_apis()
+        return {
+            "success": True,
+            "apis": apis,
+            "count": len(apis)
+        }
+
+    def _handle_fetch_api(self, input: Dict) -> Dict:
+        """Handle fetchAPI tool call - execute a preset API and return raw data."""
+        api_name = input["api"]
+        params = input.get("params", {})
+
+        return self.api_executor.execute(api_name, params)
+
     def _handle_done(self, input: Dict) -> Dict:
         """Handle done tool call."""
         return {"done": True, "message": input["message"]}
+
+    # Memory tool handlers
+
+    def _handle_remember(self, input: Dict) -> Dict:
+        """Handle remember tool call - store in memory."""
+        key = input["key"]
+        value = input["value"]
+        self.memory.set(key, value)
+        return {"success": True, "key": key, "value": value}
+
+    def _handle_recall(self, input: Dict) -> Dict:
+        """Handle recall tool call - retrieve from memory."""
+        key = input["key"]
+        value = self.memory.get(key)
+        if value is not None:
+            return {"success": True, "key": key, "value": value}
+        return {"success": True, "key": key, "value": None, "message": "Not found"}
+
+    def _handle_forget_memory(self, input: Dict) -> Dict:
+        """Handle forgetMemory tool call - delete from memory."""
+        key = input["key"]
+        deleted = self.memory.delete(key)
+        return {"success": True, "deleted": deleted, "key": key}
+
+    def _handle_list_memory(self, input: Dict) -> Dict:
+        """Handle listMemory tool call - list all memories."""
+        memories = self.memory.list()
+        return {"success": True, "memories": memories, "count": len(memories)}
+
+    # Pipeline tool handlers
+
+    def _handle_define_pipeline(self, input: Dict) -> Dict:
+        """Handle definePipeline tool call - create a pipeline."""
+        name = input["name"]
+        steps = input["steps"]
+        description = input.get("description", "")
+
+        self.pipeline_registry.register(name, steps, description)
+        return {
+            "success": True,
+            "pipeline": name,
+            "steps": len(steps),
+            "message": f"Pipeline '{name}' defined with {len(steps)} steps"
+        }
+
+    def _handle_run_pipeline(self, input: Dict) -> Dict:
+        """Handle runPipeline tool call - execute a pipeline."""
+        name = input["name"]
+        pipeline = self.pipeline_registry.get(name)
+
+        if not pipeline:
+            return {"success": False, "error": f"Pipeline '{name}' not found"}
+
+        result = self.pipeline_executor.execute(pipeline)
+        return result
+
+    def _handle_delete_pipeline(self, input: Dict) -> Dict:
+        """Handle deletePipeline tool call - delete a pipeline."""
+        name = input["name"]
+        deleted = self.pipeline_registry.delete(name)
+        return {"success": deleted, "pipeline": name}
+
+    def _handle_list_pipelines(self, input: Dict) -> Dict:
+        """Handle listPipelines tool call - list all pipelines."""
+        pipelines = self.pipeline_registry.list()
+        return {"success": True, "pipelines": pipelines, "count": len(pipelines)}
+
+    # User interaction tool handlers
+
+    def _handle_ask_user(self, input: Dict) -> Dict:
+        """Handle askUser tool call - ask user a question."""
+        question = input["question"]
+        self.pending_question = question
+        return {
+            "waiting_for_user": True,
+            "question": question,
+            "message": f"Asking user: {question}"
+        }

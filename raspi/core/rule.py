@@ -20,7 +20,7 @@ class Rule:
     """Represents a state machine transition rule."""
 
     def __init__(self, state1, transition, state2, condition=None, action=None,
-                 trigger_config=None, priority=0, enabled=True):
+                 trigger_config=None, priority=0, enabled=True, pipeline=None):
         """
         Initialize a rule.
 
@@ -36,6 +36,7 @@ class Rule:
                 For schedule: {"hour": <0-23>, "minute": <0-59>, "repeat_daily": true/false}
             priority: Higher priority rules are evaluated first (default: 0)
             enabled: Whether this rule is active (default: True)
+            pipeline: Pipeline name to execute when this rule fires (optional)
         """
         self.state1 = state1
         self.transition = transition
@@ -45,6 +46,7 @@ class Rule:
         self.trigger_config = trigger_config or {}
         self.priority = priority
         self.enabled = enabled
+        self.pipeline = pipeline
         self.timestamp = datetime.now(timezone.utc).isoformat()
 
     def matches(self, current_state: str, action: str) -> bool:
@@ -80,7 +82,7 @@ class Rule:
 
     def to_dict(self):
         """Convert to dictionary representation."""
-        return {
+        result = {
             'state1': self.state1,
             'transition': self.transition,
             'state2': self.state2,
@@ -91,11 +93,15 @@ class Rule:
             'enabled': self.enabled,
             'timestamp': self.timestamp
         }
+        if self.pipeline:
+            result['pipeline'] = self.pipeline
+        return result
 
     def __repr__(self):
         """String representation of the rule."""
         cond_str = f" (if: {self.condition})" if self.condition else ""
         action_str = f" (do: {self.action})" if self.action else ""
+        pipeline_str = f" (pipeline: {self.pipeline})" if self.pipeline else ""
         priority_str = f" [p={self.priority}]" if self.priority != 0 else ""
         enabled_str = " [DISABLED]" if not self.enabled else ""
-        return f"{self.state1} --[{self.transition}]--> {self.state2}{cond_str}{action_str}{priority_str}{enabled_str}"
+        return f"{self.state1} --[{self.transition}]--> {self.state2}{cond_str}{action_str}{pipeline_str}{priority_str}{enabled_str}"

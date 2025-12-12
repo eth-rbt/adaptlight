@@ -147,16 +147,18 @@ class LEDController:
             if USE_NEOPIXEL_SPI:
                 self.pixels.show()
 
-    def start_loading_animation(self, color=(0, 100, 255), speed=0.05):
+    def start_loading_animation(self, color=(255, 255, 255), speed=0.05, period=5.0):
         """
-        Start a circular loading animation (reverse order).
+        Start a soft breathing (sine) loading animation in white.
 
         Args:
-            color: RGB tuple for the loading pixel
-            speed: Time in seconds between pixel updates
+            color: Base RGB tuple (default white)
+            speed: Time in seconds between updates (step)
+            period: Duration of one full bright/dim cycle (seconds)
         """
         import threading
         import time
+        import math
 
         # Stop any existing animation
         self.stop_loading_animation()
@@ -164,29 +166,22 @@ class LEDController:
         self.loading_active = True
 
         def loading_loop():
-            """Run the loading animation in reverse order."""
-            # Clear all pixels first
-            if self.pixels:
-                for i in range(self.led_count):
-                    self.set_pixel(i, 0, 0, 0)
-                self.show()
-
+            """Breathing sine wave: ~5s cycle."""
+            start = time.time()
             while self.loading_active:
-                # Go in reverse order: 15, 14, 13... 0
-                for i in range(self.led_count - 1, -1, -1):
-                    if not self.loading_active:
-                        break
+                elapsed = time.time() - start
+                # sine wave between 0.2 and 1.0
+                phase = (elapsed % period) / period
+                brightness_factor = 0.2 + 0.8 * (math.sin(2 * math.pi * phase) + 1) / 2
 
-                    # Clear all pixels
-                    if self.pixels:
-                        for j in range(self.led_count):
-                            self.set_pixel(j, 0, 0, 0)
+                r = int(color[0] * brightness_factor)
+                g = int(color[1] * brightness_factor)
+                b = int(color[2] * brightness_factor)
 
-                    # Light up current pixel
-                    self.set_pixel(i, *color)
-                    self.show()
+                # Set all pixels to the breathing color
+                self.set_color(r, g, b)
 
-                    time.sleep(speed)
+                time.sleep(speed)
 
         # Start the loading thread
         self.loading_thread = threading.Thread(target=loading_loop, daemon=True)
