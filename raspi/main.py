@@ -41,19 +41,23 @@ from event_logging.aws_uploader import AWSUploader
 class AdaptLight:
     """Main application class for AdaptLight."""
 
-    def __init__(self, config_path='config.yaml'):
+    def __init__(self, config_path='config.yaml', debug=False):
         """
         Initialize AdaptLight application.
 
         Args:
             config_path: Path to configuration file
+            debug: Enable debug output (FPS timing for animations)
         """
         print("=" * 60)
         print("AdaptLight - Voice-Controlled Smart Lamp")
+        if debug:
+            print("DEBUG MODE ENABLED")
         print("=" * 60)
 
         # Load configuration
         self.config = self.load_config(config_path)
+        self.debug = debug
 
         # Initialize components
         self.state_machine = None
@@ -114,7 +118,7 @@ class AdaptLight:
 
         # Initialize state machine
         print("- State machine")
-        self.state_machine = StateMachine()
+        self.state_machine = StateMachine(debug=self.debug)
         set_state_machine(self.state_machine)
 
         # Initialize LED controller
@@ -129,7 +133,8 @@ class AdaptLight:
                 green_pin=led_config.get('cob_green_pin', 27),
                 blue_pin=led_config.get('cob_blue_pin', 22),
                 max_duty_cycle=led_config.get('cob_max_duty_cycle', led_config.get('max_duty_cycle', 1.0)),
-                brightness=led_config.get('led_brightness', 0.3)
+                brightness=led_config.get('led_brightness', 0.3),
+                frequency=led_config.get('cob_pwm_frequency', 1000)
             )
             print(f"COB LED mode (pins R/G/B = {led_config.get('cob_red_pin', 23)}/"
                   f"{led_config.get('cob_green_pin', 27)}/{led_config.get('cob_blue_pin', 22)}, "
@@ -167,10 +172,12 @@ class AdaptLight:
             on_release=lambda: self.handle_button_event('button_release')
         )
 
-        # Initialize record button controller (GPIO 17)
-        print("- Record button controller (GPIO 17)")
+        # Initialize record button controller
+        button_config = self.config.get('hardware', {})
+        record_button_pin = button_config.get('record_button_pin', 17)
+        print(f"- Record button controller (GPIO {record_button_pin})")
         self.record_button_controller = ButtonController(
-            button_pin=17
+            button_pin=record_button_pin
         )
 
         # Set record button callbacks
@@ -279,7 +286,8 @@ class AdaptLight:
             self.voice_reactive = VoiceReactiveLight(
                 led_controller=self.led_controller,
                 color=(0, 255, 0),  # Green for voice input
-                smoothing_alpha=0.6  # More responsive
+                smoothing_alpha=0.2,  # Smooth (lower = smoother, higher = responsive)
+                debug=self.debug  # Enable timing debug with --debug flag
             )
             set_voice_reactive(self.voice_reactive)
 
@@ -751,7 +759,7 @@ class AdaptLight:
             # Start loading animation before transcription
             if self.led_controller:
                 print("Starting loading animation...")
-                self.led_controller.start_loading_animation(color=(255, 255, 255), speed=0.1)  # White circle
+                self.led_controller.start_loading_animation(color=(255, 255, 255), debug=self.debug)
 
             # Stop recording and transcribe
             transcribed_text = self.voice_input.stop_recording()
@@ -841,7 +849,12 @@ class AdaptLight:
 
 def main():
     """Main entry point."""
-    app = AdaptLight()
+    import argparse
+    parser = argparse.ArgumentParser(description='AdaptLight - Voice-Controlled Smart Lamp')
+    parser.add_argument('--debug', action='store_true', help='Enable debug output (FPS timing for animations)')
+    args = parser.parse_args()
+
+    app = AdaptLight(debug=args.debug)
     app.initialize()
     app.run()
 

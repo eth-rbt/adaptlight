@@ -5,10 +5,10 @@ Test script for COB RGB LED control via PWM.
 Tests individual R, G, B channels and combined white light.
 All LEDs run at 50% duty cycle.
 
-PWM Pin assignments:
-- GPIO 23: Red LED
-- GPIO 27: Green LED
-- GPIO 22: Blue LED
+PWM Pin assignments (Hardware PWM):
+- GPIO 12: Red LED (Hardware PWM0)
+- GPIO 13: Green LED (Hardware PWM1)
+- GPIO 19: Blue LED (Hardware PWM1 - software PWM if GPIO 13 is active)
 """
 
 import time
@@ -22,16 +22,16 @@ except ImportError:
     print("Install with: pip install gpiozero")
 
 
-# PWM Pin configuration
-RED_PIN = 23
-GREEN_PIN = 27
-BLUE_PIN = 22
+# PWM Pin configuration (Hardware PWM pins)
+RED_PIN = 12    # Hardware PWM0
+GREEN_PIN = 13  # Hardware PWM1
+BLUE_PIN = 19   # Hardware PWM1 (will use software PWM if GPIO 13 is active)
 
 # Duty cycle (0.0 to 1.0)
-DUTY_CYCLE = 0.1  # 50%
+DUTY_CYCLE = 0.8  # 50%
 
 # Duration for each test phase (seconds)
-TEST_DURATION = 2.0
+TEST_DURATION = 1.0
 
 
 class SimulatedPWMLED:

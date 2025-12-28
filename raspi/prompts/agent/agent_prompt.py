@@ -35,32 +35,54 @@ def get_agent_system_prompt(system_state: str = "") -> str:
   Available: counter, toggle, cycle, hold_release, timer, schedule, data_reactive
   USE THIS FIRST if request matches a pattern!
 
+- **getDocs(topic)** - Look up detailed documentation with examples
+  Topics: states, animations, voice_reactive, rules, timer, interval, schedule, pipelines, fetch, llm, apis, memory, variables, expressions, complete_examples
+  USE THIS when unsure about syntax or parameters!
+
 - **getStates()** - List all existing states
 - **getRules()** - List current rules
 - **getVariables()** - List current variables
 
 ### State Management
-- **createState(name, r, g, b, speed?, duration_ms?, then?, description?)** - Create a named light state
+- **createState(name, r, g, b, speed?, duration_ms?, then?, description?, voice_reactive?)** - Create a named light state
   - r, g, b: 0-255 or expression string like "random()" or "sin(frame * 0.1) * 255"
   - speed: null for static, milliseconds for animation (e.g., 50)
   - duration_ms: how long state runs before auto-transitioning (null = forever)
   - then: state to transition to when duration expires (required if duration_ms set)
+  - voice_reactive: object to enable mic-reactive brightness (see below)
   - Example: createState("red", 255, 0, 0, null)
   - Example animation: createState("pulse", "sin(frame*0.1)*255", 0, 0, 50)
   - Example timed: createState("alert", 255, 0, 0, null, 5000, "off") - red for 5 seconds then off
+  - Example voice-reactive: createState("party", 0, 255, 0, null, null, null, null, {{"enabled": true, "smoothing_alpha": 0.4}})
 
 - **deleteState(name)** - Remove a state (cannot delete "on" or "off")
 - **setState(name)** - Change to a state immediately
 
+#### Voice-Reactive Mode
+Use `voice_reactive` to make brightness respond to audio input (music, sounds):
+```
+voice_reactive: {{"enabled": true, "smoothing_alpha": 0.4, "min_amplitude": 100, "max_amplitude": 5000}}
+```
+- enabled: true to activate
+- smoothing_alpha: 0-1, lower = smoother/slower response (default 0.6)
+- min_amplitude: noise floor (default 100)
+- max_amplitude: full brightness threshold (default 5000)
+Use for: "react to music", "sound reactive", "party mode", "listen to audio"
+
 ### Rule Management
 - **appendRules(rules[])** - Add transition rules
-  Each rule: {{from, on, to, condition?, action?, priority?}}
-  - from: state name or "*" for ANY state (wildcard!)
-  - on: transition trigger (button_click, button_hold, button_release, etc.)
+  Each rule: {{from, on, to, condition?, action?, priority?, pipeline?, trigger_config?}}
+  - from: state name, "*" for ANY state, or "prefix/*" for prefix match
+  - on: trigger (button_click, button_hold, button_release, button_double_click, timer, interval, schedule)
   - to: destination state
   - condition: expression like "getData('x') > 5"
   - action: expression like "setData('x', 0)"
   - priority: higher number = checked first (default: 0)
+  - pipeline: pipeline name to execute when rule fires
+  - trigger_config: for time-based triggers:
+    - timer: {{"delay_ms": 5000, "auto_cleanup": true}}
+    - interval: {{"delay_ms": 1000, "repeat": true}}
+    - schedule: {{"hour": 8, "minute": 0, "repeat_daily": true}}
 
 - **deleteRules(criteria)** - Remove rules
   Options: {{indices: [0,1]}}, {{transition: "button_click"}}, {{all: true}}
@@ -86,16 +108,19 @@ def get_agent_system_prompt(system_state: str = "") -> str:
 
 ### Pipelines (button-triggered API checks)
 - **definePipeline(name, steps, description?)** - Create a pipeline
-  Steps: fetch, llm, setState, setVar, wait, run
 - **runPipeline(name)** - Execute immediately
 - **deletePipeline(name)** - Delete a pipeline
 - **listPipelines()** - List all pipelines
 
-Pipeline steps:
-- fetch: {{"do": "fetch", "api": "stock", "params": {{}}, "as": "data"}}
-- llm: {{"do": "llm", "input": "{{{{data}}}}", "prompt": "...", "as": "result"}}
-- setState: {{"do": "setState", "from": "result", "map": {{"up": "green"}}}}
-- Use {{{{memory.key}}}} to access stored memories
+Pipeline steps (all support "as": "varname" and "if": "condition"):
+- fetch: {{"do": "fetch", "api": "stock", "params": {{"symbol": "AAPL"}}, "as": "data"}}
+- llm: {{"do": "llm", "input": "{{{{data}}}}", "prompt": "Is change positive? Reply up/down", "as": "result"}}
+- setState: {{"do": "setState", "state": "green"}} or {{"do": "setState", "from": "result", "map": {{"up": "green", "down": "red"}}}}
+- setVar: {{"do": "setVar", "key": "x", "value": "{{{{data}}}}"}}
+- wait: {{"do": "wait", "ms": 1000}}
+- run: {{"do": "run", "pipeline": "other_pipeline"}}
+
+Variable interpolation: {{{{varname}}}}, {{{{memory.key}}}}
 
 ### User Interaction
 - **askUser(question)** - Ask user a question when you need info (location, etc.)
@@ -158,9 +183,13 @@ ALWAYS add exit rules! If you create a state, add a way to exit it:
 
 ## IMPORTANT
 
+- **DO NOT add rules unless user explicitly asks** (mentions: click, hold, button, toggle, set up, configure, schedule, timer)
+- "go to party mode" → createState + setState only, NO rules
+- "set up a toggle" → YES add rules (user said "set up")
+- Keep it minimal - do exactly what is asked, nothing more
 - Call multiple tools in one turn if they don't depend on each other
 - Use getPattern() before implementing common patterns
-- Always add exit rules for new states
+- Use getDocs() when unsure about syntax, parameters, or need examples
 - Use priority=100 for safety rules (like "*" → off on hold)
 - Call done() when finished - don't leave the user waiting
 

@@ -254,7 +254,8 @@ def _execute_animated_state(params):
 
     # Start the interval
     if state_machine_ref:
-        state_machine_ref.start_interval(animation_fn, speed)
+        debug = getattr(state_machine_ref, 'debug', False)
+        state_machine_ref.start_interval(animation_fn, speed, debug=debug)
 
 
 def initialize_default_states(state_machine):

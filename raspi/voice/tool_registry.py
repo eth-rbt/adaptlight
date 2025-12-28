@@ -131,10 +131,27 @@ class ToolRegistry:
             handler=self._handle_get_rules
         )
 
+        self.register_tool(
+            name="getDocs",
+            description="Look up detailed documentation on a topic. Use when you need syntax details, examples, or parameter info. Topics: states, animations, voice_reactive, rules, timer, interval, schedule, pipelines, fetch, llm, apis, memory, variables, expressions, complete_examples",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "topic": {
+                        "type": "string",
+                        "enum": ["states", "animations", "voice_reactive", "rules", "timer", "interval", "schedule", "pipelines", "fetch", "llm", "apis", "memory", "variables", "expressions", "complete_examples"],
+                        "description": "Topic to look up"
+                    }
+                },
+                "required": ["topic"]
+            },
+            handler=self._handle_get_docs
+        )
+
         # State management tools
         self.register_tool(
             name="createState",
-            description="Create a named light state. Use expressions like 'random()' or 'sin(frame * 0.1) * 255' for dynamic colors. Use duration_ms + then for auto-transitioning states.",
+            description="Create a named light state. Use expressions like 'random()' or 'sin(frame * 0.1) * 255' for dynamic colors. Use duration_ms + then for auto-transitioning states. Use voice_reactive for mic-reactive brightness.",
             input_schema={
                 "type": "object",
                 "properties": {
@@ -145,7 +162,18 @@ class ToolRegistry:
                     "speed": {"type": ["number", "null"], "description": "Animation speed in ms (null for static)"},
                     "duration_ms": {"type": ["number", "null"], "description": "How long state runs before auto-transitioning (null = forever)"},
                     "then": {"type": ["string", "null"], "description": "State to transition to when duration_ms expires"},
-                    "description": {"type": ["string", "null"], "description": "Human-readable description"}
+                    "description": {"type": ["string", "null"], "description": "Human-readable description"},
+                    "voice_reactive": {
+                        "type": ["object", "null"],
+                        "description": "Enable mic-reactive brightness. LED brightness follows audio input volume.",
+                        "properties": {
+                            "enabled": {"type": "boolean", "description": "Enable voice-reactive mode"},
+                            "color": {"type": "array", "items": {"type": "number"}, "description": "Optional [r,g,b] override color"},
+                            "smoothing_alpha": {"type": "number", "description": "Smoothing factor 0-1 (lower=smoother, default 0.6)"},
+                            "min_amplitude": {"type": "number", "description": "Noise floor threshold (default 100)"},
+                            "max_amplitude": {"type": "number", "description": "Full brightness threshold (default 5000)"}
+                        }
+                    }
                 },
                 "required": ["name", "r", "g", "b"]
             },
@@ -181,7 +209,7 @@ class ToolRegistry:
         # Rule management tools
         self.register_tool(
             name="appendRules",
-            description="Add transition rules. Rules are evaluated by priority (highest first). Use '*' for wildcard state matching.",
+            description="Add transition rules. Rules are evaluated by priority (highest first). Use '*' for wildcard state matching. Supports pipelines and time-based triggers.",
             input_schema={
                 "type": "object",
                 "properties": {
@@ -190,12 +218,26 @@ class ToolRegistry:
                         "items": {
                             "type": "object",
                             "properties": {
-                                "from": {"type": "string", "description": "Source state ('*' for any)"},
-                                "on": {"type": "string", "description": "Transition trigger"},
+                                "from": {"type": "string", "description": "Source state ('*' for any, 'prefix/*' for prefix match)"},
+                                "on": {"type": "string", "description": "Trigger: button_click, button_hold, button_release, button_double_click, timer, interval, schedule"},
                                 "to": {"type": "string", "description": "Destination state"},
-                                "condition": {"type": ["string", "null"], "description": "Condition expression"},
-                                "action": {"type": ["string", "null"], "description": "Action expression"},
-                                "priority": {"type": "number", "description": "Priority (higher = first)"}
+                                "condition": {"type": ["string", "null"], "description": "Condition expression e.g. \"getData('x') > 0\""},
+                                "action": {"type": ["string", "null"], "description": "Action expression e.g. \"setData('x', getData('x') - 1)\""},
+                                "priority": {"type": "number", "description": "Priority (higher = checked first, default 0)"},
+                                "pipeline": {"type": ["string", "null"], "description": "Pipeline name to execute when rule fires"},
+                                "enabled": {"type": "boolean", "description": "Whether rule is active (default true)"},
+                                "trigger_config": {
+                                    "type": ["object", "null"],
+                                    "description": "Config for time-based triggers (timer/interval/schedule)",
+                                    "properties": {
+                                        "delay_ms": {"type": "number", "description": "Delay in ms (for timer/interval)"},
+                                        "repeat": {"type": "boolean", "description": "Repeat interval (for interval)"},
+                                        "auto_cleanup": {"type": "boolean", "description": "Remove rule after firing (for timer)"},
+                                        "hour": {"type": "number", "description": "Hour 0-23 (for schedule)"},
+                                        "minute": {"type": "number", "description": "Minute 0-59 (for schedule)"},
+                                        "repeat_daily": {"type": "boolean", "description": "Repeat daily (for schedule)"}
+                                    }
+                                }
                             },
                             "required": ["from", "on", "to"]
                         },
@@ -569,6 +611,50 @@ class ToolRegistry:
         rules = [r.to_dict() for r in self.state_machine.get_rules()]
         return {"success": True, "rules": rules}
 
+    def _handle_get_docs(self, input: Dict) -> Dict:
+        """Handle getDocs tool call - return documentation section."""
+        import os
+        import re
+
+        topic = input.get("topic", "").lower()
+
+        # Path to docs file
+        docs_path = os.path.join(os.path.dirname(__file__), "..", "docs", "AGENT_REFERENCE.md")
+
+        try:
+            with open(docs_path, "r") as f:
+                content = f.read()
+
+            # Find the section for this topic
+            # Sections are marked with "# SECTION: topic_name"
+            section_pattern = rf"# SECTION: {topic}\n(.*?)(?=# SECTION:|$)"
+            match = re.search(section_pattern, content, re.DOTALL | re.IGNORECASE)
+
+            if match:
+                section_content = match.group(1).strip()
+                # Limit to reasonable size (first ~3000 chars)
+                if len(section_content) > 3000:
+                    section_content = section_content[:3000] + "\n\n... (truncated, use specific sub-topics for more detail)"
+
+                return {
+                    "success": True,
+                    "topic": topic,
+                    "content": section_content
+                }
+            else:
+                # List available topics
+                available = re.findall(r"# SECTION: (\w+)", content)
+                return {
+                    "success": False,
+                    "error": f"Topic '{topic}' not found",
+                    "available_topics": available
+                }
+
+        except FileNotFoundError:
+            return {"success": False, "error": "Documentation file not found"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
     def _handle_create_state(self, input: Dict) -> Dict:
         """Handle createState tool call."""
         if not self.state_machine:
@@ -584,6 +670,7 @@ class ToolRegistry:
         duration_ms = input.get("duration_ms")
         then = input.get("then")
         description = input.get("description", "")
+        voice_reactive = input.get("voice_reactive")
 
         # Validate: if duration_ms is set, then must also be set
         if duration_ms is not None and then is None:
@@ -598,7 +685,8 @@ class ToolRegistry:
             speed=speed,
             duration_ms=duration_ms,
             then=then,
-            description=description
+            description=description,
+            voice_reactive=voice_reactive
         )
 
         # Add to state machine's state collection

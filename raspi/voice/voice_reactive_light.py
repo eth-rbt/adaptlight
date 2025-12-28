@@ -36,7 +36,7 @@ def suppress_alsa_errors():
 class VoiceReactiveLight:
     """Real-time voice-reactive lighting with smooth exponential smoothing."""
 
-    def __init__(self, led_controller, color=(0, 255, 0), smoothing_alpha=0.6):
+    def __init__(self, led_controller, color=(0, 255, 0), smoothing_alpha=0.6, debug=False):
         """
         Initialize voice-reactive light.
 
@@ -47,13 +47,16 @@ class VoiceReactiveLight:
                            Lower = smoother but slower response
                            Higher = faster but more jittery
                            Recommended: 0.1-0.3
+            debug: Enable timing debug output
         """
         self.led_controller = led_controller
         self.base_color = color
         self.smoothing_alpha = smoothing_alpha
+        self.debug = debug
 
         # Audio settings
-        self.chunk = 1024
+        # Smaller chunk = faster updates (512 @ 44100Hz = ~11.6ms per update = ~86 FPS)
+        self.chunk = 512
         self.format = pyaudio.paInt16
         self.channels = 1
         self.rate = 44100
@@ -72,6 +75,10 @@ class VoiceReactiveLight:
         self.thread = None
         self.pyaudio_instance = None
         self.stream = None
+
+        # Timing stats
+        self.update_count = 0
+        self.start_time = None
 
         # Select audio device
         self._select_audio_device()
@@ -231,6 +238,11 @@ class VoiceReactiveLight:
         if not self.running:
             return
 
+        # Initialize timing on first call
+        if self.start_time is None:
+            self.start_time = time.time()
+            self.update_count = 0
+
         # Calculate RMS amplitude
         rms = self.calculate_rms(audio_data)
 
@@ -244,6 +256,14 @@ class VoiceReactiveLight:
 
         # Update LEDs
         self.led_controller.set_color(r, g, b)
+
+        # Debug timing
+        self.update_count += 1
+        if self.debug and self.update_count % 50 == 0:
+            elapsed = time.time() - self.start_time
+            avg_interval = elapsed / self.update_count * 1000
+            fps = self.update_count / elapsed if elapsed > 0 else 0
+            print(f"[VOICE_REACTIVE] Updates: {self.update_count}, Avg interval: {avg_interval:.1f}ms, FPS: {fps:.1f}")
 
     def start(self, standalone=True):
         """
@@ -259,6 +279,10 @@ class VoiceReactiveLight:
 
         print("Starting voice-reactive light...")
         self.running = True
+
+        # Reset timing stats
+        self.start_time = None
+        self.update_count = 0
 
         if standalone:
             if not AUDIO_AVAILABLE:

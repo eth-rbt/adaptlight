@@ -19,7 +19,7 @@ from .rule import Rule
 class StateMachine:
     """Main state machine for managing light behavior."""
 
-    def __init__(self):
+    def __init__(self, debug=False):
         """Initialize the state machine."""
         self.rules: List[Rule] = []
         self.current_state = 'off'
@@ -31,6 +31,7 @@ class StateMachine:
         self.active_timers = {}  # {rule_id: Timer object} for time-based rules
         self.rule_id_counter = 0  # Unique ID for each rule
         self.pipeline_executor = None  # Set by tool_registry to enable pipeline execution
+        self.debug = debug  # Enable debug output (FPS timing)
 
     def register_state(self, name: str, description: str = '', on_enter: Callable = None):
         """
@@ -542,15 +543,17 @@ class StateMachine:
                 interval_thread.join(timeout=0.5)
             print("State machine interval stopped")
 
-    def start_interval(self, callback: Callable, interval_ms: int = 100):
+    def start_interval(self, callback: Callable, interval_ms: int = 100, debug: bool = False):
         """
         Start an interval for state machine execution.
 
         Args:
             callback: Function to execute on each interval
             interval_ms: Interval in milliseconds
+            debug: Enable debug output (FPS timing)
         """
         import threading
+        import time
 
         self.stop_interval()
 
@@ -559,16 +562,27 @@ class StateMachine:
 
         def interval_loop():
             """Run the callback in a loop until stopped."""
+            start_time = time.time()
+            update_count = 0
+
             while self.interval is not None:
                 try:
                     self.interval_callback()
+                    update_count += 1
+
+                    # Debug timing output
+                    if debug and update_count % 50 == 0:
+                        elapsed = time.time() - start_time
+                        avg_interval = elapsed / update_count * 1000
+                        fps = update_count / elapsed if elapsed > 0 else 0
+                        print(f"[STATE_ANIM] Updates: {update_count}, Avg interval: {avg_interval:.1f}ms, Target: {interval_ms}ms, FPS: {fps:.1f}")
+
                 except Exception as e:
                     print(f"Interval callback error: {e}")
                     break
 
                 # Sleep for the interval duration
                 if self.interval is not None:
-                    import time
                     time.sleep(interval_ms / 1000.0)
 
         # Start the interval thread

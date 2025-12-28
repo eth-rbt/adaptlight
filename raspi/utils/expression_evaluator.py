@@ -52,9 +52,9 @@ def evaluate_color_expression(expr, current_r: int, current_g: int, current_b: i
         'E': math.e
     }
 
-    # Random function
+    # Random function (returns 0.0-1.0, use random() * 255 for full range)
     def random():
-        return random_module.randint(0, 255)
+        return random_module.random()
 
     # Current color object
     current = {
@@ -121,9 +121,9 @@ def create_safe_expression_function(expr):
         'E': math.e
     }
 
-    # Random function
+    # Random function (returns 0.0-1.0, use random() * 255 for full range)
     def random():
-        return random_module.randint(0, 255)
+        return random_module.random()
 
     def eval_fn(context):
         """

@@ -2,8 +2,8 @@
 """
 Sine-wave PWM test for COB RGB LEDs.
 
-Gradually sweeps each channel from 0 to max_duty (default 0.1)
-using a sine wave. Great for validating power/heat with gentle ramps.
+Tests each channel individually at 1Hz for 3 seconds each:
+Red -> Green -> Blue
 """
 
 import math
@@ -15,28 +15,26 @@ try:
 except ImportError:
     GPIO_AVAILABLE = False
     print("Warning: gpiozero not available. Running in simulation mode.")
-    print("Install with: pip install gpiozero")
 
+# PWM Pin configuration (Hardware PWM pins)
+RED_PIN = 12    # Hardware PWM0
+GREEN_PIN = 13  # Hardware PWM1
+BLUE_PIN = 19   # Software PWM (PWM1 used by GPIO 13)
 
-# PWM Pin configuration
-RED_PIN = 23
-GREEN_PIN = 27
-BLUE_PIN = 22
-
-# Max duty cycle (0.0-1.0) to protect COB LEDs
-MAX_DUTY = 0.1
-
-# Timing
-PERIOD_SECONDS = 6.0      # One full sine cycle
-STEP_SLEEP = 0.05         # Update interval
-RUN_DURATION = 30.0       # Total run time (seconds)
+# Test settings
+MAX_DUTY = 0.5          # Max duty cycle (0.0-1.0)
+FREQUENCY = 0.5         # Sine wave frequency in Hz
+DURATION = 3.0          # Duration per channel in seconds
+STEP_SLEEP = 0.01       # Update interval (100 Hz update rate)
+PWM_FREQUENCY = 1000    # PWM carrier frequency in Hz
 
 
 class SimulatedPWMLED:
     """Simulated PWM LED for testing without hardware."""
 
-    def __init__(self, pin):
+    def __init__(self, pin, frequency=100):
         self.pin = pin
+        self.frequency = frequency
         self._value = 0.0
 
     @property
@@ -46,54 +44,103 @@ class SimulatedPWMLED:
     @value.setter
     def value(self, val):
         self._value = val
-        print(f"  GPIO {self.pin}: {val * 100:.1f}% duty cycle")
 
     def close(self):
         pass
 
 
-def create_led(pin):
+def create_led(pin, frequency=1000):
     """Create a PWM LED, real or simulated."""
     if GPIO_AVAILABLE:
-        return PWMLED(pin)
-    return SimulatedPWMLED(pin)
+        led = PWMLED(pin, frequency=frequency)
+        print(f"  GPIO {pin}: PWM @ {led.frequency} Hz")
+        return led
+    return SimulatedPWMLED(pin, frequency)
+
+
+def run_sine_test(led, name, frequency, duration, max_duty, step_sleep):
+    """Run a sine wave test on a single LED channel."""
+    print(f"\n  Testing {name} at {frequency} Hz for {duration}s...")
+
+    start = time.time()
+    cycles = 0
+    last_cycle = -1
+
+    while True:
+        elapsed = time.time() - start
+        if elapsed >= duration:
+            break
+
+        # Calculate sine wave value (0 to 1)
+        phase = (elapsed * frequency) % 1.0
+        wave = (math.sin(2 * math.pi * phase) + 1) / 2
+
+        led.value = wave * max_duty
+
+        # Count cycles
+        current_cycle = int(elapsed * frequency)
+        if current_cycle > last_cycle:
+            last_cycle = current_cycle
+            cycles += 1
+
+        time.sleep(step_sleep)
+
+    led.value = 0
+    print(f"  {name} complete: {cycles} cycles")
 
 
 def main():
     print("=" * 60)
-    print("COB PWM Sine Test")
+    print("COB PWM Sine Test - Individual Channel Test")
     print("=" * 60)
-    print(f"Pins (R/G/B): {RED_PIN}/{GREEN_PIN}/{BLUE_PIN}")
-    print(f"Max duty: {MAX_DUTY * 100:.1f}%")
-    print(f"Period: {PERIOD_SECONDS}s, step: {STEP_SLEEP}s, duration: {RUN_DURATION}s")
+    print(f"Pins: R={RED_PIN}, G={GREEN_PIN}, B={BLUE_PIN}")
+    print(f"PWM frequency: {PWM_FREQUENCY} Hz")
+    print(f"Sine frequency: {FREQUENCY} Hz")
+    print(f"Max duty: {MAX_DUTY * 100:.0f}%")
+    print(f"Duration per channel: {DURATION}s")
     print()
 
-    red = create_led(RED_PIN)
-    green = create_led(GREEN_PIN)
-    blue = create_led(BLUE_PIN)
+    print("Initializing LEDs...")
+    red = create_led(RED_PIN, PWM_FREQUENCY)
+    green = create_led(GREEN_PIN, PWM_FREQUENCY)
+    blue = create_led(BLUE_PIN, PWM_FREQUENCY)
 
-    start = time.time()
     try:
+        # Test each channel sequentially
+        run_sine_test(red, "RED", FREQUENCY, DURATION, MAX_DUTY, STEP_SLEEP)
+        run_sine_test(green, "GREEN", FREQUENCY, DURATION, MAX_DUTY, STEP_SLEEP)
+        run_sine_test(blue, "BLUE", FREQUENCY, DURATION, MAX_DUTY, STEP_SLEEP)
+
+        # Test all channels together (white)
+        print(f"\n  Testing WHITE (all channels) at {FREQUENCY} Hz for {DURATION}s...")
+        start = time.time()
+        cycles = 0
+        last_cycle = -1
+
         while True:
             elapsed = time.time() - start
-            if elapsed > RUN_DURATION:
+            if elapsed >= DURATION:
                 break
 
-            phase = (elapsed % PERIOD_SECONDS) / PERIOD_SECONDS
+            phase = (elapsed * FREQUENCY) % 1.0
+            wave = (math.sin(2 * math.pi * phase) + 1) / 2
+            duty = wave * MAX_DUTY
 
-            # Offset each channel for visual separation
-            r_phase = phase
-            g_phase = (phase + 1 / 3) % 1.0
-            b_phase = (phase + 2 / 3) % 1.0
+            red.value = duty
+            green.value = duty
+            blue.value = duty
 
-            def wave(p):
-                return (math.sin(2 * math.pi * p) + 1) / 2  # 0..1
-
-            red.value = wave(r_phase) * MAX_DUTY
-            green.value = wave(g_phase) * MAX_DUTY
-            blue.value = wave(b_phase) * MAX_DUTY
+            current_cycle = int(elapsed * FREQUENCY)
+            if current_cycle > last_cycle:
+                last_cycle = current_cycle
+                cycles += 1
 
             time.sleep(STEP_SLEEP)
+
+        red.value = 0
+        green.value = 0
+        blue.value = 0
+        print(f"  WHITE complete: {cycles} cycles")
 
     except KeyboardInterrupt:
         print("\nInterrupted by user")
@@ -104,7 +151,7 @@ def main():
         red.close()
         green.close()
         blue.close()
-        print("Test complete. LEDs off.")
+        print("\nTest complete. LEDs off.")
         print("=" * 60)
 
 

@@ -55,7 +55,8 @@ class VoiceInput:
         self.on_audio_data_callback = None  # For real-time audio visualization
 
         # Audio settings
-        self.chunk = 1024
+        # Smaller chunk = faster callback rate (512 @ 44100Hz = ~11.6ms = ~86 FPS)
+        self.chunk = 512
         self.format = pyaudio.paInt16 if AUDIO_AVAILABLE else None
         self.channels = 1
         self.rate = 44100  # Will be updated to device native rate

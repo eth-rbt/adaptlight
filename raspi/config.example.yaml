@@ -6,13 +6,14 @@ hardware:
   led_type: neopixel             # Options: neopixel (default) or cob
   led_count: 16                    # Number of LEDs in strip
   led_brightness: 0.3              # Default brightness (0.0 to 1.0)
-  button_pin: 2                    # GPIO pin for button (BCM numbering)
+  button_pin: 2                    # GPIO pin for main control button (BCM numbering)
+  record_button_pin: 17            # GPIO pin for record button (BCM numbering)
   led_pin: 18                      # GPIO pin for LED data (BCM numbering)
   # COB LED (PWM) settings
   cob_red_pin: 23                  # GPIO pin for COB red channel
   cob_green_pin: 27                # GPIO pin for COB green channel
   cob_blue_pin: 22                 # GPIO pin for COB blue channel
-  cob_max_duty_cycle: 0.8          # Clamp PWM duty cycle (0.0-1.0) to protect COBs
+  cob_max_duty_cycle: 2.0          # Max TOTAL duty cycle across RGB (0.0-3.0). Scales proportionally.
 
 # Voice command configuration
 voice:
