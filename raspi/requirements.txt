@@ -19,6 +19,9 @@ PyYAML==6.0.1            # YAML config files
 # OpenAI
 openai>=1.52.0           # OpenAI API client
 
+# Anthropic
+anthropic>=0.40.0        # Anthropic API client
+
 # Audio (for voice input)
 pyaudio==0.2.14          # Audio capture
 sounddevice==0.4.6       # Alternative audio interface

@@ -1,6 +1,36 @@
 # adaptlight
 Adaptive light software - an interactive light simulator that uses AI to generate state machine code for controlling light behaviors.
+
+
 rsync -avz --exclude '__pycache__' --exclude '.git' --exclude '*.pyc' /Users/ethrbt/code/adaptlight/raspi/ lamp@100.114.12.83:~/Desktop/raspi
+
+lamp@100.108.65.92
+
+Usage on your Raspberry Pi 5:
+  cd /path/to/raspi
+  ./setup.sh
+
+  After setup, useful commands:
+  # Start/stop manually
+  sudo systemctl start adaptlight
+  sudo systemctl stop adaptlight
+
+  # View live logs
+  sudo journalctl -u adaptlight -f
+
+  # Disable auto-start
+  sudo systemctl disable adaptlight
+
+  Folder structure after running:
+  /path/to/
+  ├── raspi/              # Your project folder
+  │   ├── main.py
+  │   ├── setup.sh
+  │   └── ...
+  ├── adaptlight_venv/    # Virtual environment (created by setup)
+  └── start_adaptlight.sh # Manual startup script (created by setup)
+
+
 ## Prerequisites
 
 - Node.js (v14 or higher)
