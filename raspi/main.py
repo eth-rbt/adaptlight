@@ -41,23 +41,27 @@ from event_logging.aws_uploader import AWSUploader
 class AdaptLight:
     """Main application class for AdaptLight."""
 
-    def __init__(self, config_path='config.yaml', debug=False):
+    def __init__(self, config_path='config.yaml', debug=False, verbose=False):
         """
         Initialize AdaptLight application.
 
         Args:
             config_path: Path to configuration file
             debug: Enable debug output (FPS timing for animations)
+            verbose: Enable verbose output (transcription, timing, agent turns)
         """
         print("=" * 60)
         print("AdaptLight - Voice-Controlled Smart Lamp")
         if debug:
             print("DEBUG MODE ENABLED")
+        if verbose:
+            print("VERBOSE MODE ENABLED")
         print("=" * 60)
 
         # Load configuration
         self.config = self.load_config(config_path)
         self.debug = debug
+        self.verbose = verbose
 
         # Initialize components
         self.state_machine = None
@@ -240,7 +244,7 @@ class AdaptLight:
                     api_key=claude_key,
                     model=claude_model,
                     max_turns=10,
-                    verbose=verbose,
+                    verbose=self.verbose or verbose,  # CLI flag or config
                     prompt_variant=prompt_variant
                 )
             else:
@@ -372,14 +376,24 @@ class AdaptLight:
             state_before: State before command execution
         """
         import asyncio
+        import time
 
-        print("🤖 Using agent executor (multi-turn mode)")
+        if self.verbose:
+            print("\n" + "=" * 60)
+            print("🤖 AGENT EXECUTOR (multi-turn mode)")
+            print("=" * 60)
+            print(f"Input: {command_text}")
+            print("-" * 60)
+        else:
+            print("🤖 Using agent executor (multi-turn mode)")
 
         # Capture state params before
         state_params_before = self.state_machine.get_state_params()
 
         # Run agent executor (asyncio.run() works in threads, get_event_loop() doesn't)
+        agent_start = time.time()
         result = asyncio.run(self.agent_executor.run(command_text))
+        agent_time = time.time() - agent_start
 
         # Stop loading animation after agent responds
         if self.led_controller:
@@ -388,6 +402,8 @@ class AdaptLight:
 
         print("=" * 60)
         print(f"💬 Agent Response: {result}")
+        if self.verbose:
+            print(f"⏱️  Agent execution time: {agent_time:.2f}s")
         print("=" * 60)
 
         # Optional: speak the response through TTS
@@ -762,13 +778,33 @@ class AdaptLight:
                 self.led_controller.start_loading_animation(color=(255, 255, 255), debug=self.debug)
 
             # Stop recording and transcribe
+            import time
+            if self.verbose:
+                print("\n" + "=" * 60)
+                print("📝 TRANSCRIPTION")
+                print("=" * 60)
+
+            transcribe_start = time.time()
             transcribed_text = self.voice_input.stop_recording()
+            transcribe_time = time.time() - transcribe_start
+
             if transcribed_text:
                 print(f"Transcribed: {transcribed_text}")
+                if self.verbose:
+                    print(f"⏱️  Transcription time: {transcribe_time:.2f}s")
+                    print("=" * 60)
                 self.handle_voice_command(transcribed_text)
+            else:
+                if self.verbose:
+                    print("❌ No transcription result")
+                    print(f"⏱️  Transcription time: {transcribe_time:.2f}s")
         else:
             print("\nStarting recording... Speak now!")
             self.is_recording = True
+
+            # Set state to off before starting voice reactive mode
+            if self.state_machine:
+                self.state_machine.set_state("off")
 
             # Start voice reactive light in callback mode (no standalone stream)
             if self.voice_reactive:
@@ -852,9 +888,10 @@ def main():
     import argparse
     parser = argparse.ArgumentParser(description='AdaptLight - Voice-Controlled Smart Lamp')
     parser.add_argument('--debug', action='store_true', help='Enable debug output (FPS timing for animations)')
+    parser.add_argument('--verbose', '-v', action='store_true', help='Enable verbose output (transcription, timing, agent turns)')
     args = parser.parse_args()
 
-    app = AdaptLight(debug=args.debug)
+    app = AdaptLight(debug=args.debug, verbose=args.verbose)
     app.initialize()
     app.run()
 

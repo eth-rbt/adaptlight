@@ -108,14 +108,17 @@ Variables: {json.dumps(variables, indent=2)}"""
 
         system_prompt = self._build_system_prompt()
 
+        import time
+
         for turn in range(self.max_turns):
             if self.verbose:
-                print(f"\n{'='*60}")
-                print(f"Turn {turn + 1}/{self.max_turns}")
-                print(f"{'='*60}")
+                print(f"\n{'─'*60}")
+                print(f"🔄 Turn {turn + 1}/{self.max_turns}")
+                print(f"{'─'*60}")
 
             try:
                 # Call Claude with tools
+                turn_start = time.time()
                 response = self.client.messages.create(
                     model=self.model,
                     max_tokens=4096,
@@ -123,9 +126,10 @@ Variables: {json.dumps(variables, indent=2)}"""
                     messages=messages,
                     tools=self.tools.get_tool_definitions()
                 )
+                api_time = time.time() - turn_start
 
                 if self.verbose:
-                    print(f"Stop reason: {response.stop_reason}")
+                    print(f"⏱️  API call: {api_time:.2f}s | Stop: {response.stop_reason}")
 
                 # Process response content
                 assistant_content = []
@@ -134,23 +138,38 @@ Variables: {json.dumps(variables, indent=2)}"""
                 for block in response.content:
                     if block.type == "text":
                         if self.verbose:
-                            print(f"Claude: {block.text}")
+                            print(f"💭 Thinking: {block.text}")
                         assistant_content.append(block)
 
                     elif block.type == "tool_use":
                         if self.verbose:
-                            print(f"Tool call: {block.name}({json.dumps(block.input)})")
+                            # Pretty print tool call
+                            input_str = json.dumps(block.input, indent=2)
+                            if len(input_str) > 200:
+                                input_str = input_str[:200] + "..."
+                            print(f"🔧 Tool: {block.name}")
+                            print(f"   Input: {input_str}")
 
                         # Execute the tool
+                        tool_start = time.time()
                         result = await self.tools.execute(block.name, block.input)
+                        tool_time = time.time() - tool_start
 
                         if self.verbose:
-                            print(f"Result: {json.dumps(result)}")
+                            result_str = json.dumps(result)
+                            if len(result_str) > 200:
+                                result_str = result_str[:200] + "..."
+                            print(f"   Result: {result_str}")
+                            print(f"   ⏱️  Tool exec: {tool_time:.3f}s")
 
                         assistant_content.append(block)
 
                         # Check if done
                         if result.get("done"):
+                            if self.verbose:
+                                print(f"✅ Agent finished")
+                            # Run safety check before returning
+                            self._run_safety_check()
                             return result.get("message", "Done")
 
                         tool_results.append({
@@ -168,6 +187,8 @@ Variables: {json.dumps(variables, indent=2)}"""
                 else:
                     # No tool calls and stop_reason is end_turn - extract message
                     if response.stop_reason == "end_turn":
+                        # Run safety check before returning
+                        self._run_safety_check()
                         for block in response.content:
                             if block.type == "text":
                                 return block.text
@@ -178,7 +199,17 @@ Variables: {json.dumps(variables, indent=2)}"""
                     print(f"Error: {e}")
                 return f"Error: {str(e)}"
 
+        # Run safety check even on max turns
+        self._run_safety_check()
         return f"Max turns ({self.max_turns}) reached. The request may be too complex."
+
+    def _run_safety_check(self):
+        """Run safety check to ensure all states have exit rules."""
+        result = self.tools.run_safety_check()
+        if self.verbose and result.get("rules_added", 0) > 0:
+            print(f"🛡️  Safety check: Added {result['rules_added']} exit rule(s)")
+            for rule in result.get("auto_added_rules", []):
+                print(f"   → {rule}")
 
     def run_sync(self, user_input: str) -> str:
         """

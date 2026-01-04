@@ -986,3 +986,49 @@ class ToolRegistry:
             "question": question,
             "message": f"Asking user: {question}"
         }
+
+    # Safety check - runs at the end of the agent loop
+
+    def run_safety_check(self) -> Dict:
+        """
+        Run safety checks after agent completes.
+
+        Ensures all states have exit rules so users don't get stuck.
+        Auto-adds button_click → off rules where needed.
+
+        Returns:
+            Dict with safety check results and any auto-added rules
+        """
+        if not self.state_machine:
+            return {"success": True, "message": "No state machine configured"}
+
+        # Get all states and rules
+        all_states = self.state_machine.states.get_states()
+        all_rules = self.state_machine.get_rules()
+
+        # Find states that have no exit rules
+        states_with_exits = set()
+        for rule in all_rules:
+            states_with_exits.add(rule.state1)
+
+        # Check each state (except 'off' which doesn't need an exit)
+        auto_added_rules = []
+        for state in all_states:
+            if state.name == "off":
+                continue
+
+            if state.name not in states_with_exits:
+                # Auto-add button_click → off as safety net
+                self.state_machine.add_rule({
+                    "from": state.name,
+                    "on": "button_click",
+                    "to": "off"
+                })
+                auto_added_rules.append(f"{state.name} --[button_click]--> off")
+                print(f"⚠️  Safety: Auto-added exit rule: {state.name} --[button_click]--> off")
+
+        return {
+            "success": True,
+            "auto_added_rules": auto_added_rules,
+            "rules_added": len(auto_added_rules)
+        }

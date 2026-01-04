@@ -169,7 +169,7 @@ class CobLed:
             self.recording_thread.join(timeout=0.5)
         self.recording_thread = None
 
-    def start_loading_animation(self, color=(255, 255, 255), speed=0.01, period=5.0, debug=False):
+    def start_loading_animation(self, color=(255, 255, 255), speed=0.01, period=2.0, debug=False):
         """Soft breathing (sine) loading animation."""
         import math
 
@@ -184,7 +184,7 @@ class CobLed:
                 loop_start = time.time()
                 elapsed = loop_start - start
                 phase = (elapsed % period) / period
-                brightness_factor = 0.2 + 0.8 * (math.sin(2 * math.pi * phase) + 1) / 2
+                brightness_factor = 0.4 + 0.6 * (math.sin(2 * math.pi * phase) + 1) / 2
                 r = int(color[0] * brightness_factor)
                 g = int(color[1] * brightness_factor)
                 b = int(color[2] * brightness_factor)

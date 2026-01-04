@@ -63,8 +63,8 @@ class VoiceReactiveLight:
         self.selected_device = None
 
         # Amplitude settings
-        self.min_amplitude = 100  # Noise floor
-        self.max_amplitude = 5000  # Max RMS for full brightness
+        self.min_amplitude = 3000  # Noise floor
+        self.max_amplitude = 30000  # Max RMS for full brightness (higher = less saturation)
 
         # Smoothing state
         self.current_brightness = 0
