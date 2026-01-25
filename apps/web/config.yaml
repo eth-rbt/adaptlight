@@ -1,0 +1,26 @@
+# AdaptLight Web Configuration
+
+# Brain settings
+brain:
+  mode: agent
+  model: claude-haiku-4-5-20251001
+  prompt_variant: examples
+  max_turns: 10
+  verbose: false
+
+# API keys (loaded from environment or set here)
+anthropic:
+  api_key: ${ANTHROPIC_API_KEY}
+
+openai:
+  api_key: ${OPENAI_API_KEY}
+
+# Server settings
+server:
+  host: 0.0.0.0
+  port: 3000
+  debug: false
+
+# Storage
+storage:
+  dir: data/storage

@@ -1,0 +1,45 @@
+[project]
+name = "adaptlight"
+version = "0.1.0"
+description = "AdaptLight - Voice-controlled smart lighting with AI state machine"
+requires-python = ">=3.9"
+
+dependencies = [
+    "anthropic",
+    "openai",
+    "pyyaml",
+    "requests",
+]
+
+[project.optional-dependencies]
+raspi = [
+    "RPi.GPIO",
+    "rpi_ws281x",
+    "pyaudio",
+    "gpiozero",
+    "pigpio",
+]
+web = [
+    "flask",
+    "flask-cors",
+]
+eval = [
+    "pytest",
+]
+dev = [
+    "pytest",
+    "black",
+    "ruff",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["brain*", "apps*"]
+
+[tool.setuptools.package-data]
+"brain.docs" = ["*.md"]
+"brain.prompts" = ["**/*.py"]
+"apps.eval" = ["cases/*.yaml"]
