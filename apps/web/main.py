@@ -96,6 +96,7 @@ def create_app(config_path: str = None) -> Flask:
                 'tool_calls': result.tool_calls,
                 'timing': result.timing,
                 'run_id': result.run_id,
+                'agent_steps': result.agent_steps,
             })
         except Exception as e:
             return jsonify({

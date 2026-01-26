@@ -138,6 +138,21 @@ class AdaptLightRaspi:
                 )
                 self.record_button.on_click = self._handle_record_button
 
+            # Initialize light_states globals
+            from .output.light_states import set_led_controller, set_state_machine, set_voice_reactive
+            set_led_controller(self.led)
+            set_state_machine(self.smgen.state_machine)
+
+            # Initialize voice reactive controller
+            if self.config['voice'].get('reactive_enabled', True):
+                try:
+                    from .voice.reactive import VoiceReactiveLight
+                    self.voice_reactive = VoiceReactiveLight(self.led)
+                    set_voice_reactive(self.voice_reactive)
+                    print("Voice reactive controller initialized")
+                except Exception as e:
+                    print(f"Voice reactive init failed: {e}")
+
             print("Hardware initialized")
 
         except Exception as e:
@@ -245,9 +260,11 @@ class AdaptLightRaspi:
 
         try:
             from .output.light_states import execute_unified_state
-            execute_unified_state(state, self.led, self.smgen.state_machine)
+            execute_unified_state(state)
         except Exception as e:
             print(f"State execution error: {e}")
+            import traceback
+            traceback.print_exc()
             # Fallback to simple color
             r = state.get('r', 0)
             g = state.get('g', 0)

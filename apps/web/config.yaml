@@ -3,7 +3,7 @@
 # Brain settings
 brain:
   mode: agent
-  model: claude-haiku-4-5-20251001
+  model: claude-sonnet-4-5-20250929 #claude-haiku-4-5-20251001
   prompt_variant: examples
   max_turns: 10
   verbose: false

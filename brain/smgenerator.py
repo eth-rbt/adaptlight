@@ -29,6 +29,7 @@ class SMResult:
     timing: Dict[str, float] = field(default_factory=dict)
     error: Optional[str] = None
     run_id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
+    agent_steps: List[Dict[str, Any]] = field(default_factory=list)
 
     def __bool__(self) -> bool:
         return self.success
@@ -200,9 +201,10 @@ class SMgenerator:
 
         try:
             # Run the processor
+            agent_steps = []
             if self.mode == 'agent':
                 # Agent mode is async
-                message = asyncio.run(self._run_agent(text, run_id, timing))
+                message, agent_steps = asyncio.run(self._run_agent(text, run_id, timing))
             else:
                 # Parser mode is sync
                 message = self._run_parser(text, run_id, timing)
@@ -216,7 +218,8 @@ class SMgenerator:
                 message=message,
                 tool_calls=self._last_tool_calls,
                 timing=timing,
-                run_id=run_id
+                run_id=run_id,
+                agent_steps=agent_steps
             )
 
             self._emit('processing_end', {
@@ -244,15 +247,19 @@ class SMgenerator:
 
             raise
 
-    async def _run_agent(self, text: str, run_id: str, timing: Dict) -> str:
-        """Run agent processor with hook emissions."""
-        # The AgentExecutor.run() method handles the full loop
-        # For now, we'll call it directly
-        # TODO: Modify AgentExecutor to accept event callbacks for finer-grained hooks
+    async def _run_agent(self, text: str, run_id: str, timing: Dict) -> tuple:
+        """Run agent processor with hook emissions.
+
+        Returns:
+            tuple: (message, agent_steps)
+        """
         agent_start = time.time()
         result = await self.processor.run(text)
         timing['agent_ms'] = (time.time() - agent_start) * 1000
-        return result
+
+        # Get agent steps for verbose output
+        steps = self.processor.get_steps() if hasattr(self.processor, 'get_steps') else []
+        return result, steps
 
     def _run_parser(self, text: str, run_id: str, timing: Dict) -> str:
         """Run parser processor with hook emissions."""
@@ -367,9 +374,34 @@ class SMgenerator:
 
     def get_details(self) -> Dict[str, Any]:
         """Get detailed state machine info including all states and rules."""
-        # Get all states
-        states = []
+        # Built-in default states
+        states = [
+            {
+                'name': 'off',
+                'r': 0,
+                'g': 0,
+                'b': 0,
+                'speed': None,
+                'duration_ms': None,
+                'then': None,
+                'description': 'Light off (built-in)',
+            },
+            {
+                'name': 'on',
+                'r': 255,
+                'g': 255,
+                'b': 255,
+                'speed': None,
+                'duration_ms': None,
+                'then': None,
+                'description': 'Light on (built-in)',
+            },
+        ]
+
+        # Add user-created states
         for state in self.state_machine.states.get_states():
+            # Skip if it overwrites a built-in
+            states = [s for s in states if s['name'] != state.name]
             states.append({
                 'name': state.name,
                 'r': state.r,

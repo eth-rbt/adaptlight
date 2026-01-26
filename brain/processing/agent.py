@@ -16,9 +16,22 @@ Flow:
 
 import json
 import asyncio
+from dataclasses import dataclass, asdict, field
 from typing import Dict, Any, List, Optional
 
 from brain.tools.registry import ToolRegistry
+
+
+@dataclass
+class AgentStep:
+    """A single step in agent execution."""
+    turn: int
+    step_type: str  # "thinking", "tool_call", "tool_result", "api_timing", "done"
+    content: Optional[str] = None
+    tool_name: Optional[str] = None
+    tool_input: Optional[Dict[str, Any]] = None
+    tool_result: Optional[Dict[str, Any]] = None
+    duration_ms: Optional[float] = None
 from brain.prompts.agent import get_agent_system_prompt, get_agent_system_prompt_with_examples
 
 
@@ -47,6 +60,9 @@ class AgentExecutor:
 
         # Initialize tool registry
         self.tools = ToolRegistry(state_machine, api_key=api_key)
+
+        # Step collection for verbose output
+        self.steps: List[AgentStep] = []
 
         # Initialize Claude client
         self.client = None
@@ -102,6 +118,9 @@ Variables: {json.dumps(variables, indent=2)}"""
         if not self.client:
             return "Error: Claude client not initialized. Check API key."
 
+        # Reset steps for this run
+        self.steps = []
+
         messages = [
             {"role": "user", "content": user_input}
         ]
@@ -127,6 +146,15 @@ Variables: {json.dumps(variables, indent=2)}"""
                     tools=self.tools.get_tool_definitions()
                 )
                 api_time = time.time() - turn_start
+                api_time_ms = api_time * 1000
+
+                # Record API timing step
+                self.steps.append(AgentStep(
+                    turn=turn + 1,
+                    step_type="api_timing",
+                    content=f"API call completed (stop_reason: {response.stop_reason})",
+                    duration_ms=api_time_ms
+                ))
 
                 if self.verbose:
                     print(f"⏱️  API call: {api_time:.2f}s | Stop: {response.stop_reason}")
@@ -137,11 +165,25 @@ Variables: {json.dumps(variables, indent=2)}"""
 
                 for block in response.content:
                     if block.type == "text":
+                        # Record thinking step
+                        self.steps.append(AgentStep(
+                            turn=turn + 1,
+                            step_type="thinking",
+                            content=block.text
+                        ))
                         if self.verbose:
                             print(f"💭 Thinking: {block.text}")
                         assistant_content.append(block)
 
                     elif block.type == "tool_use":
+                        # Record tool call step
+                        self.steps.append(AgentStep(
+                            turn=turn + 1,
+                            step_type="tool_call",
+                            tool_name=block.name,
+                            tool_input=block.input
+                        ))
+
                         if self.verbose:
                             # Pretty print tool call
                             input_str = json.dumps(block.input, indent=2)
@@ -154,6 +196,16 @@ Variables: {json.dumps(variables, indent=2)}"""
                         tool_start = time.time()
                         result = await self.tools.execute(block.name, block.input)
                         tool_time = time.time() - tool_start
+                        tool_time_ms = tool_time * 1000
+
+                        # Record tool result step
+                        self.steps.append(AgentStep(
+                            turn=turn + 1,
+                            step_type="tool_result",
+                            tool_name=block.name,
+                            tool_result=result,
+                            duration_ms=tool_time_ms
+                        ))
 
                         if self.verbose:
                             result_str = json.dumps(result)
@@ -166,6 +218,12 @@ Variables: {json.dumps(variables, indent=2)}"""
 
                         # Check if done
                         if result.get("done"):
+                            # Record done step
+                            self.steps.append(AgentStep(
+                                turn=turn + 1,
+                                step_type="done",
+                                content=result.get("message", "Done")
+                            ))
                             if self.verbose:
                                 print(f"✅ Agent finished")
                             # Run safety check before returning
@@ -210,6 +268,10 @@ Variables: {json.dumps(variables, indent=2)}"""
             print(f"🛡️  Safety check: Added {result['rules_added']} exit rule(s)")
             for rule in result.get("auto_added_rules", []):
                 print(f"   → {rule}")
+
+    def get_steps(self) -> List[Dict[str, Any]]:
+        """Get steps as dicts for JSON serialization."""
+        return [asdict(step) for step in self.steps]
 
     def run_sync(self, user_input: str) -> str:
         """
