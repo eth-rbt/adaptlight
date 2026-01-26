@@ -14,7 +14,12 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
 
 # Add parent directories to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+ROOT_DIR = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(ROOT_DIR))
+
+# Load .env file from root directory
+from dotenv import load_dotenv
+load_dotenv(ROOT_DIR / '.env')
 
 from brain import SMgenerator, SMResult
 

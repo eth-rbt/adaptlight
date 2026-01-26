@@ -166,7 +166,106 @@
             height: 18px;
             margin-top: 5px;
         }
+        .details-panel {
+            background: #fff;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+            margin-top: 20px;
+            overflow: hidden;
+        }
+        .details-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            background: #f8fafc;
+            border-bottom: 1px solid #e2e8f0;
+            cursor: pointer;
+            user-select: none;
+        }
+        .details-header:hover {
+            background: #f1f5f9;
+        }
+        .details-header h3 {
+            font-size: 14px;
+            font-weight: 600;
+            color: #475569;
+            margin: 0;
+        }
+        .details-toggle {
+            font-size: 12px;
+            color: #94a3b8;
+        }
+        .details-content {
+            padding: 16px;
+            display: none;
+        }
+        .details-content.open {
+            display: block;
+        }
+        .details-section {
+            margin-bottom: 16px;
+        }
+        .details-section:last-child {
+            margin-bottom: 0;
+        }
+        .details-section h4 {
+            font-size: 12px;
+            font-weight: 600;
+            color: #64748b;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .state-item, .rule-item {
+            background: #f8fafc;
+            padding: 8px 12px;
+            border-radius: 6px;
+            margin-bottom: 6px;
+            font-size: 13px;
+            font-family: 'SF Mono', Monaco, monospace;
+        }
+        .state-item.current {
+            background: #dbeafe;
+            border: 1px solid #93c5fd;
+        }
+        .state-name {
+            font-weight: 600;
+            color: #1e293b;
+        }
+        .state-color {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border-radius: 3px;
+            vertical-align: middle;
+            margin-right: 6px;
+            border: 1px solid rgba(0,0,0,0.1);
+        }
+        .state-params {
+            color: #64748b;
+            font-size: 11px;
+            margin-top: 4px;
+        }
+        .rule-arrow {
+            color: #94a3b8;
+        }
+        .rule-trigger {
+            color: #0ea5e9;
+            font-weight: 500;
+        }
+        .rule-condition {
+            color: #8b5cf6;
+            font-size: 11px;
+            margin-top: 4px;
+        }
+        .empty-message {
+            color: #94a3b8;
+            font-style: italic;
+            font-size: 13px;
+        }
     </style>
+    <script src="/static/expression.js"></script>
 </head>
 <body>
     <div class="container">
@@ -202,6 +301,27 @@
             <div class="timing" id="timing"></div>
             <div class="tools" id="tools"></div>
         </div>
+
+        <div class="details-panel">
+            <div class="details-header" onclick="toggleDetails()">
+                <h3>States & Rules</h3>
+                <span class="details-toggle" id="detailsToggle">▼ Show</span>
+            </div>
+            <div class="details-content" id="detailsContent">
+                <div class="details-section">
+                    <h4>States</h4>
+                    <div id="statesList">
+                        <div class="empty-message">No custom states defined</div>
+                    </div>
+                </div>
+                <div class="details-section">
+                    <h4>Rules</h4>
+                    <div id="rulesList">
+                        <div class="empty-message">No rules defined</div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -226,6 +346,16 @@
 
         const HOLD_THRESHOLD = 500;      // ms to trigger hold
         const DOUBLE_CLICK_WINDOW = 300; // ms window for double click
+
+        // Animation state
+        let animationId = null;
+        let animationFrame = 0;
+        let animationStartTime = 0;
+        let currentState = null;
+        let currentColor = { r: 0, g: 0, b: 0 };
+
+        // Details panel state
+        let detailsOpen = false;
 
         // Button event handlers
         mainButton.addEventListener('mousedown', handlePressStart);
@@ -299,18 +429,65 @@
         function updateLight(state) {
             if (!state) return;
 
-            const r = typeof state.r === 'number' ? state.r : 0;
-            const g = typeof state.g === 'number' ? state.g : 0;
-            const b = typeof state.b === 'number' ? state.b : 0;
+            // Stop any existing animation
+            stopAnimation();
 
+            // Store current state
+            currentState = state;
+            stateNameEl.textContent = state.name || 'unknown';
+
+            // Check if this is an animated state
+            if (ExpressionEvaluator.isAnimated(state)) {
+                startAnimation(state);
+            } else {
+                // Static state - evaluate once
+                const r = typeof state.r === 'number' ? state.r : ExpressionEvaluator.evaluate(state.r, currentColor);
+                const g = typeof state.g === 'number' ? state.g : ExpressionEvaluator.evaluate(state.g, currentColor);
+                const b = typeof state.b === 'number' ? state.b : ExpressionEvaluator.evaluate(state.b, currentColor);
+                setLightColor(r, g, b);
+            }
+        }
+
+        function setLightColor(r, g, b) {
+            currentColor = { r, g, b };
             lightEl.style.background = `rgb(${r}, ${g}, ${b})`;
 
             // Glow effect based on brightness
             const brightness = (r + g + b) / 3;
             const glowIntensity = Math.max(20, brightness / 255 * 80);
             lightEl.style.boxShadow = `0 0 ${glowIntensity}px rgba(${r}, ${g}, ${b}, 0.7)`;
+        }
 
-            stateNameEl.textContent = state.name || 'unknown';
+        function startAnimation(state) {
+            animationFrame = 0;
+            animationStartTime = performance.now();
+
+            const speed = state.speed || 50; // ms per frame
+
+            function animate() {
+                const elapsed_ms = performance.now() - animationStartTime;
+                const { r, g, b } = ExpressionEvaluator.computeFrame(
+                    state,
+                    animationFrame,
+                    elapsed_ms,
+                    currentColor
+                );
+
+                setLightColor(r, g, b);
+                animationFrame++;
+
+                // Schedule next frame based on speed
+                animationId = setTimeout(animate, speed);
+            }
+
+            animate();
+        }
+
+        function stopAnimation() {
+            if (animationId) {
+                clearTimeout(animationId);
+                animationId = null;
+            }
         }
 
         async function fetchState() {
@@ -354,6 +531,9 @@
                     } else {
                         toolsEl.textContent = '';
                     }
+
+                    // Refresh details panel if open
+                    if (detailsOpen) fetchDetails();
                 } else {
                     responseEl.className = 'response error';
                     responseTextEl.textContent = data.error || 'Command failed.';
@@ -382,6 +562,7 @@
 
                 if (data.success) {
                     updateLight(data.state);
+                    if (detailsOpen) fetchDetails();
                 }
             } catch (e) {
                 console.error('Trigger failed:', e);
@@ -399,6 +580,7 @@
                     responseEl.className = 'response success';
                     timingEl.textContent = '';
                     toolsEl.textContent = '';
+                    if (detailsOpen) fetchDetails();
                 }
             } catch (e) {
                 responseEl.className = 'response error';
@@ -411,6 +593,87 @@
             responseTextEl.style.display = loading ? 'none' : 'block';
             sendBtn.disabled = loading;
             inputEl.disabled = loading;
+        }
+
+        // Details panel
+        const detailsContent = document.getElementById('detailsContent');
+        const detailsToggle = document.getElementById('detailsToggle');
+        const statesList = document.getElementById('statesList');
+        const rulesList = document.getElementById('rulesList');
+
+        function toggleDetails() {
+            detailsOpen = !detailsOpen;
+            detailsContent.classList.toggle('open', detailsOpen);
+            detailsToggle.textContent = detailsOpen ? '▲ Hide' : '▼ Show';
+            if (detailsOpen) {
+                fetchDetails();
+            }
+        }
+
+        async function fetchDetails() {
+            try {
+                const res = await fetch('/api/details');
+                const data = await res.json();
+                if (data.success) {
+                    renderStates(data.states, data.current_state);
+                    renderRules(data.rules);
+                }
+            } catch (e) {
+                console.error('Failed to fetch details:', e);
+            }
+        }
+
+        function renderStates(states, currentState) {
+            if (!states || states.length === 0) {
+                statesList.innerHTML = '<div class="empty-message">No custom states defined</div>';
+                return;
+            }
+
+            statesList.innerHTML = states.map(s => {
+                const isCurrent = s.name === currentState;
+                const r = typeof s.r === 'number' ? s.r : 128;
+                const g = typeof s.g === 'number' ? s.g : 128;
+                const b = typeof s.b === 'number' ? s.b : 128;
+
+                let params = [];
+                if (s.speed) params.push(`speed: ${s.speed}ms`);
+                if (s.duration_ms) params.push(`duration: ${s.duration_ms}ms → ${s.then}`);
+                if (typeof s.r === 'string') params.push('animated');
+
+                return `
+                    <div class="state-item ${isCurrent ? 'current' : ''}">
+                        <span class="state-color" style="background: rgb(${r}, ${g}, ${b})"></span>
+                        <span class="state-name">${s.name}</span>
+                        ${isCurrent ? ' (current)' : ''}
+                        ${params.length ? `<div class="state-params">${params.join(' · ')}</div>` : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function renderRules(rules) {
+            if (!rules || rules.length === 0) {
+                rulesList.innerHTML = '<div class="empty-message">No rules defined</div>';
+                return;
+            }
+
+            rulesList.innerHTML = rules.map(r => {
+                let extra = [];
+                if (r.condition) extra.push(`if: ${r.condition}`);
+                if (r.action) extra.push(`do: ${r.action}`);
+                if (r.pipeline) extra.push(`pipeline: ${r.pipeline}`);
+
+                return `
+                    <div class="rule-item">
+                        <span class="state-name">${r.from}</span>
+                        <span class="rule-arrow"> → </span>
+                        <span class="rule-trigger">[${r.on}]</span>
+                        <span class="rule-arrow"> → </span>
+                        <span class="state-name">${r.to}</span>
+                        ${extra.length ? `<div class="rule-condition">${extra.join(' · ')}</div>` : ''}
+                    </div>
+                `;
+            }).join('');
         }
     </script>
 </body>

@@ -9,7 +9,12 @@ import sys
 from pathlib import Path
 
 # Add parent directories to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+ROOT_DIR = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(ROOT_DIR))
+
+# Load .env file from root directory
+from dotenv import load_dotenv
+load_dotenv(ROOT_DIR / '.env')
 
 import yaml
 from flask import Flask, request, jsonify, send_from_directory
@@ -139,6 +144,21 @@ def create_app(config_path: str = None) -> Flask:
             return jsonify({
                 'success': True,
                 'summary': summary,
+            })
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'error': str(e),
+            }), 500
+
+    @app.route('/api/details', methods=['GET'])
+    def get_details():
+        """Get detailed states and rules."""
+        try:
+            details = smgen.get_details()
+            return jsonify({
+                'success': True,
+                **details,
             })
         except Exception as e:
             return jsonify({

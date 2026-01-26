@@ -364,3 +364,39 @@ class SMgenerator:
             'states_count': len(self.state_machine.states.get_states()),
             'tools_count': len(self.tools.tools),
         }
+
+    def get_details(self) -> Dict[str, Any]:
+        """Get detailed state machine info including all states and rules."""
+        # Get all states
+        states = []
+        for state in self.state_machine.states.get_states():
+            states.append({
+                'name': state.name,
+                'r': state.r,
+                'g': state.g,
+                'b': state.b,
+                'speed': state.speed,
+                'duration_ms': state.duration_ms,
+                'then': state.then,
+                'description': state.description,
+            })
+
+        # Get all rules
+        rules = []
+        for rule in self.state_machine.rules:
+            rules.append({
+                'from': rule.state1,
+                'on': rule.transition,
+                'to': rule.state2,
+                'condition': rule.condition,
+                'action': rule.action,
+                'priority': rule.priority,
+                'enabled': rule.enabled,
+                'pipeline': rule.pipeline,
+            })
+
+        return {
+            'current_state': self.state_machine.get_state(),
+            'states': states,
+            'rules': rules,
+        }
