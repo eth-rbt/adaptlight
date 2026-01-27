@@ -103,8 +103,8 @@ class AdaptLightRaspi:
             hw_config = self.config['hardware']
 
             if hw_config['led_type'] == 'cob':
-                from .hardware.cobled.cobled import COBLEDController
-                self.led = COBLEDController(
+                from .hardware.cobled.cobled import CobLed
+                self.led = CobLed(
                     red_pin=hw_config['cob_red_pin'],
                     green_pin=hw_config['cob_green_pin'],
                     blue_pin=hw_config['cob_blue_pin'],
@@ -121,22 +121,24 @@ class AdaptLightRaspi:
 
             from .hardware.button_controller import ButtonController
             self.button = ButtonController(
-                pin=hw_config['button_pin'],
-                double_click_threshold=self.config['button']['double_click_threshold'],
-                hold_threshold=self.config['button']['hold_threshold'],
+                button_pin=hw_config['button_pin'],
                 bounce_time=self.config['button']['bounce_time']
             )
-            self.button.on_click = lambda: self._handle_button('button_click')
+            self.button.set_config(
+                double_click_threshold=self.config['button']['double_click_threshold'],
+                hold_threshold=self.config['button']['hold_threshold']
+            )
+            self.button.on_single_click = lambda: self._handle_button('button_click')
             self.button.on_double_click = lambda: self._handle_button('button_double_click')
             self.button.on_hold = lambda: self._handle_button('button_hold')
             self.button.on_release = lambda: self._handle_button('button_release')
 
             if hw_config.get('record_button_pin'):
                 self.record_button = ButtonController(
-                    pin=hw_config['record_button_pin'],
+                    button_pin=hw_config['record_button_pin'],
                     bounce_time=self.config['button']['bounce_time']
                 )
-                self.record_button.on_click = self._handle_record_button
+                self.record_button.on_single_click = self._handle_record_button
 
             # Initialize light_states globals
             from .output.light_states import set_led_controller, set_state_machine, set_voice_reactive
@@ -168,7 +170,7 @@ class AdaptLightRaspi:
             from .voice.input import VoiceInput
             self.voice = VoiceInput(
                 stt_provider=self.config['voice']['stt_provider'],
-                api_key=self.config['replicate'].get('api_token')
+                replicate_token=self.config['replicate'].get('api_token')
             )
             print("Voice input initialized")
         except Exception as e:
@@ -245,11 +247,13 @@ class AdaptLightRaspi:
             # Start recording
             self.is_recording = True
 
-            # Start voice reactive if available
+            # Start voice reactive in non-standalone mode (uses VoiceInput's audio stream)
+            audio_callback = None
             if self.voice_reactive:
-                self.voice_reactive.start()
+                self.voice_reactive.start(standalone=False)
+                audio_callback = self.voice_reactive.process_audio_data
 
-            self.voice.start_recording()
+            self.voice.start_recording(audio_callback=audio_callback)
             print("Recording... Speak now!")
 
     def _execute_state(self, state: dict):

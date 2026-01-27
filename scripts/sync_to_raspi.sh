@@ -10,8 +10,8 @@
 set -e
 
 # Configuration
-RASPI_HOST="${RASPI_HOST:-pi@raspberrypi.local}"
-RASPI_PATH="${RASPI_PATH:-/home/pi/adaptlight}"
+RASPI_HOST="${RASPI_HOST:-lamp@100.108.65.92}"
+RASPI_PATH="${RASPI_PATH:-/home/lamp/adaptlight}"
 
 echo "=============================================="
 echo "AdaptLight Sync to Raspberry Pi"
@@ -65,5 +65,8 @@ echo ""
 echo "First-time setup:"
 echo "  ssh $RASPI_HOST"
 echo "  cd $RASPI_PATH"
-echo "  pip install -e ."
-echo "  pip install RPi.GPIO rpi_ws281x pyaudio gpiozero pyyaml anthropic openai"
+echo "  python3 -m venv venv"
+echo "  source venv/bin/activate"
+echo "  pip install -r raspi/requirements.txt"
+echo ""
+echo "Don't forget to create .env with your API keys!"

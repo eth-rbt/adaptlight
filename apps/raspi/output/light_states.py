@@ -6,8 +6,8 @@ use the same parameters (r, g, b, speed) and a single execution function.
 Static states have speed=None, animated states have speed in milliseconds.
 """
 
-from hardware.led_controller import LEDController
-from utils.expression_evaluator import evaluate_color_expression, create_safe_expression_function
+from ..hardware.led_controller import LEDController
+from brain.utils.expression_evaluator import evaluate_color_expression, create_safe_expression_function
 import threading
 import time
 
