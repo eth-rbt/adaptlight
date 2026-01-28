@@ -1,0 +1,15 @@
+# AdaptLight Web Dependencies
+# For Railway/Heroku deployment
+
+# Web server
+flask>=3.0.0
+gunicorn>=21.0.0
+
+# AI
+anthropic>=0.18.0
+openai>=1.0.0
+
+# Config & Utils
+pyyaml>=6.0
+python-dotenv>=1.0.0
+requests>=2.28.0
