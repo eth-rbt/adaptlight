@@ -2,8 +2,6 @@
 builder = "nixpacks"
 
 [deploy]
-startCommand = "gunicorn 'apps.web.main:create_app()' --bind 0.0.0.0:$PORT"
-healthcheckPath = "/api/state"
-healthcheckTimeout = 30
+startCommand = "gunicorn wsgi:app --bind 0.0.0.0:$PORT"
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
