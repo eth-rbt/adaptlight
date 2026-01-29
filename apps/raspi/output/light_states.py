@@ -15,7 +15,6 @@ import time
 # Global references (set by main.py)
 led_controller: LEDController = None
 state_machine_ref = None
-voice_reactive_controller = None
 
 # Duration timer for states with duration_ms
 _duration_timer = None
@@ -31,12 +30,6 @@ def set_state_machine(machine):
     """Set the global state machine instance."""
     global state_machine_ref
     state_machine_ref = machine
-
-
-def set_voice_reactive(controller):
-    """Set the global voice reactive light controller."""
-    global voice_reactive_controller
-    voice_reactive_controller = controller
 
 
 def _cancel_duration_timer():
@@ -99,39 +92,10 @@ def execute_unified_state(params):
     # Cancel any existing duration timer (new state entry cancels old timers)
     _cancel_duration_timer()
 
-    # Voice reactive handling: start/stop the shared voice-reactive loop
-    voice_reactive_config = params.get('voice_reactive') if params else None
-    reactive_enabled = bool(voice_reactive_config and voice_reactive_config.get('enabled'))
+    # Note: Voice reactive lighting is now handled separately by the NeoPixel strip
+    # via the reactive_led controller in main.py. This module only handles COB LED states.
 
-    if voice_reactive_controller:
-        if reactive_enabled:
-            vr = voice_reactive_config or {}
-
-            # Configure the reactive light before starting
-            color = vr.get('color')
-            if color and len(color) == 3:
-                voice_reactive_controller.set_color(tuple(color))
-            elif params:
-                # Fall back to state RGB so the loop uses the same palette
-                fallback = (params.get('r', 0), params.get('g', 0), params.get('b', 0))
-                voice_reactive_controller.set_color(tuple(fallback))
-
-            if vr.get('smoothing_alpha') is not None:
-                voice_reactive_controller.set_smoothing(vr.get('smoothing_alpha'))
-
-            voice_reactive_controller.set_amplitude_range(
-                vr.get('min_amplitude'),
-                vr.get('max_amplitude')
-            )
-
-            voice_reactive_controller.start()
-        else:
-            # Stop if we leave a reactive state
-            if voice_reactive_controller.is_running():
-                voice_reactive_controller.stop()
-
-    # Voice-reactive mode owns brightness; treat rest as static setup
-    speed = params.get('speed') if not reactive_enabled else None
+    speed = params.get('speed')
 
     if speed is None:
         # Static color mode

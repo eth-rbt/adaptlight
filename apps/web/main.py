@@ -20,6 +20,10 @@ import yaml
 from flask import Flask, request, jsonify, send_from_directory
 from brain import SMgenerator
 
+# Add web app directory to path for local imports
+sys.path.insert(0, str(Path(__file__).parent))
+import supabase_client
+
 
 def load_config(config_path: str = None) -> dict:
     """Load configuration from YAML file."""
@@ -83,12 +87,33 @@ def create_app(config_path: str = None) -> Flask:
         """Process user input text."""
         data = request.get_json()
         text = data.get('text', '')
+        user_id = data.get('user_id', 'anonymous')
 
         if not text:
             return jsonify({'error': 'No text provided'}), 400
 
         try:
             result = smgen.process(text)
+
+            # Get full state machine snapshot (all states and rules)
+            details = smgen.get_details()
+
+            # Log command session with full snapshot to Supabase
+            session_id = supabase_client.log_command_session(
+                user_id=user_id,
+                command=text,
+                response_message=result.message,
+                success=result.success,
+                current_state=result.state.get('name') if result.state else None,
+                current_state_data=result.state,
+                all_states=details.get('states', []),
+                all_rules=details.get('rules', []),
+                tool_calls=result.tool_calls,
+                agent_steps=result.agent_steps,
+                timing_ms=result.timing.get('total_ms') if result.timing else None,
+                run_id=result.run_id
+            )
+
             return jsonify({
                 'success': result.success,
                 'state': result.state,
@@ -97,6 +122,7 @@ def create_app(config_path: str = None) -> Flask:
                 'timing': result.timing,
                 'run_id': result.run_id,
                 'agent_steps': result.agent_steps,
+                'session_id': session_id,  # For feedback submission
             })
         except Exception as e:
             return jsonify({
@@ -106,7 +132,7 @@ def create_app(config_path: str = None) -> Flask:
 
     @app.route('/api/trigger', methods=['POST'])
     def trigger():
-        """Trigger a state machine event."""
+        """Trigger a state machine event (button presses - not logged)."""
         data = request.get_json()
         event = data.get('event', 'button_click')
 
@@ -169,12 +195,87 @@ def create_app(config_path: str = None) -> Flask:
 
     @app.route('/api/reset', methods=['POST'])
     def reset():
-        """Reset the state machine generator."""
+        """Reset the state machine generator (not logged)."""
         try:
             smgen.reset()
+            state = smgen.get_state()
             return jsonify({
                 'success': True,
-                'state': smgen.get_state(),
+                'state': state,
+            })
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'error': str(e),
+            }), 500
+
+    @app.route('/api/feedback', methods=['POST'])
+    def submit_feedback():
+        """Submit feedback for a command session."""
+        data = request.get_json()
+        session_id = data.get('session_id')
+        feedback = data.get('feedback', '')
+        rating = data.get('rating')  # Optional 1-5
+
+        if not session_id:
+            return jsonify({'error': 'No session_id provided'}), 400
+
+        if not feedback:
+            return jsonify({'error': 'No feedback provided'}), 400
+
+        try:
+            success = supabase_client.submit_feedback(
+                session_id=session_id,
+                feedback=feedback,
+                rating=rating
+            )
+            return jsonify({
+                'success': success,
+            })
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'error': str(e),
+            }), 500
+
+    @app.route('/api/quick-feedback', methods=['POST'])
+    def submit_quick_feedback():
+        """Submit quick feedback (worked/didn't work) for a command session."""
+        data = request.get_json()
+        session_id = data.get('session_id')
+        worked = data.get('worked')
+
+        if not session_id:
+            return jsonify({'error': 'No session_id provided'}), 400
+
+        if worked is None:
+            return jsonify({'error': 'No worked value provided'}), 400
+
+        try:
+            success = supabase_client.submit_quick_feedback(
+                session_id=session_id,
+                worked=worked
+            )
+            return jsonify({
+                'success': success,
+            })
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'error': str(e),
+            }), 500
+
+    @app.route('/api/history', methods=['GET'])
+    def get_history():
+        """Get command sessions for a user."""
+        user_id = request.args.get('user_id', 'anonymous')
+        limit = request.args.get('limit', 50, type=int)
+
+        try:
+            sessions = supabase_client.get_user_sessions(user_id, limit)
+            return jsonify({
+                'success': True,
+                'sessions': sessions,
             })
         except Exception as e:
             return jsonify({

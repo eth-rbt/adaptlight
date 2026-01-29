@@ -384,12 +384,266 @@
             font-weight: 600;
             color: #1e293b;
         }
+        /* User ID Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .modal {
+            background: #fff;
+            border-radius: 12px;
+            padding: 32px;
+            max-width: 400px;
+            width: 90%;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+        .modal h2 {
+            margin: 0 0 8px 0;
+            color: #0f172a;
+            font-size: 24px;
+        }
+        .modal p {
+            color: #64748b;
+            margin: 0 0 24px 0;
+            font-size: 14px;
+        }
+        .modal input {
+            width: 100%;
+            padding: 14px 16px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 16px;
+            margin-bottom: 16px;
+            transition: border-color 0.2s;
+        }
+        .modal input:focus {
+            outline: none;
+            border-color: #0ea5e9;
+        }
+        .modal button {
+            width: 100%;
+            padding: 14px;
+            font-size: 16px;
+            font-weight: 600;
+        }
+        .modal button:disabled {
+            background: #cbd5e1;
+        }
+        /* User badge */
+        .user-badge {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-bottom: 20px;
+            padding: 8px 16px;
+            background: #f0f9ff;
+            border: 1px solid #bae6fd;
+            border-radius: 20px;
+            font-size: 13px;
+            color: #0369a1;
+        }
+        .user-badge .user-icon {
+            font-size: 16px;
+        }
+        .user-badge .change-user {
+            margin-left: 8px;
+            color: #0ea5e9;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .user-badge .change-user:hover {
+            text-decoration: underline;
+        }
+        /* Feedback Box */
+        .feedback-box {
+            background: #fffbeb;
+            border: 1px solid #fcd34d;
+            border-radius: 8px;
+            padding: 16px;
+            margin-top: 16px;
+        }
+        .feedback-box.hidden {
+            display: none;
+        }
+        .feedback-box.submitted {
+            background: #f0fdf4;
+            border-color: #86efac;
+        }
+        .feedback-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        .feedback-header h4 {
+            font-size: 13px;
+            font-weight: 600;
+            color: #92400e;
+            margin: 0;
+        }
+        .feedback-box.submitted .feedback-header h4 {
+            color: #166534;
+        }
+        .feedback-close {
+            background: none;
+            border: none;
+            color: #94a3b8;
+            cursor: pointer;
+            font-size: 18px;
+            padding: 0;
+            line-height: 1;
+        }
+        .feedback-close:hover {
+            color: #64748b;
+            background: none;
+        }
+        .feedback-textarea {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            font-size: 14px;
+            font-family: inherit;
+            resize: vertical;
+            min-height: 60px;
+            margin-bottom: 12px;
+        }
+        .feedback-textarea:focus {
+            outline: 2px solid #f59e0b;
+            border-color: transparent;
+        }
+        .feedback-actions {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .feedback-submit {
+            background: #f59e0b;
+            padding: 8px 16px;
+            font-size: 14px;
+        }
+        .feedback-submit:hover {
+            background: #d97706;
+        }
+        .feedback-submit:disabled {
+            background: #cbd5e1;
+        }
+        .feedback-success {
+            color: #166534;
+            font-size: 14px;
+        }
+        /* Project Description */
+        .project-description {
+            background: #f0f9ff;
+            border: 1px solid #bae6fd;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 20px;
+        }
+        .project-description p {
+            color: #0369a1;
+            font-size: 14px;
+            line-height: 1.6;
+            margin: 0;
+        }
+        /* Quick Feedback Buttons */
+        .quick-feedback {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid #e2e8f0;
+        }
+        .quick-feedback-label {
+            font-size: 13px;
+            color: #64748b;
+        }
+        .feedback-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border: 2px solid #e2e8f0;
+            background: #fff;
+            cursor: pointer;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            padding: 0;
+        }
+        .feedback-btn:hover:not(:disabled) {
+            transform: scale(1.1);
+        }
+        .feedback-btn.good {
+            color: #22c55e;
+        }
+        .feedback-btn.good:hover:not(:disabled) {
+            border-color: #22c55e;
+            background: #f0fdf4;
+        }
+        .feedback-btn.bad {
+            color: #ef4444;
+        }
+        .feedback-btn.bad:hover:not(:disabled) {
+            border-color: #ef4444;
+            background: #fef2f2;
+        }
+        .feedback-btn.selected {
+            transform: scale(1.1);
+        }
+        .feedback-btn.good.selected {
+            border-color: #22c55e;
+            background: #22c55e;
+            color: #fff;
+        }
+        .feedback-btn.bad.selected {
+            border-color: #ef4444;
+            background: #ef4444;
+            color: #fff;
+        }
+        .feedback-btn:disabled {
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+        .feedback-submitted-msg {
+            font-size: 12px;
+            color: #64748b;
+            margin-left: 8px;
+        }
     </style>
     <script src="/static/expression.js"></script>
 </head>
 <body>
+    <!-- User ID Modal -->
+    <div class="modal-overlay" id="userModal" style="display: none;">
+        <div class="modal">
+            <h2>Welcome to AdaptLight</h2>
+            <p>Please enter your name or ID to get started. This helps us track your session.</p>
+            <input type="text" id="userIdInput" placeholder="Enter your name or ID..." autocomplete="off">
+            <button id="userIdSubmit" onclick="submitUserId()" disabled>Continue</button>
+        </div>
+    </div>
+
     <div class="container">
         <h1>AdaptLight</h1>
+
+        <!-- User Badge -->
+        <div class="user-badge" id="userBadge" style="display: none;">
+            <span class="user-icon">👤</span>
+            <span id="userDisplayName"></span>
+            <span class="change-user" onclick="changeUser()">change</span>
+        </div>
 
         <div class="light-container">
             <div class="light-display" id="light"></div>
@@ -402,6 +656,10 @@
 
         <div class="state-info" id="stateInfo">
             State: <span id="stateName">off</span>
+        </div>
+
+        <div class="project-description">
+            <p>This is a light bulb simulator that simulates an adaptive light that takes voice comments and inputs. Originally, the light starts with on/off - the light will turn on/off with a simple click. As you type into the comment, it will change functions and control what the button does. You can be as creative as you want.</p>
         </div>
 
         <div class="input-group">
@@ -420,6 +678,27 @@
             <div id="responseText">Ready to receive commands.</div>
             <div class="timing" id="timing"></div>
             <div class="tools" id="tools"></div>
+
+            <!-- Quick Feedback Buttons -->
+            <div class="quick-feedback" id="quickFeedback" style="display: none;">
+                <span class="quick-feedback-label">Did it work?</span>
+                <button class="feedback-btn good" id="feedbackGood" onclick="submitQuickFeedback(true)">✓</button>
+                <button class="feedback-btn bad" id="feedbackBad" onclick="submitQuickFeedback(false)">✗</button>
+                <span class="feedback-submitted-msg" id="feedbackSubmittedMsg" style="display: none;">Thanks!</span>
+            </div>
+
+            <!-- Feedback Box (appears after command) -->
+            <div class="feedback-box hidden" id="feedbackBox">
+                <div class="feedback-header">
+                    <h4 id="feedbackTitle">Not what you expected? Leave feedback:</h4>
+                    <button class="feedback-close" onclick="closeFeedback()">&times;</button>
+                </div>
+                <textarea class="feedback-textarea" id="feedbackText" placeholder="Describe what went wrong or what you expected..."></textarea>
+                <div class="feedback-actions">
+                    <button class="feedback-submit" id="feedbackSubmit" onclick="submitFeedback()">Submit Feedback</button>
+                    <span class="feedback-success hidden" id="feedbackSuccess">Thanks for your feedback!</span>
+                </div>
+            </div>
         </div>
 
         <div class="agent-steps-panel" id="agentStepsPanel" style="display: none;">
@@ -467,6 +746,66 @@
         const mainButton = document.getElementById('mainButton');
         const gestureIndicator = document.getElementById('gestureIndicator');
 
+        // User identification
+        const userModal = document.getElementById('userModal');
+        const userIdInput = document.getElementById('userIdInput');
+        const userIdSubmit = document.getElementById('userIdSubmit');
+        const userBadge = document.getElementById('userBadge');
+        const userDisplayName = document.getElementById('userDisplayName');
+        let currentUserId = null;
+
+        // Check for existing user on load
+        function initUser() {
+            const savedUserId = localStorage.getItem('adaptlight_user_id');
+            if (savedUserId) {
+                currentUserId = savedUserId;
+                showUserBadge();
+            } else {
+                showUserModal();
+            }
+        }
+
+        function showUserModal() {
+            userModal.style.display = 'flex';
+            userBadge.style.display = 'none';
+            userIdInput.value = '';
+            userIdInput.focus();
+        }
+
+        function showUserBadge() {
+            userModal.style.display = 'none';
+            userBadge.style.display = 'flex';
+            userDisplayName.textContent = currentUserId;
+        }
+
+        function submitUserId() {
+            const userId = userIdInput.value.trim();
+            if (userId) {
+                currentUserId = userId;
+                localStorage.setItem('adaptlight_user_id', userId);
+                showUserBadge();
+            }
+        }
+
+        function changeUser() {
+            showUserModal();
+        }
+
+        // Enable submit button when input has value
+        userIdInput.addEventListener('input', () => {
+            userIdSubmit.disabled = !userIdInput.value.trim();
+        });
+
+        // Submit on Enter
+        userIdInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && userIdInput.value.trim()) {
+                submitUserId();
+            }
+        });
+
+        // Initialize user on page load
+        initUser();
+
         // Gesture detection state
         let pressStartTime = 0;
         let clickCount = 0;
@@ -494,6 +833,60 @@
         const agentStepsToggle = document.getElementById('agentStepsToggle');
         const agentStepsList = document.getElementById('agentStepsList');
         const agentStepsCount = document.getElementById('agentStepsCount');
+
+        // Feedback state
+        let currentSessionId = null;
+        const feedbackBox = document.getElementById('feedbackBox');
+        const feedbackText = document.getElementById('feedbackText');
+        const feedbackSubmit = document.getElementById('feedbackSubmit');
+        const feedbackSuccess = document.getElementById('feedbackSuccess');
+        const feedbackTitle = document.getElementById('feedbackTitle');
+
+        function showFeedback(sessionId) {
+            currentSessionId = sessionId;
+            feedbackBox.classList.remove('hidden', 'submitted');
+            feedbackText.value = '';
+            feedbackText.disabled = false;
+            feedbackSubmit.disabled = false;
+            feedbackSubmit.style.display = 'inline-block';
+            feedbackSuccess.classList.add('hidden');
+            feedbackTitle.textContent = 'Not what you expected? Leave feedback:';
+        }
+
+        function closeFeedback() {
+            feedbackBox.classList.add('hidden');
+            currentSessionId = null;
+        }
+
+        async function submitFeedback() {
+            const feedback = feedbackText.value.trim();
+            if (!feedback || !currentSessionId) return;
+
+            feedbackSubmit.disabled = true;
+
+            try {
+                const res = await fetch('/api/feedback', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: currentSessionId,
+                        feedback: feedback
+                    })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    feedbackBox.classList.add('submitted');
+                    feedbackTitle.textContent = 'Feedback submitted';
+                    feedbackText.disabled = true;
+                    feedbackSubmit.style.display = 'none';
+                    feedbackSuccess.classList.remove('hidden');
+                }
+            } catch (e) {
+                console.error('Failed to submit feedback:', e);
+                feedbackSubmit.disabled = false;
+            }
+        }
 
         // Button event handlers
         mainButton.addEventListener('mousedown', handlePressStart);
@@ -644,6 +1037,11 @@
             const text = inputEl.value.trim();
             if (!text) return;
 
+            if (!currentUserId) {
+                showUserModal();
+                return;
+            }
+
             setLoading(true);
             responseEl.className = 'response';
 
@@ -651,7 +1049,7 @@
                 const res = await fetch('/api/process', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text })
+                    body: JSON.stringify({ text, user_id: currentUserId })
                 });
                 const data = await res.json();
 
@@ -670,8 +1068,22 @@
                         toolsEl.textContent = '';
                     }
 
+                    // Show quick feedback buttons
+                    if (data.session_id) {
+                        showQuickFeedback(data.session_id);
+                    } else {
+                        hideQuickFeedback();
+                    }
+
                     // Render agent steps
                     renderAgentSteps(data.agent_steps);
+
+                    // Show feedback box if we have a session_id
+                    if (data.session_id) {
+                        showFeedback(data.session_id);
+                    } else {
+                        closeFeedback();
+                    }
 
                     // Refresh details panel if open
                     if (detailsOpen) fetchDetails();
@@ -681,6 +1093,8 @@
                     timingEl.textContent = '';
                     toolsEl.textContent = '';
                     agentStepsPanel.style.display = 'none';
+                    hideQuickFeedback();
+                    closeFeedback();
                 }
             } catch (e) {
                 responseEl.className = 'response error';
@@ -688,6 +1102,8 @@
                 timingEl.textContent = '';
                 toolsEl.textContent = '';
                 agentStepsPanel.style.display = 'none';
+                hideQuickFeedback();
+                closeFeedback();
             } finally {
                 setLoading(false);
                 inputEl.value = '';
@@ -699,7 +1115,7 @@
                 const res = await fetch('/api/trigger', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ event })
+                    body: JSON.stringify({ event, user_id: currentUserId || 'anonymous' })
                 });
                 const data = await res.json();
 
@@ -713,8 +1129,16 @@
         }
 
         async function resetSM() {
+            if (!confirm('Reset all states and rules? This cannot be undone.')) {
+                return;
+            }
+
             try {
-                const res = await fetch('/api/reset', { method: 'POST' });
+                const res = await fetch('/api/reset', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id: currentUserId })
+                });
                 const data = await res.json();
 
                 if (data.success) {
@@ -723,6 +1147,7 @@
                     responseEl.className = 'response success';
                     timingEl.textContent = '';
                     toolsEl.textContent = '';
+                    agentStepsPanel.style.display = 'none';
                     if (detailsOpen) fetchDetails();
                 }
             } catch (e) {
@@ -879,6 +1304,60 @@
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
+        }
+
+        // Quick feedback elements
+        const quickFeedback = document.getElementById('quickFeedback');
+        const feedbackGood = document.getElementById('feedbackGood');
+        const feedbackBad = document.getElementById('feedbackBad');
+        const feedbackSubmittedMsg = document.getElementById('feedbackSubmittedMsg');
+        let quickFeedbackSessionId = null;
+
+        function showQuickFeedback(sessionId) {
+            quickFeedbackSessionId = sessionId;
+            quickFeedback.style.display = 'flex';
+            feedbackGood.disabled = false;
+            feedbackBad.disabled = false;
+            feedbackGood.classList.remove('selected');
+            feedbackBad.classList.remove('selected');
+            feedbackSubmittedMsg.style.display = 'none';
+        }
+
+        function hideQuickFeedback() {
+            quickFeedback.style.display = 'none';
+            quickFeedbackSessionId = null;
+        }
+
+        async function submitQuickFeedback(isGood) {
+            if (!quickFeedbackSessionId) return;
+
+            // Disable both buttons immediately
+            feedbackGood.disabled = true;
+            feedbackBad.disabled = true;
+
+            // Show selected state
+            if (isGood) {
+                feedbackGood.classList.add('selected');
+            } else {
+                feedbackBad.classList.add('selected');
+            }
+
+            // Show thanks message
+            feedbackSubmittedMsg.style.display = 'inline';
+
+            // Send to backend
+            try {
+                await fetch('/api/quick-feedback', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: quickFeedbackSessionId,
+                        worked: isGood
+                    })
+                });
+            } catch (e) {
+                console.error('Failed to submit quick feedback:', e);
+            }
         }
     </script>
 </body>

@@ -86,6 +86,7 @@ class AdaptLightRaspi:
 
         # Initialize hardware (lazy load to avoid import errors on non-Pi)
         self.led = None
+        self.reactive_led = None  # NeoPixel for voice feedback
         self.button = None
         self.record_button = None
         self.voice = None
@@ -140,17 +141,29 @@ class AdaptLightRaspi:
                 )
                 self.record_button.on_single_click = self._handle_record_button
 
+            # Initialize reactive lights (NeoPixel for voice feedback)
+            reactive_config = self.config.get('reactive_lights', {})
+            if reactive_config.get('enabled', False):
+                from .hardware.led_controller import LEDController
+                self.reactive_led = LEDController(
+                    led_count=reactive_config.get('led_count', 35),
+                    led_pin=reactive_config.get('pin', 18),
+                    brightness=reactive_config.get('brightness', 0.5)
+                )
+                print(f"Reactive NeoPixel initialized: {reactive_config.get('led_count')} LEDs on GPIO {reactive_config.get('pin')}")
+
             # Initialize light_states globals
-            from .output.light_states import set_led_controller, set_state_machine, set_voice_reactive
+            from .output.light_states import set_led_controller, set_state_machine
             set_led_controller(self.led)
             set_state_machine(self.smgen.state_machine)
 
             # Initialize voice reactive controller
-            if self.config['voice'].get('reactive_enabled', True):
+            # Use reactive_led for voice reactive if available, else fall back to main led
+            reactive_led_target = self.reactive_led if self.reactive_led else self.led
+            if reactive_led_target and self.config['voice'].get('reactive_enabled', True):
                 try:
                     from .voice.reactive import VoiceReactiveLight
-                    self.voice_reactive = VoiceReactiveLight(self.led)
-                    set_voice_reactive(self.voice_reactive)
+                    self.voice_reactive = VoiceReactiveLight(reactive_led_target)
                     print("Voice reactive controller initialized")
                 except Exception as e:
                     print(f"Voice reactive init failed: {e}")
@@ -182,14 +195,19 @@ class AdaptLightRaspi:
 
     def _on_processing_start(self, data):
         """Called when brain starts processing."""
-        if self.led:
+        if self.reactive_led:
+            self.reactive_led.start_loading_animation()
+        elif self.led:
             self.led.start_loading_animation()
         if self.verbose:
             print(f"Processing: {data.get('input', '')[:50]}...")
 
     def _on_processing_end(self, data):
         """Called when brain finishes processing."""
-        if self.led:
+        if self.reactive_led:
+            self.reactive_led.stop_loading_animation()
+            self.reactive_led.flash_success()
+        elif self.led:
             self.led.stop_loading_animation()
         if self.verbose:
             print(f"Done in {data.get('total_ms', 0):.0f}ms")
@@ -207,7 +225,10 @@ class AdaptLightRaspi:
     def _on_error(self, data):
         """Called on processing error."""
         print(f"Error: {data.get('error', 'Unknown error')}")
-        if self.led:
+        if self.reactive_led:
+            self.reactive_led.stop_loading_animation()
+            self.reactive_led.flash_error()
+        elif self.led:
             self.led.stop_loading_animation()
 
     # ─────────────────────────────────────────────────────────────
@@ -315,6 +336,9 @@ class AdaptLightRaspi:
 
         if self.voice and self.is_recording:
             self.voice.stop_recording()
+
+        if self.reactive_led:
+            self.reactive_led.off()
 
         if self.led:
             self.led.off()

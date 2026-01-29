@@ -34,6 +34,14 @@ hardware:
   cob_max_duty_cycle: 2.0
   cob_pwm_frequency: 1000
 
+# Reactive lights (NeoPixel for voice feedback)
+reactive_lights:
+  enabled: true
+  type: neopixel
+  led_count: 32
+  pin: 10 #spi pin
+  brightness: 0.5
+
 # Voice input
 voice:
   enabled: true

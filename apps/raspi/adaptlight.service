@@ -1,0 +1,16 @@
+[Unit]
+Description=AdaptLight Voice-Controlled Lighting
+After=network.target
+
+[Service]
+Type=simple
+User=lamp
+WorkingDirectory=/home/lamp/adaptlight
+ExecStart=/home/lamp/adaptlight/venv/bin/python -m raspi.main
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

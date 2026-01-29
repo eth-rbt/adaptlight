@@ -15,6 +15,11 @@ anthropic:
 openai:
   api_key: ${OPENAI_API_KEY}
 
+# Supabase (loaded from environment)
+supabase:
+  url: ${SUPABASE_URL}
+  anon_key: ${SUPABASE_ANON_KEY}
+
 # Server settings
 server:
   host: 0.0.0.0
