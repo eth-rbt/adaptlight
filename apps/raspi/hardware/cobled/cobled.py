@@ -157,6 +157,10 @@ class CobLed:
         """Turn off all channels."""
         self.set_color(0, 0, 0)
 
+    def off(self):
+        """Turn off all channels (alias for clear)."""
+        self.clear()
+
     def _stop_loading_animation(self):
         self.loading_active = False
         if self.loading_thread and self.loading_thread.is_alive():

@@ -10,7 +10,7 @@
 set -e
 
 # Configuration
-RASPI_HOST="${RASPI_HOST:-lamp@100.114.12.83}" 
+RASPI_HOST="${RASPI_HOST:-lamp@100.108.65.92}" #100.114.12.83
 #RASPI_HOST="${RASPI_HOST:-pi@raspberrypi.local}"
 RASPI_PATH="${RASPI_PATH:-/home/lamp/adaptlight}"
 

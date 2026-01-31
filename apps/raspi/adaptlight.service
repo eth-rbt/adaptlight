@@ -4,9 +4,11 @@ After=network.target
 
 [Service]
 Type=simple
-User=lamp
+User=root
 WorkingDirectory=/home/lamp/adaptlight
-ExecStart=/home/lamp/adaptlight/venv/bin/python -m raspi.main
+EnvironmentFile=/home/lamp/adaptlight/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/lamp/adaptlight/venv/bin/python -m raspi.main --verbose
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal

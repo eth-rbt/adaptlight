@@ -257,6 +257,10 @@ class AdaptLightRaspi:
             if self.voice_reactive:
                 self.voice_reactive.stop()
 
+            # Start loading animation while transcribing
+            if self.reactive_led:
+                self.reactive_led.start_loading_animation()
+
             # Transcribe and process
             transcribed_text = self.voice.stop_recording()
             if transcribed_text:
@@ -267,6 +271,10 @@ class AdaptLightRaspi:
         else:
             # Start recording
             self.is_recording = True
+
+            # Transition COB LED to 'off' state when recording starts
+            self.smgen.state_machine.set_state('off')
+            self._execute_state(self.smgen.get_state())
 
             # Start voice reactive in non-standalone mode (uses VoiceInput's audio stream)
             audio_callback = None

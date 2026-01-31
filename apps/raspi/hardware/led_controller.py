@@ -112,6 +112,10 @@ class LEDController:
         """Turn off all LEDs."""
         self.set_color(0, 0, 0)
 
+    def off(self):
+        """Turn off all LEDs (alias for clear)."""
+        self.clear()
+
     def get_current_color(self):
         """Get the current LED color."""
         return self.current_color
@@ -147,18 +151,17 @@ class LEDController:
             if USE_NEOPIXEL_SPI:
                 self.pixels.show()
 
-    def start_loading_animation(self, color=(255, 255, 255), speed=0.05, period=5.0):
+    def start_loading_animation(self, color=(255, 255, 255), speed=0.03, tail_length=8):
         """
-        Start a soft breathing (sine) loading animation in white.
+        Start a circular chase loading animation.
 
         Args:
             color: Base RGB tuple (default white)
-            speed: Time in seconds between updates (step)
-            period: Duration of one full bright/dim cycle (seconds)
+            speed: Time in seconds between updates
+            tail_length: Number of LEDs in the fading tail
         """
         import threading
         import time
-        import math
 
         # Stop any existing animation
         self.stop_loading_animation()
@@ -166,20 +169,31 @@ class LEDController:
         self.loading_active = True
 
         def loading_loop():
-            """Breathing sine wave: ~5s cycle."""
-            start = time.time()
+            """Circular chase animation."""
+            position = 0
             while self.loading_active:
-                elapsed = time.time() - start
-                # sine wave between 0.2 and 1.0
-                phase = (elapsed % period) / period
-                brightness_factor = 0.2 + 0.8 * (math.sin(2 * math.pi * phase) + 1) / 2
+                # Clear all pixels
+                if self.pixels:
+                    self.pixels.fill((0, 0, 0))
 
-                r = int(color[0] * brightness_factor)
-                g = int(color[1] * brightness_factor)
-                b = int(color[2] * brightness_factor)
+                # Draw the tail with fading brightness
+                for i in range(tail_length):
+                    # Calculate pixel index (wrapping around)
+                    pixel_idx = (position - i) % self.led_count
 
-                # Set all pixels to the breathing color
-                self.set_color(r, g, b)
+                    # Brightness fades from 1.0 to 0.1 along the tail
+                    brightness = 1.0 - (i / tail_length) * 0.9
+
+                    r = int(color[0] * brightness)
+                    g = int(color[1] * brightness)
+                    b = int(color[2] * brightness)
+
+                    self.set_pixel(pixel_idx, r, g, b)
+
+                self.show()
+
+                # Move to next position
+                position = (position + 1) % self.led_count
 
                 time.sleep(speed)
 
