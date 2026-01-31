@@ -1,5 +1,9 @@
 # AdaptLight RASPi Configuration
 
+# Device identity (for Supabase logging)
+device:
+  id: lamp1  # Change this for each device (lamp1, lamp2, etc.)
+
 # Brain settings (passed to Brain())
 brain:
   mode: agent                    # 'agent' (Claude multi-turn) or 'parser' (OpenAI single-shot)
@@ -26,6 +30,10 @@ hardware:
   button_pin: 23
   record_button_pin: 17
   led_pin: 2
+
+  # Feedback buttons (Yes/No for Supabase logging)
+  feedback_yes_pin: 24
+  feedback_no_pin: 25
 
   # COB LED PWM pins
   cob_red_pin: 12

@@ -22,6 +22,9 @@ load_dotenv(ROOT_DIR / '.env')
 
 from brain import SMgenerator
 
+# Import supabase client for logging
+from . import supabase_client
+
 
 def load_config(config_path: str = None) -> dict:
     """Load configuration from YAML file."""
@@ -65,6 +68,11 @@ class AdaptLightRaspi:
         self.voice_reactive = None
         self.running = True
 
+        # Session tracking for Supabase feedback
+        self.last_session_id = None
+        self.feedback_pending = False
+        self.device_id = self.config.get('device', {}).get('id', 'lamp1')
+
         # Initialize Brain
         brain_config = {
             'mode': self.config['brain']['mode'],
@@ -89,6 +97,8 @@ class AdaptLightRaspi:
         self.reactive_led = None  # NeoPixel for voice feedback
         self.button = None
         self.record_button = None
+        self.feedback_yes_button = None
+        self.feedback_no_button = None
         self.voice = None
 
         self._init_hardware()
@@ -140,6 +150,23 @@ class AdaptLightRaspi:
                     bounce_time=self.config['button']['bounce_time']
                 )
                 self.record_button.on_single_click = self._handle_record_button
+
+            # Initialize feedback buttons (Yes/No for Supabase)
+            if hw_config.get('feedback_yes_pin'):
+                self.feedback_yes_button = ButtonController(
+                    button_pin=hw_config['feedback_yes_pin'],
+                    bounce_time=self.config['button']['bounce_time']
+                )
+                self.feedback_yes_button.on_single_click = lambda: self._handle_feedback(True)
+                print(f"Feedback YES button on GPIO {hw_config['feedback_yes_pin']}")
+
+            if hw_config.get('feedback_no_pin'):
+                self.feedback_no_button = ButtonController(
+                    button_pin=hw_config['feedback_no_pin'],
+                    bounce_time=self.config['button']['bounce_time']
+                )
+                self.feedback_no_button.on_single_click = lambda: self._handle_feedback(False)
+                print(f"Feedback NO button on GPIO {hw_config['feedback_no_pin']}")
 
             # Initialize reactive lights (NeoPixel for voice feedback)
             reactive_config = self.config.get('reactive_lights', {})
@@ -268,6 +295,9 @@ class AdaptLightRaspi:
                 result = self.smgen.process(transcribed_text)
                 if result.message:
                     print(f"Response: {result.message}")
+
+                # Log to Supabase
+                self._log_command_to_supabase(transcribed_text, result)
         else:
             # Start recording
             self.is_recording = True
@@ -284,6 +314,64 @@ class AdaptLightRaspi:
 
             self.voice.start_recording(audio_callback=audio_callback)
             print("Recording... Speak now!")
+
+    def _log_command_to_supabase(self, command: str, result):
+        """Log a processed command to Supabase."""
+        try:
+            # Get full state machine snapshot
+            details = self.smgen.get_details()
+
+            # Reset feedback state for new command
+            self.feedback_pending = False
+            self.last_session_id = None
+
+            session_id = supabase_client.log_command_session(
+                user_id=self.device_id,
+                command=command,
+                response_message=result.message,
+                success=result.success,
+                current_state=result.state.get('name') if result.state else None,
+                current_state_data=result.state,
+                all_states=details.get('states', []),
+                all_rules=details.get('rules', []),
+                tool_calls=result.tool_calls,
+                agent_steps=result.agent_steps,
+                timing_ms=result.timing.get('total_ms') if result.timing else None,
+                run_id=result.run_id,
+                source=self.device_id
+            )
+
+            if session_id:
+                self.last_session_id = session_id
+                self.feedback_pending = True
+                print(f"Logged to Supabase: {session_id} - awaiting feedback")
+        except Exception as e:
+            print(f"Failed to log to Supabase: {e}")
+
+    def _handle_feedback(self, worked: bool):
+        """Handle feedback button press (Yes/No)."""
+        if not self.last_session_id or not self.feedback_pending:
+            print("No pending feedback to submit")
+            return
+
+        print(f"Feedback: {'YES' if worked else 'NO'}")
+
+        # Submit to Supabase
+        success = supabase_client.submit_quick_feedback(self.last_session_id, worked)
+
+        if success:
+            self.feedback_pending = False
+
+            # Visual feedback on reactive LED
+            if self.reactive_led:
+                if worked:
+                    self.reactive_led.flash_success()
+                else:
+                    self.reactive_led.flash_error()
+
+            print(f"Feedback submitted: {'worked' if worked else 'did not work'}")
+        else:
+            print("Failed to submit feedback")
 
     def _execute_state(self, state: dict):
         """Execute a state on the LED."""
@@ -319,6 +407,7 @@ class AdaptLightRaspi:
         print("=" * 60)
         print("AdaptLight RASPi")
         print("=" * 60)
+        print(f"Device ID: {self.device_id}")
         print(f"Mode: {self.config['brain']['mode']}")
         print(f"Model: {self.config['brain']['model']}")
         print(f"LED type: {self.config['hardware']['led_type']}")
