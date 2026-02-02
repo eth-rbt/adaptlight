@@ -74,6 +74,7 @@ class AdaptLightRaspi:
         self.device_id = self.config.get('device', {}).get('id', 'lamp1')
 
         # Initialize Brain
+        speech_config = self.config.get('speech', {})
         brain_config = {
             'mode': self.config['brain']['mode'],
             'model': self.config['brain']['model'],
@@ -83,6 +84,7 @@ class AdaptLightRaspi:
             'anthropic_api_key': self.config['anthropic']['api_key'],
             'openai_api_key': self.config['openai']['api_key'],
             'storage_dir': self.config.get('storage', {}).get('dir', 'data/storage'),
+            'speech_instructions': speech_config.get('instructions') if speech_config.get('enabled') else None,
         }
         self.smgen = SMgenerator(brain_config)
 
@@ -98,6 +100,7 @@ class AdaptLightRaspi:
         self.button = None
         self.record_button = None
         self.feedback_yes_button = None
+        self.tts = None  # Text-to-speech
         self.feedback_no_button = None
         self.voice = None
 
@@ -174,8 +177,8 @@ class AdaptLightRaspi:
                 from .hardware.led_controller import LEDController
                 self.reactive_led = LEDController(
                     led_count=reactive_config.get('led_count', 35),
-                    led_pin=reactive_config.get('pin', 18),
-                    brightness=reactive_config.get('brightness', 0.5)
+                    brightness=reactive_config.get('brightness', 0.5),
+                    spi_bus_id=reactive_config.get('spi_bus', 1)
                 )
                 print(f"Reactive NeoPixel initialized: {reactive_config.get('led_count')} LEDs on GPIO {reactive_config.get('pin')}")
 
@@ -202,7 +205,7 @@ class AdaptLightRaspi:
             print("Running in simulation mode")
 
     def _init_voice(self):
-        """Initialize voice input."""
+        """Initialize voice input and TTS output."""
         if not self.config['voice']['enabled']:
             return
 
@@ -215,6 +218,20 @@ class AdaptLightRaspi:
             print("Voice input initialized")
         except Exception as e:
             print(f"Voice input initialization failed: {e}")
+
+        # Initialize TTS
+        speech_config = self.config.get('speech', {})
+        if speech_config.get('enabled', False):
+            try:
+                from .voice.tts import TextToSpeech
+                self.tts = TextToSpeech(
+                    provider=speech_config.get('provider', 'openai'),
+                    voice=speech_config.get('voice'),
+                    api_key=self.config['openai']['api_key']
+                )
+                print("Text-to-speech initialized")
+            except Exception as e:
+                print(f"TTS initialization failed: {e}")
 
     # ─────────────────────────────────────────────────────────────
     # Hook Handlers
@@ -295,6 +312,10 @@ class AdaptLightRaspi:
                 result = self.smgen.process(transcribed_text)
                 if result.message:
                     print(f"Response: {result.message}")
+
+                    # Speak the response
+                    if self.tts:
+                        self.tts.speak(result.message)
 
                 # Log to Supabase
                 self._log_command_to_supabase(transcribed_text, result)

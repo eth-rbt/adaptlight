@@ -29,4 +29,7 @@ adafruit-circuitpython-neopixel-spi>=1.0.0
 # Audio input for voice
 pyaudio>=0.2.14
 
+# Text-to-speech
+edge-tts>=6.1.0
+
 

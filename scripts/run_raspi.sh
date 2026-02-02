@@ -25,5 +25,8 @@ fi
 # Ensure brain is importable
 export PYTHONPATH="/home/lamp/adaptlight:$PYTHONPATH"
 
+# Set USB speaker volume (card 2)
+/usr/bin/amixer -c 2 sset PCM 85% || echo "Failed to set volume"
+
 # Run the raspi app
 python -m raspi.main "$@"

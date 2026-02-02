@@ -47,14 +47,24 @@ reactive_lights:
   enabled: true
   type: neopixel
   led_count: 32
-  pin: 10 #spi pin
+  spi_bus: 1                       # 0 = SPI0 (GPIO10), 1 = SPI1 (GPIO20)
   brightness: 0.5
 
 # Voice input
 voice:
   enabled: true
   stt_provider: replicate        # 'whisper' or 'replicate'
-  speak_response: false
+
+# Text-to-speech output
+speech:
+  enabled: true
+  provider: openai               # 'openai' or 'edge'
+  voice: nova                    # OpenAI: alloy, echo, fable, onyx, nova, shimmer
+  instructions: |
+    Your response message will be spoken aloud. Keep it under 1 sentences.
+    VERY VEYR IMPORTANT:Be direct. Explain what you did technially. Explaing only the crucial information.
+    KEEP IT UNDER 1 SENTENCE.
+    Example: "Done, I've set it to warm orange" or "Party mode is on, now it will change colors", "stock up is red, down is green, yellow means no change."
 
 # Button timing
 button:

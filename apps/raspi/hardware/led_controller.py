@@ -26,7 +26,7 @@ except ImportError:
 class LEDController:
     """Controls NeoPixel LED strip for visual output."""
 
-    def __init__(self, led_count=16, led_pin=18, brightness=0.3):
+    def __init__(self, led_count=16, led_pin=18, brightness=0.3, spi_bus_id=1):
         """
         Initialize LED controller.
 
@@ -34,6 +34,7 @@ class LEDController:
             led_count: Number of LEDs in the strip
             led_pin: GPIO pin number (ignored for SPI, kept for compatibility)
             brightness: Initial brightness (0.0 to 1.0)
+            spi_bus_id: SPI bus to use (0 = SPI0/GPIO10, 1 = SPI1/GPIO20)
         """
         self.led_count = led_count
         self.brightness = brightness
@@ -42,10 +43,20 @@ class LEDController:
 
         if USE_NEOPIXEL_SPI:
             # Use neopixel_spi library (Pi 5 compatible via SPI)
-            # Note: Uses SPI, so pin parameter is ignored
             import board
+            import busio
             import neopixel_spi as neopixel
-            spi_bus = board.SPI()
+
+            # Select SPI bus (SPI0 = GPIO10, SPI1 = GPIO20)
+            if spi_bus_id == 1:
+                # Manually create SPI1 bus using GPIO 20 (MOSI) and GPIO 21 (SCLK)
+                # SPI1 pins: MOSI=GPIO20, MISO=GPIO19, SCLK=GPIO21
+                spi_bus = busio.SPI(clock=board.D21, MOSI=board.D20)
+                spi_name = "SPI1 (GPIO20)"
+            else:
+                spi_bus = board.SPI()
+                spi_name = "SPI0 (GPIO10)"
+
             self.pixels = neopixel.NeoPixel_SPI(
                 spi_bus,
                 led_count,
@@ -53,7 +64,7 @@ class LEDController:
                 auto_write=False,
                 pixel_order=neopixel.GRB
             )
-            print(f"NeoPixel_SPI initialized: {led_count} LEDs via SPI")
+            print(f"NeoPixel_SPI initialized: {led_count} LEDs via {spi_name}")
         else:
             print(f"LED simulation mode: {led_count} LEDs")
 

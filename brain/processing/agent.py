@@ -39,7 +39,8 @@ class AgentExecutor:
     """Multi-turn agent executor for voice commands."""
 
     def __init__(self, state_machine=None, api_key: str = None, model: str = "claude-sonnet-4-20250514",
-                 max_turns: int = 10, verbose: bool = False, prompt_variant: str = "examples"):
+                 max_turns: int = 10, verbose: bool = False, prompt_variant: str = "examples",
+                 speech_instructions: str = None):
         """
         Initialize agent executor.
 
@@ -50,6 +51,7 @@ class AgentExecutor:
             max_turns: Maximum turns before stopping (safety limit)
             verbose: Print debug information
             prompt_variant: 'concise' or 'examples' (default: examples)
+            speech_instructions: Extra instructions for speech output (e.g., "Keep responses under 2 sentences")
         """
         self.state_machine = state_machine
         self.api_key = api_key
@@ -57,6 +59,7 @@ class AgentExecutor:
         self.max_turns = max_turns
         self.verbose = verbose
         self.prompt_variant = prompt_variant
+        self.speech_instructions = speech_instructions
 
         # Initialize tool registry
         self.tools = ToolRegistry(state_machine, api_key=api_key)
@@ -101,9 +104,15 @@ Variables: {json.dumps(variables, indent=2)}"""
         """Build the full system prompt with current state."""
         system_state = self._get_system_state()
         if self.prompt_variant == "examples":
-            return get_agent_system_prompt_with_examples(system_state)
+            prompt = get_agent_system_prompt_with_examples(system_state)
         else:
-            return get_agent_system_prompt(system_state)
+            prompt = get_agent_system_prompt(system_state)
+
+        # Append speech instructions if speech mode is enabled
+        if self.speech_instructions:
+            prompt += f"\n\n## Speech Output Instructions\n{self.speech_instructions}"
+
+        return prompt
 
     async def run(self, user_input: str) -> str:
         """

@@ -122,7 +122,8 @@ class SMgenerator:
                 model=config.get('model', 'claude-haiku-4-5'),
                 max_turns=config.get('max_turns', 10),
                 verbose=config.get('verbose', False),
-                prompt_variant=config.get('prompt_variant', 'examples')
+                prompt_variant=config.get('prompt_variant', 'examples'),
+                speech_instructions=config.get('speech_instructions')
             )
         else:
             from brain.processing.parser import CommandParser

@@ -8,7 +8,7 @@ User=root
 WorkingDirectory=/home/lamp/adaptlight
 EnvironmentFile=/home/lamp/adaptlight/.env
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/home/lamp/adaptlight/venv/bin/python -m raspi.main --verbose
+ExecStart=/home/lamp/adaptlight/venv/bin/python -m raspi.main
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
