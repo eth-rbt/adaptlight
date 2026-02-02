@@ -1,0 +1,31 @@
+{
+  "daily_weather": {
+    "name": "daily_weather",
+    "steps": [
+      {
+        "do": "fetch",
+        "api": "weather",
+        "params": {
+          "location": "Boston"
+        },
+        "as": "weather_data"
+      },
+      {
+        "do": "setState",
+        "from": "weather_data.condition",
+        "map": {
+          "clear": "weather_clear",
+          "sunny": "weather_clear",
+          "cloudy": "weather_cloudy",
+          "partly_cloudy": "weather_cloudy",
+          "rainy": "weather_rainy",
+          "rain": "weather_rainy",
+          "stormy": "weather_stormy",
+          "snowy": "weather_snowy",
+          "snow": "weather_snowy"
+        }
+      }
+    ],
+    "description": "Fetch Boston weather and show via light color"
+  }
+}

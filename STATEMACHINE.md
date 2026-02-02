@@ -2,416 +2,348 @@
 
 ## Overview
 
-AdaptLight uses a state machine architecture to control LED lights based on button presses and voice commands. The system transitions between different states (like "off", "on", "color", "animation") based on rules you define.
+AdaptLight uses a state machine architecture to control LED lights based on button presses, voice commands, and time-based triggers. The system is split into two main components:
+
+- **brain**: Shared library containing the state machine core, AI processing, SMgenerator, and tools
+- **Apps**: Platform-specific implementations (RASPi, Web, Eval)
+
+## Architecture
+
+```
+adaptlight/
+├── brain/           # Shared library
+│   ├── core/        # StateMachine, State, Rule, Memory, Pipeline
+│   ├── tools/       # ToolRegistry (27+ tools for AI agent)
+│   ├── processing/  # AgentExecutor (Claude), CommandParser (OpenAI)
+│   └── prompts/     # System prompts for AI
+├── apps/
+│   ├── raspi/       # Raspberry Pi app (hardware, voice)
+│   ├── web/         # Flask web interface
+│   └── eval/        # Test runner
+└── scripts/         # Deployment scripts
+```
 
 ## Core Concepts
 
 ### States
 
-States represent the current condition of the light system. There are four built-in states:
+States represent LED configurations with unified parameters:
 
-| State | Description | Parameters |
-|-------|-------------|------------|
-| `off` | Light is turned off | None |
-| `on` | Light is on with default white color | None |
-| `color` | Light displays a static color | `{r, g, b}` - RGB values (0-255) |
-| `animation` | Light displays an animated pattern | `{r, g, b, speed}` - RGB expressions + speed in ms |
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | string | Unique identifier |
+| `r` | int/string | Red value (0-255) or expression |
+| `g` | int/string | Green value (0-255) or expression |
+| `b` | int/string | Blue value (0-255) or expression |
+| `speed` | int | Animation interval in ms (None = static) |
+| `duration_ms` | int | Auto-transition after this duration |
+| `then` | string | State to transition to when duration expires |
+| `voice_reactive` | dict | Mic-reactive brightness config |
 
-### Transitions
+**Built-in states**: `off`, `on`
 
-Transitions are events that can trigger a state change:
-
-| Transition | Description |
-|------------|-------------|
-| `button_click` | Single press of the button |
-| `button_double_click` | Two quick presses |
-| `button_hold` | Press and hold the button |
-| `button_release` | Release after holding |
-| `voice_command` | Triggered by voice input |
+**Creating states via AI**:
+```
+"Create a state called sunset with orange fading to red"
+"Make a breathing blue animation called ocean"
+```
 
 ### Rules
 
-Rules define how the system behaves. Each rule has the format:
+Rules define state transitions:
 
 ```
 state1 --[transition]--> state2
 ```
 
-**Example:** `off --[button_click]--> on`
+**Rule structure**:
+- `state1`: Starting state (or `*` for any state)
+- `transition`: Event that triggers the rule
+- `state2`: Destination state
+- `condition`: Optional expression that must be true
+- `action`: Optional code to run before transitioning
+- `priority`: Higher priority rules are evaluated first
+- `pipeline`: Optional pipeline to execute on transition
 
-This means: "When in the off state and button_click happens, go to on state"
+### Transitions
 
-#### Rule Structure
+| Transition | Description |
+|------------|-------------|
+| `button_click` | Single button press |
+| `button_double_click` | Two quick presses |
+| `button_hold` | Press and hold |
+| `button_release` | Release after holding |
+| `voice_command` | Voice input trigger |
+| `timer` | One-time delayed trigger |
+| `interval` | Recurring trigger |
+| `schedule` | Time-of-day trigger |
 
-A complete rule includes:
+### Time-based Triggers
 
-- **state1**: Starting state (where you are now)
-- **state1Param**: Parameters for state1 (usually `null`)
-- **transition**: The event that triggers the rule
-- **state2**: Destination state (where to go)
-- **state2Param**: Parameters for state2 (e.g., color values)
-- **condition** (optional): Expression that must be true for rule to activate
-- **action** (optional): Code to run before transitioning
+Rules can use time-based transitions with `trigger_config`:
+
+```python
+# Timer (one-shot)
+{
+    "state1": "alert",
+    "transition": "timer",
+    "state2": "off",
+    "trigger_config": {"delay_ms": 5000, "auto_cleanup": True}
+}
+
+# Interval (recurring)
+{
+    "state1": "*",
+    "transition": "interval",
+    "state2": "pulse",
+    "trigger_config": {"delay_ms": 60000, "repeat": True}
+}
+
+# Schedule (time-of-day)
+{
+    "state1": "*",
+    "transition": "schedule",
+    "state2": "night_mode",
+    "trigger_config": {"hour": 22, "minute": 0, "repeat_daily": True}
+}
+```
 
 ## Working with Colors
 
 ### Static Colors
 
-For the `color` state, specify RGB values (0-255):
+```python
+{"r": 255, "g": 0, "b": 0}  # Red
+{"r": 0, "g": 255, "b": 0}  # Green
+{"r": 0, "g": 0, "b": 255}  # Blue
+{"r": 255, "g": 255, "b": 255}  # White
+```
+
+### Dynamic Expressions
+
+Color values can be expressions evaluated each frame:
 
 ```python
 {
-    "r": 255,  # Red
-    "g": 0,    # Green
-    "b": 0     # Blue
+    "r": "abs(sin(frame * 0.05)) * 255",  # Pulsing
+    "g": "min(g + 30, 255)",              # Gradual increase
+    "b": "random()"                        # Random
 }
 ```
 
-**Common Colors:**
-- Red: `{r: 255, g: 0, b: 0}`
-- Green: `{r: 0, g: 255, b: 0}`
-- Blue: `{r: 0, g: 0, b: 255}`
-- Yellow: `{r: 255, g: 255, b: 0}`
-- Purple: `{r: 128, g: 0, b: 128}`
-- White: `{r: 255, g: 255, b: 255}`
+**Available variables**: `r`, `g`, `b`, `frame`, `t` (time in ms)
 
-### Dynamic Color Expressions
-
-Instead of static numbers, you can use expressions:
-
-```python
-{
-    "r": "random()",           # Random red value
-    "g": "min(g + 30, 255)",   # Increase green by 30
-    "b": "b"                   # Keep blue the same
-}
-```
-
-**Available Variables:**
-- `r`, `g`, `b` - Current RGB values
-- `random()` - Returns random number 0-255
-
-**Available Functions:**
-- Math: `min()`, `max()`, `abs()`, `floor()`, `ceil()`, `round()`, `sqrt()`, `pow()`
-- Trig: `sin()`, `cos()`, `tan()`
-- Constants: `PI`, `E`
-
-**Examples:**
-- Brighten: `{"r": "min(r + 30, 255)", "g": "min(g + 30, 255)", "b": "min(b + 30, 255)"}`
-- Darken: `{"r": "max(r - 30, 0)", "g": "max(g - 30, 0)", "b": "max(b - 30, 0)"}`
-- Cycle colors: `{"r": "b", "g": "r", "b": "g"}`
-
-## Working with Animations
-
-Animations continuously update colors based on expressions:
-
-```python
-{
-    "r": "abs(sin(frame * 0.05)) * 255",
-    "g": "abs(sin(frame * 0.05)) * 255",
-    "b": "abs(sin(frame * 0.05)) * 255",
-    "speed": 50  # Update interval in milliseconds
-}
-```
-
-**Animation Variables:**
-- `r`, `g`, `b` - Current RGB values (updated each frame)
-- `frame` - Frame counter (increments each update)
-- `t` - Time in milliseconds since animation started
-
-**Examples:**
-
-### Pulsing White
-```python
-{
-    "r": "abs(sin(frame * 0.05)) * 255",
-    "g": "abs(sin(frame * 0.05)) * 255",
-    "b": "abs(sin(frame * 0.05)) * 255",
-    "speed": 50
-}
-```
-
-### Rainbow
-```python
-{
-    "r": "(frame * 2) % 256",
-    "g": "abs(sin(frame * 0.1)) * 255",
-    "b": "abs(cos(frame * 0.1)) * 255",
-    "speed": 50
-}
-```
-
-### Rotating Colors
-```python
-{
-    "r": "b",
-    "g": "r",
-    "b": "g",
-    "speed": 200
-}
-```
+**Available functions**: `sin`, `cos`, `abs`, `min`, `max`, `floor`, `ceil`, `round`, `sqrt`, `pow`, `random`
 
 ## Conditions and Actions
 
 ### Conditions
 
-Conditions determine if a rule should activate. They must evaluate to `true`:
+Expressions that determine if a rule should fire:
 
 ```python
-"condition": "time.hour >= 20"  # Only after 8 PM
+"condition": "getData('counter') > 0"
+"condition": "getTime()['hour'] >= 20"
+"condition": "getData('mode') == 'party'"
 ```
-
-**Available in Conditions:**
-- `getData(key)` - Get stored value
-- `time.hour` - Current hour (0-23)
-- `time.minute` - Current minute (0-59)
-- `time.second` - Current second (0-59)
-- `time.dayOfWeek` - Day of week (0=Sunday)
-- All math functions
 
 ### Actions
 
-Actions run before the state transition. Often used to update counters:
+Code executed before state transition:
 
 ```python
 "action": "setData('counter', getData('counter') - 1)"
+"action": "setData('last_press', getTime()['timestamp'])"
 ```
 
-**Available in Actions:**
-- `getData(key)` - Get value
-- `setData(key, value)` - Set value
-- `getTime()` - Get current time
+**Available functions**:
+- `getData(key, default)` - Get stored value
+- `setData(key, value)` - Store value
+- `getTime()` - Returns `{hour, minute, second, weekday, is_weekend, timestamp}`
+
+## SMgenerator Interface
+
+The SMgenerator class provides a unified interface for apps:
+
+```python
+from brain import SMgenerator
+
+smgen = SMgenerator({
+    'mode': 'agent',  # or 'parser'
+    'model': 'claude-haiku-4-5',
+    'anthropic_api_key': 'sk-ant-...',
+    'storage_dir': 'data/storage',
+})
+
+# Register event hooks
+smgen.on('processing_start', lambda d: print(f"Starting: {d['input']}"))
+smgen.on('processing_end', lambda d: print(f"Done in {d['total_ms']:.0f}ms"))
+smgen.on('tool_end', lambda d: print(f"Tool {d['tool']}: {d['duration_ms']:.0f}ms"))
+
+# Process voice/text input
+result = smgen.process("turn the light red")
+print(result.state)  # {'name': 'color', 'r': 255, 'g': 0, 'b': 0, ...}
+
+# Trigger button events
+state = smgen.trigger('button_click')
+```
+
+### Hook Events
+
+| Event | Data |
+|-------|------|
+| `processing_start` | `{input, run_id}` |
+| `processing_end` | `{result, total_ms, run_id}` |
+| `tool_start` | `{tool, input, run_id}` |
+| `tool_end` | `{tool, result, duration_ms, run_id}` |
+| `error` | `{error, run_id}` |
+
+## Tool Reference (AI Agent)
+
+The AI agent has access to 27+ tools:
+
+### State Management
+- `setState` - Set current state immediately
+- `createState` - Create a new named state
+- `getStates` - List all states
+- `deleteState` - Remove a state
+
+### Rule Management
+- `appendRules` - Add new rules
+- `getRules` - List all rules
+- `deleteRules` - Remove rules by index or criteria
+- `resetRules` - Clear all rules
+
+### Variable Management
+- `setVariable` - Store a value
+- `getVariable` - Retrieve a value
+- `clearVariables` - Clear all variables
+
+### Pipeline Management
+- `createPipeline` - Create automation sequence
+- `runPipeline` - Execute a pipeline
+- `getPipelines` - List pipelines
+
+### Utility
+- `getTime` - Get current time info
+- `wait` - Delay execution
+- `playSound` - Play audio file (RASPi)
 
 ## Example Use Cases
 
 ### Simple Toggle
 
-**Goal:** Click to turn on/off
+```
+"Make the button toggle between on and off"
+```
 
+Creates rules:
 ```python
 [
-    {"state1": "off", "transition": "button_click", "state2": "on", "state2Param": null},
-    {"state1": "on", "transition": "button_click", "state2": "off", "state2Param": null}
+    {"state1": "off", "transition": "button_click", "state2": "on"},
+    {"state1": "on", "transition": "button_click", "state2": "off"}
 ]
 ```
 
-### Colored Light
+### Color Cycling
 
-**Goal:** Click for blue light, click again to turn off
+```
+"Click cycles through red, green, blue, then off"
+```
 
+Creates state machine with counter-based transitions.
+
+### Timed Animation
+
+```
+"Hold for rainbow animation, release to stop"
+```
+
+Creates rules:
 ```python
 [
-    {"state1": "off", "transition": "button_click", "state2": "color",
-     "state2Param": {"r": 0, "g": 0, "b": 255}},
-    {"state1": "color", "transition": "button_click", "state2": "off",
-     "state2Param": null}
+    {"state1": "off", "transition": "button_hold", "state2": "rainbow"},
+    {"state1": "rainbow", "transition": "button_release", "state2": "off"}
 ]
 ```
 
-### Multiple Buttons
+### Scheduled Behavior
 
-**Goal:** Click for red, double-click for blue
-
-```python
-[
-    {"state1": "off", "transition": "button_click", "state2": "color",
-     "state2Param": {"r": 255, "g": 0, "b": 0}},
-    {"state1": "color", "transition": "button_click", "state2": "off",
-     "state2Param": null},
-    {"state1": "off", "transition": "button_double_click", "state2": "color",
-     "state2Param": {"r": 0, "g": 0, "b": 255}},
-    {"state1": "color", "transition": "button_double_click", "state2": "off",
-     "state2Param": null}
-]
+```
+"Turn on warm white at 7pm every day"
 ```
 
-### Hold for Animation
-
-**Goal:** Hold to start rainbow, release to stop
-
+Creates scheduled rule:
 ```python
-[
-    {"state1": "off", "transition": "button_hold", "state2": "animation",
-     "state2Param": {
-         "r": "(frame * 2) % 256",
-         "g": "abs(sin(frame * 0.1)) * 255",
-         "b": "abs(cos(frame * 0.1)) * 255",
-         "speed": 50
-     }},
-    {"state1": "animation", "transition": "button_release", "state2": "off",
-     "state2Param": null}
-]
+{
+    "state1": "*",
+    "transition": "schedule",
+    "state2": "warm_white",
+    "trigger_config": {"hour": 19, "minute": 0, "repeat_daily": True}
+}
 ```
 
-### Counter-Based Behavior
+### Voice-Reactive Mode
 
-**Goal:** Next 5 clicks are random colors, then turn off
-
-```python
-[
-    {"state1": "off", "transition": "button_click",
-     "condition": "getData('counter') === undefined",
-     "action": "setData('counter', 4)",
-     "state2": "color",
-     "state2Param": {"r": "random()", "g": "random()", "b": "random()"}},
-
-    {"state1": "color", "transition": "button_click",
-     "condition": "getData('counter') > 0",
-     "action": "setData('counter', getData('counter') - 1)",
-     "state2": "color",
-     "state2Param": {"r": "random()", "g": "random()", "b": "random()"}},
-
-    {"state1": "color", "transition": "button_click",
-     "condition": "getData('counter') === 0",
-     "state2": "off",
-     "state2Param": null}
-]
+```
+"Create a voice reactive green state that pulses with sound"
 ```
 
-### Time-Based Rules
-
-**Goal:** Blue light only after 8 PM
-
+Creates state with voice_reactive config:
 ```python
-[
-    {"state1": "off", "transition": "button_click",
-     "condition": "time.hour >= 20",
-     "state2": "color",
-     "state2Param": {"r": 0, "g": 0, "b": 255}}
-]
+{
+    "name": "voice_green",
+    "r": 0, "g": 255, "b": 0,
+    "voice_reactive": {
+        "enabled": True,
+        "color": [0, 255, 0],
+        "smoothing_alpha": 0.6
+    }
+}
 ```
 
-## Voice Control
+## Processing Modes
 
-You can use voice commands to control the light:
+### Agent Mode (Default)
+Multi-turn conversation with Claude using tool calls. Best for complex requests that require multiple operations.
 
-### Creating Rules
-- "Click to turn on red light"
-- "Hold for rainbow animation"
-- "Double click for random color"
+### Parser Mode
+Single-shot parsing with OpenAI. Faster but less capable for complex requests.
 
-### Modifying Rules
-- "Make it blue" (changes existing color)
-- "Make it faster" (changes animation speed)
-- "Change to double click instead"
-
-### Immediate Actions
-- "Turn red now" (changes state immediately)
-- "Turn off"
-
-### Managing Rules
-- "Delete all rules"
-- "Reset to default"
-- "Remove the double click rule"
-
-## Tool Reference
-
-When using the API or voice commands, these tools are available:
-
-### append_rules
-
-Add new rules to the system.
-
-```python
-append_rules({
-    "rules": [
-        {"state1": "off", "transition": "button_click", "state2": "on", "state2Param": null}
-    ]
-})
+Configure in app config:
+```yaml
+brain:
+  mode: agent  # or 'parser'
+  model: claude-haiku-4-5
 ```
 
-### delete_rules
+## Deployment
 
-Remove rules by index or criteria.
+### Sync to Raspberry Pi
 
-```python
-# Delete by index
-delete_rules({"indices": [0, 2]})
-
-# Delete all click rules
-delete_rules({"transition": "button_click"})
-
-# Delete everything
-delete_rules({"delete_all": true})
+```bash
+cd /path/to/adaptlight
+./scripts/sync_to_raspi.sh
 ```
 
-### set_state
+### Run on Pi
 
-Change state immediately.
-
-```python
-# Turn on red light now
-set_state({"state": "color", "params": {"r": 255, "g": 0, "b": 0}})
-
-# Turn off
-set_state({"state": "off"})
+```bash
+ssh pi@raspberrypi.local
+cd /home/pi/adaptlight
+./run.sh
 ```
 
-### manage_variables
-
-Manage global variables.
-
-```python
-# Set variables
-manage_variables({"action": "set", "variables": {"counter": 5, "mode": "party"}})
-
-# Delete variables
-manage_variables({"action": "delete", "keys": ["counter"]})
-
-# Clear all
-manage_variables({"action": "clear_all"})
-```
-
-### reset_rules
-
-Reset to default (simple on/off toggle).
-
-```python
-reset_rules()
-```
-
-## Tips and Best Practices
+## Tips
 
 1. **Always include toggle-off rules**: If you create a rule to turn something on, create another to turn it off.
 
-2. **Use appropriate speeds**:
-   - Fast animations: 20-50ms
-   - Medium: 50-100ms
-   - Slow: 100-300ms
+2. **Use appropriate speeds**: Fast animations: 20-50ms, Medium: 50-100ms, Slow: 100-300ms
 
-3. **Test conditions carefully**: Time conditions use 24-hour format (0-23 for hours).
+3. **Test expressions**: Complex expressions can slow down animations.
 
-4. **Keep expressions simple**: Complex expressions can slow down animations.
+4. **Use counters for sequences**: Great for "N clicks then do something" behaviors.
 
-5. **Use counters for sequences**: Great for "N clicks then do something" behaviors.
+5. **Wildcard state matching**: Use `state1: "*"` to match any current state.
 
-6. **Preserve colors carefully**: Use `{"r": "r", "g": "g", "b": "b"}` to keep current color.
-
-7. **Parameter requirements**:
-   - `on` and `off` states: Must use `null` for params
-   - `color` state: Must provide `{r, g, b}`
-   - `animation` state: Must provide `{r, g, b, speed}`
-
-## Troubleshooting
-
-**Light doesn't respond to button:**
-- Check that rules exist for that transition
-- Verify you're in the expected starting state
-
-**Animation is too fast/slow:**
-- Adjust the `speed` parameter (higher = slower)
-- Typical range: 20-300ms
-
-**Color expressions not working:**
-- Check that variables are quoted: `"r"` not `r`
-- Verify all functions are available
-- Test expressions individually
-
-**Rules not triggering:**
-- Check conditions are met
-- Verify you're in the correct starting state (state1)
-- Look for conflicting rules
-
-**Want to start over:**
-- Use voice command: "Reset everything"
-- Or use API: `reset_rules()`
+6. **Priority for conflicts**: Higher priority rules are evaluated first when multiple rules match.

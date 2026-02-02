@@ -1,0 +1,1364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AdaptLight</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #e0f2fe;
+            color: #1e293b;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            color: #0f172a;
+        }
+        .light-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+        .light-display {
+            width: 180px;
+            height: 180px;
+            border-radius: 50%;
+            background: rgb(0, 0, 0);
+            box-shadow: 0 0 50px rgba(0, 0, 0, 0.2);
+            transition: background 0.3s, box-shadow 0.3s;
+        }
+        .button-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+        }
+        .main-button {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            border: none;
+            background: linear-gradient(145deg, #f1f5f9, #cbd5e1);
+            box-shadow: 5px 5px 15px rgba(0,0,0,0.1), -5px -5px 15px rgba(255,255,255,0.8);
+            cursor: pointer;
+            transition: all 0.1s;
+            font-size: 12px;
+            color: #64748b;
+            font-weight: 500;
+        }
+        .main-button:active {
+            box-shadow: inset 2px 2px 5px rgba(0,0,0,0.1), inset -2px -2px 5px rgba(255,255,255,0.8);
+        }
+        .button-hint {
+            font-size: 11px;
+            color: #94a3b8;
+            text-align: center;
+        }
+        .state-info {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 14px;
+            color: #64748b;
+        }
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        input[type="text"] {
+            flex: 1;
+            padding: 12px 16px;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            background: #fff;
+            color: #1e293b;
+            font-size: 16px;
+        }
+        input[type="text"]:focus {
+            outline: 2px solid #0ea5e9;
+            border-color: transparent;
+        }
+        input[type="text"]::placeholder {
+            color: #94a3b8;
+        }
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            background: #0ea5e9;
+            color: #fff;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        button:hover {
+            background: #0284c7;
+        }
+        button:disabled {
+            background: #cbd5e1;
+            cursor: not-allowed;
+        }
+        .reset-btn {
+            background: #f1f5f9;
+            color: #64748b;
+            border: 1px solid #cbd5e1;
+        }
+        .reset-btn:hover {
+            background: #e2e8f0;
+        }
+        .action-bar {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+        .response {
+            background: #fff;
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            min-height: 60px;
+            border: 1px solid #e2e8f0;
+        }
+        .response.error {
+            border-left: 4px solid #ef4444;
+        }
+        .response.success {
+            border-left: 4px solid #22c55e;
+        }
+        .timing {
+            font-size: 12px;
+            color: #94a3b8;
+            margin-top: 8px;
+        }
+        .tools {
+            font-size: 12px;
+            color: #94a3b8;
+            margin-top: 8px;
+        }
+        .loading {
+            text-align: center;
+            color: #94a3b8;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .loading span {
+            animation: pulse 1s infinite;
+        }
+        .gesture-indicator {
+            font-size: 12px;
+            color: #0ea5e9;
+            height: 18px;
+            margin-top: 5px;
+        }
+        .details-panel {
+            background: #fff;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+            margin-top: 20px;
+            overflow: hidden;
+        }
+        .details-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            background: #f8fafc;
+            border-bottom: 1px solid #e2e8f0;
+            cursor: pointer;
+            user-select: none;
+        }
+        .details-header:hover {
+            background: #f1f5f9;
+        }
+        .details-header h3 {
+            font-size: 14px;
+            font-weight: 600;
+            color: #475569;
+            margin: 0;
+        }
+        .details-toggle {
+            font-size: 12px;
+            color: #94a3b8;
+        }
+        .details-content {
+            padding: 16px;
+            display: none;
+        }
+        .details-content.open {
+            display: block;
+        }
+        .details-section {
+            margin-bottom: 16px;
+        }
+        .details-section:last-child {
+            margin-bottom: 0;
+        }
+        .details-section h4 {
+            font-size: 12px;
+            font-weight: 600;
+            color: #64748b;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .state-item, .rule-item {
+            background: #f8fafc;
+            padding: 8px 12px;
+            border-radius: 6px;
+            margin-bottom: 6px;
+            font-size: 13px;
+            font-family: 'SF Mono', Monaco, monospace;
+        }
+        .state-item.current {
+            background: #dbeafe;
+            border: 1px solid #93c5fd;
+        }
+        .state-name {
+            font-weight: 600;
+            color: #1e293b;
+        }
+        .state-color {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border-radius: 3px;
+            vertical-align: middle;
+            margin-right: 6px;
+            border: 1px solid rgba(0,0,0,0.1);
+        }
+        .state-params {
+            color: #64748b;
+            font-size: 11px;
+            margin-top: 4px;
+        }
+        .rule-arrow {
+            color: #94a3b8;
+        }
+        .rule-trigger {
+            color: #0ea5e9;
+            font-weight: 500;
+        }
+        .rule-condition {
+            color: #8b5cf6;
+            font-size: 11px;
+            margin-top: 4px;
+        }
+        .empty-message {
+            color: #94a3b8;
+            font-style: italic;
+            font-size: 13px;
+        }
+        /* Agent Steps Panel */
+        .agent-steps-panel {
+            background: #fff;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+            margin-top: 20px;
+            overflow: hidden;
+        }
+        .agent-steps-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            background: #fef3c7;
+            border-bottom: 1px solid #fcd34d;
+            cursor: pointer;
+            user-select: none;
+        }
+        .agent-steps-header:hover {
+            background: #fde68a;
+        }
+        .agent-steps-header h3 {
+            font-size: 14px;
+            font-weight: 600;
+            color: #92400e;
+            margin: 0;
+        }
+        .agent-steps-toggle {
+            font-size: 12px;
+            color: #b45309;
+        }
+        .agent-steps-content {
+            padding: 16px;
+            display: none;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .agent-steps-content.open {
+            display: block;
+        }
+        .agent-step {
+            background: #f8fafc;
+            padding: 10px 12px;
+            border-radius: 6px;
+            margin-bottom: 8px;
+            font-size: 13px;
+            border-left: 3px solid #cbd5e1;
+        }
+        .agent-step:last-child {
+            margin-bottom: 0;
+        }
+        .agent-step.thinking {
+            border-left-color: #8b5cf6;
+            background: #faf5ff;
+        }
+        .agent-step.tool_call {
+            border-left-color: #0ea5e9;
+            background: #f0f9ff;
+        }
+        .agent-step.tool_result {
+            border-left-color: #22c55e;
+            background: #f0fdf4;
+        }
+        .agent-step.api_timing {
+            border-left-color: #f59e0b;
+            background: #fffbeb;
+        }
+        .agent-step.done {
+            border-left-color: #10b981;
+            background: #ecfdf5;
+        }
+        .step-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
+        .step-icon {
+            font-size: 14px;
+        }
+        .step-turn {
+            font-size: 10px;
+            font-weight: 600;
+            background: #e2e8f0;
+            color: #475569;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+        .step-type {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .step-type.thinking { color: #7c3aed; }
+        .step-type.tool_call { color: #0284c7; }
+        .step-type.tool_result { color: #16a34a; }
+        .step-type.api_timing { color: #d97706; }
+        .step-type.done { color: #059669; }
+        .step-timing {
+            font-size: 11px;
+            color: #94a3b8;
+            margin-left: auto;
+        }
+        .step-content {
+            font-family: 'SF Mono', Monaco, monospace;
+            font-size: 12px;
+            color: #334155;
+            white-space: pre-wrap;
+            word-break: break-word;
+            background: rgba(0,0,0,0.03);
+            padding: 8px;
+            border-radius: 4px;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+        .step-tool-name {
+            font-weight: 600;
+            color: #1e293b;
+        }
+        /* User ID Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .modal {
+            background: #fff;
+            border-radius: 12px;
+            padding: 32px;
+            max-width: 400px;
+            width: 90%;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+        .modal h2 {
+            margin: 0 0 8px 0;
+            color: #0f172a;
+            font-size: 24px;
+        }
+        .modal p {
+            color: #64748b;
+            margin: 0 0 24px 0;
+            font-size: 14px;
+        }
+        .modal input {
+            width: 100%;
+            padding: 14px 16px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 16px;
+            margin-bottom: 16px;
+            transition: border-color 0.2s;
+        }
+        .modal input:focus {
+            outline: none;
+            border-color: #0ea5e9;
+        }
+        .modal button {
+            width: 100%;
+            padding: 14px;
+            font-size: 16px;
+            font-weight: 600;
+        }
+        .modal button:disabled {
+            background: #cbd5e1;
+        }
+        /* User badge */
+        .user-badge {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-bottom: 20px;
+            padding: 8px 16px;
+            background: #f0f9ff;
+            border: 1px solid #bae6fd;
+            border-radius: 20px;
+            font-size: 13px;
+            color: #0369a1;
+        }
+        .user-badge .user-icon {
+            font-size: 16px;
+        }
+        .user-badge .change-user {
+            margin-left: 8px;
+            color: #0ea5e9;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .user-badge .change-user:hover {
+            text-decoration: underline;
+        }
+        /* Feedback Box */
+        .feedback-box {
+            background: #fffbeb;
+            border: 1px solid #fcd34d;
+            border-radius: 8px;
+            padding: 16px;
+            margin-top: 16px;
+        }
+        .feedback-box.hidden {
+            display: none;
+        }
+        .feedback-box.submitted {
+            background: #f0fdf4;
+            border-color: #86efac;
+        }
+        .feedback-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        .feedback-header h4 {
+            font-size: 13px;
+            font-weight: 600;
+            color: #92400e;
+            margin: 0;
+        }
+        .feedback-box.submitted .feedback-header h4 {
+            color: #166534;
+        }
+        .feedback-close {
+            background: none;
+            border: none;
+            color: #94a3b8;
+            cursor: pointer;
+            font-size: 18px;
+            padding: 0;
+            line-height: 1;
+        }
+        .feedback-close:hover {
+            color: #64748b;
+            background: none;
+        }
+        .feedback-textarea {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            font-size: 14px;
+            font-family: inherit;
+            resize: vertical;
+            min-height: 60px;
+            margin-bottom: 12px;
+        }
+        .feedback-textarea:focus {
+            outline: 2px solid #f59e0b;
+            border-color: transparent;
+        }
+        .feedback-actions {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .feedback-submit {
+            background: #f59e0b;
+            padding: 8px 16px;
+            font-size: 14px;
+        }
+        .feedback-submit:hover {
+            background: #d97706;
+        }
+        .feedback-submit:disabled {
+            background: #cbd5e1;
+        }
+        .feedback-success {
+            color: #166534;
+            font-size: 14px;
+        }
+        /* Project Description */
+        .project-description {
+            background: #f0f9ff;
+            border: 1px solid #bae6fd;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 20px;
+        }
+        .project-description p {
+            color: #0369a1;
+            font-size: 14px;
+            line-height: 1.6;
+            margin: 0;
+        }
+        /* Quick Feedback Buttons */
+        .quick-feedback {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid #e2e8f0;
+        }
+        .quick-feedback-label {
+            font-size: 13px;
+            color: #64748b;
+        }
+        .feedback-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border: 2px solid #e2e8f0;
+            background: #fff;
+            cursor: pointer;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            padding: 0;
+        }
+        .feedback-btn:hover:not(:disabled) {
+            transform: scale(1.1);
+        }
+        .feedback-btn.good {
+            color: #22c55e;
+        }
+        .feedback-btn.good:hover:not(:disabled) {
+            border-color: #22c55e;
+            background: #f0fdf4;
+        }
+        .feedback-btn.bad {
+            color: #ef4444;
+        }
+        .feedback-btn.bad:hover:not(:disabled) {
+            border-color: #ef4444;
+            background: #fef2f2;
+        }
+        .feedback-btn.selected {
+            transform: scale(1.1);
+        }
+        .feedback-btn.good.selected {
+            border-color: #22c55e;
+            background: #22c55e;
+            color: #fff;
+        }
+        .feedback-btn.bad.selected {
+            border-color: #ef4444;
+            background: #ef4444;
+            color: #fff;
+        }
+        .feedback-btn:disabled {
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+        .feedback-submitted-msg {
+            font-size: 12px;
+            color: #64748b;
+            margin-left: 8px;
+        }
+    </style>
+    <script src="/static/expression.js"></script>
+</head>
+<body>
+    <!-- User ID Modal -->
+    <div class="modal-overlay" id="userModal" style="display: none;">
+        <div class="modal">
+            <h2>Welcome to AdaptLight</h2>
+            <p>Please enter your name or ID to get started. This helps us track your session.</p>
+            <input type="text" id="userIdInput" placeholder="Enter your name or ID..." autocomplete="off">
+            <button id="userIdSubmit" onclick="submitUserId()" disabled>Continue</button>
+        </div>
+    </div>
+
+    <div class="container">
+        <h1>AdaptLight</h1>
+
+        <!-- User Badge -->
+        <div class="user-badge" id="userBadge" style="display: none;">
+            <span class="user-icon">👤</span>
+            <span id="userDisplayName"></span>
+            <span class="change-user" onclick="changeUser()">change</span>
+        </div>
+
+        <div class="light-container">
+            <div class="light-display" id="light"></div>
+            <div class="button-container">
+                <button class="main-button" id="mainButton">PRESS</button>
+                <div class="button-hint">click · double · hold</div>
+                <div class="gesture-indicator" id="gestureIndicator"></div>
+            </div>
+        </div>
+
+        <div class="state-info" id="stateInfo">
+            State: <span id="stateName">off</span>
+        </div>
+
+        <div class="project-description">
+            <p>This is a light bulb simulator that simulates an adaptive light that takes voice comments and inputs. Originally, the light starts with on/off - the light will turn on/off with a simple click. As you type into the comment, it will change functions and control what the button does. You can be as creative as you want.</p>
+        </div>
+
+        <div class="input-group">
+            <input type="text" id="commandInput" placeholder="Enter a command...">
+            <button id="sendBtn" onclick="sendCommand()">Send</button>
+        </div>
+
+        <div class="action-bar">
+            <button class="reset-btn" onclick="resetSM()">Reset</button>
+        </div>
+
+        <div class="response" id="response">
+            <div class="loading" id="loading" style="display: none;">
+                <span>Processing...</span>
+            </div>
+            <div id="responseText">Ready to receive commands.</div>
+            <div class="timing" id="timing"></div>
+            <div class="tools" id="tools"></div>
+
+            <!-- Quick Feedback Buttons -->
+            <div class="quick-feedback" id="quickFeedback" style="display: none;">
+                <span class="quick-feedback-label">Did it work?</span>
+                <button class="feedback-btn good" id="feedbackGood" onclick="submitQuickFeedback(true)">✓</button>
+                <button class="feedback-btn bad" id="feedbackBad" onclick="submitQuickFeedback(false)">✗</button>
+                <span class="feedback-submitted-msg" id="feedbackSubmittedMsg" style="display: none;">Thanks!</span>
+            </div>
+
+            <!-- Feedback Box (appears after command) -->
+            <div class="feedback-box hidden" id="feedbackBox">
+                <div class="feedback-header">
+                    <h4 id="feedbackTitle">Not what you expected? Leave feedback:</h4>
+                    <button class="feedback-close" onclick="closeFeedback()">&times;</button>
+                </div>
+                <textarea class="feedback-textarea" id="feedbackText" placeholder="Describe what went wrong or what you expected..."></textarea>
+                <div class="feedback-actions">
+                    <button class="feedback-submit" id="feedbackSubmit" onclick="submitFeedback()">Submit Feedback</button>
+                    <span class="feedback-success hidden" id="feedbackSuccess">Thanks for your feedback!</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="agent-steps-panel" id="agentStepsPanel" style="display: none;">
+            <div class="agent-steps-header" onclick="toggleAgentSteps()">
+                <h3>Agent Steps <span id="agentStepsCount"></span></h3>
+                <span class="agent-steps-toggle" id="agentStepsToggle">▼ Show</span>
+            </div>
+            <div class="agent-steps-content" id="agentStepsContent">
+                <div id="agentStepsList"></div>
+            </div>
+        </div>
+
+        <div class="details-panel">
+            <div class="details-header" onclick="toggleDetails()">
+                <h3>States & Rules</h3>
+                <span class="details-toggle" id="detailsToggle">▼ Show</span>
+            </div>
+            <div class="details-content" id="detailsContent">
+                <div class="details-section">
+                    <h4>States</h4>
+                    <div id="statesList">
+                        <div class="empty-message">No custom states defined</div>
+                    </div>
+                </div>
+                <div class="details-section">
+                    <h4>Rules</h4>
+                    <div id="rulesList">
+                        <div class="empty-message">No rules defined</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const lightEl = document.getElementById('light');
+        const stateNameEl = document.getElementById('stateName');
+        const responseEl = document.getElementById('response');
+        const responseTextEl = document.getElementById('responseText');
+        const timingEl = document.getElementById('timing');
+        const toolsEl = document.getElementById('tools');
+        const loadingEl = document.getElementById('loading');
+        const inputEl = document.getElementById('commandInput');
+        const sendBtn = document.getElementById('sendBtn');
+        const mainButton = document.getElementById('mainButton');
+        const gestureIndicator = document.getElementById('gestureIndicator');
+
+        // User identification
+        const userModal = document.getElementById('userModal');
+        const userIdInput = document.getElementById('userIdInput');
+        const userIdSubmit = document.getElementById('userIdSubmit');
+        const userBadge = document.getElementById('userBadge');
+        const userDisplayName = document.getElementById('userDisplayName');
+        let currentUserId = null;
+
+        // Check for existing user on load
+        function initUser() {
+            const savedUserId = localStorage.getItem('adaptlight_user_id');
+            if (savedUserId) {
+                currentUserId = savedUserId;
+                showUserBadge();
+            } else {
+                showUserModal();
+            }
+        }
+
+        function showUserModal() {
+            userModal.style.display = 'flex';
+            userBadge.style.display = 'none';
+            userIdInput.value = '';
+            userIdInput.focus();
+        }
+
+        function showUserBadge() {
+            userModal.style.display = 'none';
+            userBadge.style.display = 'flex';
+            userDisplayName.textContent = currentUserId;
+        }
+
+        function submitUserId() {
+            const userId = userIdInput.value.trim();
+            if (userId) {
+                currentUserId = userId;
+                localStorage.setItem('adaptlight_user_id', userId);
+                showUserBadge();
+            }
+        }
+
+        function changeUser() {
+            showUserModal();
+        }
+
+        // Enable submit button when input has value
+        userIdInput.addEventListener('input', () => {
+            userIdSubmit.disabled = !userIdInput.value.trim();
+        });
+
+        // Submit on Enter
+        userIdInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && userIdInput.value.trim()) {
+                submitUserId();
+            }
+        });
+
+        // Initialize user on page load
+        initUser();
+
+        // Gesture detection state
+        let pressStartTime = 0;
+        let clickCount = 0;
+        let clickTimer = null;
+        let holdTimer = null;
+        let isHolding = false;
+
+        const HOLD_THRESHOLD = 500;      // ms to trigger hold
+        const DOUBLE_CLICK_WINDOW = 300; // ms window for double click
+
+        // Animation state
+        let animationId = null;
+        let animationFrame = 0;
+        let animationStartTime = 0;
+        let currentState = null;
+        let currentColor = { r: 0, g: 0, b: 0 };
+
+        // Details panel state
+        let detailsOpen = false;
+
+        // Agent steps panel state
+        let agentStepsOpen = false;
+        const agentStepsPanel = document.getElementById('agentStepsPanel');
+        const agentStepsContent = document.getElementById('agentStepsContent');
+        const agentStepsToggle = document.getElementById('agentStepsToggle');
+        const agentStepsList = document.getElementById('agentStepsList');
+        const agentStepsCount = document.getElementById('agentStepsCount');
+
+        // Feedback state
+        let currentSessionId = null;
+        const feedbackBox = document.getElementById('feedbackBox');
+        const feedbackText = document.getElementById('feedbackText');
+        const feedbackSubmit = document.getElementById('feedbackSubmit');
+        const feedbackSuccess = document.getElementById('feedbackSuccess');
+        const feedbackTitle = document.getElementById('feedbackTitle');
+
+        function showFeedback(sessionId) {
+            currentSessionId = sessionId;
+            feedbackBox.classList.remove('hidden', 'submitted');
+            feedbackText.value = '';
+            feedbackText.disabled = false;
+            feedbackSubmit.disabled = false;
+            feedbackSubmit.style.display = 'inline-block';
+            feedbackSuccess.classList.add('hidden');
+            feedbackTitle.textContent = 'Not what you expected? Leave feedback:';
+        }
+
+        function closeFeedback() {
+            feedbackBox.classList.add('hidden');
+            currentSessionId = null;
+        }
+
+        async function submitFeedback() {
+            const feedback = feedbackText.value.trim();
+            if (!feedback || !currentSessionId) return;
+
+            feedbackSubmit.disabled = true;
+
+            try {
+                const res = await fetch('/api/feedback', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: currentSessionId,
+                        feedback: feedback
+                    })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    feedbackBox.classList.add('submitted');
+                    feedbackTitle.textContent = 'Feedback submitted';
+                    feedbackText.disabled = true;
+                    feedbackSubmit.style.display = 'none';
+                    feedbackSuccess.classList.remove('hidden');
+                }
+            } catch (e) {
+                console.error('Failed to submit feedback:', e);
+                feedbackSubmit.disabled = false;
+            }
+        }
+
+        // Button event handlers
+        mainButton.addEventListener('mousedown', handlePressStart);
+        mainButton.addEventListener('mouseup', handlePressEnd);
+        mainButton.addEventListener('mouseleave', handlePressEnd);
+        mainButton.addEventListener('touchstart', (e) => { e.preventDefault(); handlePressStart(); });
+        mainButton.addEventListener('touchend', (e) => { e.preventDefault(); handlePressEnd(); });
+
+        function handlePressStart() {
+            pressStartTime = Date.now();
+            isHolding = false;
+
+            // Start hold timer
+            holdTimer = setTimeout(() => {
+                isHolding = true;
+                gestureIndicator.textContent = 'hold';
+                trigger('button_hold');
+            }, HOLD_THRESHOLD);
+        }
+
+        function handlePressEnd() {
+            const pressDuration = Date.now() - pressStartTime;
+
+            // Clear hold timer
+            if (holdTimer) {
+                clearTimeout(holdTimer);
+                holdTimer = null;
+            }
+
+            // If it was a hold, trigger release
+            if (isHolding) {
+                gestureIndicator.textContent = 'release';
+                trigger('button_release');
+                setTimeout(() => { gestureIndicator.textContent = ''; }, 500);
+                isHolding = false;
+                return;
+            }
+
+            // Not a hold, count as click
+            if (pressDuration < HOLD_THRESHOLD) {
+                clickCount++;
+
+                if (clickCount === 1) {
+                    // Start timer for double-click detection
+                    clickTimer = setTimeout(() => {
+                        // Single click
+                        gestureIndicator.textContent = 'click';
+                        trigger('button_click');
+                        setTimeout(() => { gestureIndicator.textContent = ''; }, 500);
+                        clickCount = 0;
+                    }, DOUBLE_CLICK_WINDOW);
+                } else if (clickCount === 2) {
+                    // Double click detected
+                    clearTimeout(clickTimer);
+                    gestureIndicator.textContent = 'double click';
+                    trigger('button_double_click');
+                    setTimeout(() => { gestureIndicator.textContent = ''; }, 500);
+                    clickCount = 0;
+                }
+            }
+        }
+
+        // Load initial state
+        fetchState();
+
+        // Enter key to send
+        inputEl.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendCommand();
+        });
+
+        function updateLight(state) {
+            if (!state) return;
+
+            // Stop any existing animation
+            stopAnimation();
+
+            // Store current state
+            currentState = state;
+            stateNameEl.textContent = state.name || 'unknown';
+
+            // Check if this is an animated state
+            if (ExpressionEvaluator.isAnimated(state)) {
+                startAnimation(state);
+            } else {
+                // Static state - evaluate once
+                const r = typeof state.r === 'number' ? state.r : ExpressionEvaluator.evaluate(state.r, currentColor);
+                const g = typeof state.g === 'number' ? state.g : ExpressionEvaluator.evaluate(state.g, currentColor);
+                const b = typeof state.b === 'number' ? state.b : ExpressionEvaluator.evaluate(state.b, currentColor);
+                setLightColor(r, g, b);
+            }
+        }
+
+        function setLightColor(r, g, b) {
+            currentColor = { r, g, b };
+            lightEl.style.background = `rgb(${r}, ${g}, ${b})`;
+
+            // Glow effect based on brightness
+            const brightness = (r + g + b) / 3;
+            const glowIntensity = Math.max(20, brightness / 255 * 80);
+            lightEl.style.boxShadow = `0 0 ${glowIntensity}px rgba(${r}, ${g}, ${b}, 0.7)`;
+        }
+
+        function startAnimation(state) {
+            animationFrame = 0;
+            animationStartTime = performance.now();
+
+            const speed = state.speed || 50; // ms per frame
+
+            function animate() {
+                const elapsed_ms = performance.now() - animationStartTime;
+                const { r, g, b } = ExpressionEvaluator.computeFrame(
+                    state,
+                    animationFrame,
+                    elapsed_ms,
+                    currentColor
+                );
+
+                setLightColor(r, g, b);
+                animationFrame++;
+
+                // Schedule next frame based on speed
+                animationId = setTimeout(animate, speed);
+            }
+
+            animate();
+        }
+
+        function stopAnimation() {
+            if (animationId) {
+                clearTimeout(animationId);
+                animationId = null;
+            }
+        }
+
+        async function fetchState() {
+            try {
+                const res = await fetch('/api/state');
+                const data = await res.json();
+                if (data.success) {
+                    updateLight(data.state);
+                }
+            } catch (e) {
+                console.error('Failed to fetch state:', e);
+            }
+        }
+
+        async function sendCommand() {
+            const text = inputEl.value.trim();
+            if (!text) return;
+
+            if (!currentUserId) {
+                showUserModal();
+                return;
+            }
+
+            setLoading(true);
+            responseEl.className = 'response';
+
+            try {
+                const res = await fetch('/api/process', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text, user_id: currentUserId })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    responseEl.className = 'response success';
+                    responseTextEl.textContent = data.message || 'Command executed successfully.';
+                    updateLight(data.state);
+
+                    if (data.timing) {
+                        timingEl.textContent = `Took ${data.timing.total_ms?.toFixed(0) || '?'}ms`;
+                    }
+
+                    if (data.tool_calls && data.tool_calls.length > 0) {
+                        toolsEl.textContent = `Tools: ${data.tool_calls.map(t => t.name).join(', ')}`;
+                    } else {
+                        toolsEl.textContent = '';
+                    }
+
+                    // Show quick feedback buttons
+                    if (data.session_id) {
+                        showQuickFeedback(data.session_id);
+                    } else {
+                        hideQuickFeedback();
+                    }
+
+                    // Render agent steps
+                    renderAgentSteps(data.agent_steps);
+
+                    // Show feedback box if we have a session_id
+                    if (data.session_id) {
+                        showFeedback(data.session_id);
+                    } else {
+                        closeFeedback();
+                    }
+
+                    // Refresh details panel if open
+                    if (detailsOpen) fetchDetails();
+                } else {
+                    responseEl.className = 'response error';
+                    responseTextEl.textContent = data.error || 'Command failed.';
+                    timingEl.textContent = '';
+                    toolsEl.textContent = '';
+                    agentStepsPanel.style.display = 'none';
+                    hideQuickFeedback();
+                    closeFeedback();
+                }
+            } catch (e) {
+                responseEl.className = 'response error';
+                responseTextEl.textContent = `Error: ${e.message}`;
+                timingEl.textContent = '';
+                toolsEl.textContent = '';
+                agentStepsPanel.style.display = 'none';
+                hideQuickFeedback();
+                closeFeedback();
+            } finally {
+                setLoading(false);
+                inputEl.value = '';
+            }
+        }
+
+        async function trigger(event) {
+            try {
+                const res = await fetch('/api/trigger', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ event, user_id: currentUserId || 'anonymous' })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    updateLight(data.state);
+                    if (detailsOpen) fetchDetails();
+                }
+            } catch (e) {
+                console.error('Trigger failed:', e);
+            }
+        }
+
+        async function resetSM() {
+            if (!confirm('Reset all states and rules? This cannot be undone.')) {
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/reset', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id: currentUserId })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    updateLight(data.state);
+                    responseTextEl.textContent = 'State machine reset.';
+                    responseEl.className = 'response success';
+                    timingEl.textContent = '';
+                    toolsEl.textContent = '';
+                    agentStepsPanel.style.display = 'none';
+                    if (detailsOpen) fetchDetails();
+                }
+            } catch (e) {
+                responseEl.className = 'response error';
+                responseTextEl.textContent = `Error: ${e.message}`;
+            }
+        }
+
+        function setLoading(loading) {
+            loadingEl.style.display = loading ? 'block' : 'none';
+            responseTextEl.style.display = loading ? 'none' : 'block';
+            sendBtn.disabled = loading;
+            inputEl.disabled = loading;
+        }
+
+        // Details panel
+        const detailsContent = document.getElementById('detailsContent');
+        const detailsToggle = document.getElementById('detailsToggle');
+        const statesList = document.getElementById('statesList');
+        const rulesList = document.getElementById('rulesList');
+
+        function toggleDetails() {
+            detailsOpen = !detailsOpen;
+            detailsContent.classList.toggle('open', detailsOpen);
+            detailsToggle.textContent = detailsOpen ? '▲ Hide' : '▼ Show';
+            if (detailsOpen) {
+                fetchDetails();
+            }
+        }
+
+        async function fetchDetails() {
+            try {
+                const res = await fetch('/api/details');
+                const data = await res.json();
+                if (data.success) {
+                    renderStates(data.states, data.current_state);
+                    renderRules(data.rules);
+                }
+            } catch (e) {
+                console.error('Failed to fetch details:', e);
+            }
+        }
+
+        function renderStates(states, currentState) {
+            if (!states || states.length === 0) {
+                statesList.innerHTML = '<div class="empty-message">No custom states defined</div>';
+                return;
+            }
+
+            statesList.innerHTML = states.map(s => {
+                const isCurrent = s.name === currentState;
+                const r = typeof s.r === 'number' ? s.r : 128;
+                const g = typeof s.g === 'number' ? s.g : 128;
+                const b = typeof s.b === 'number' ? s.b : 128;
+
+                let params = [];
+                if (s.speed) params.push(`speed: ${s.speed}ms`);
+                if (s.duration_ms) params.push(`duration: ${s.duration_ms}ms → ${s.then}`);
+                if (typeof s.r === 'string') params.push('animated');
+
+                return `
+                    <div class="state-item ${isCurrent ? 'current' : ''}">
+                        <span class="state-color" style="background: rgb(${r}, ${g}, ${b})"></span>
+                        <span class="state-name">${s.name}</span>
+                        ${isCurrent ? ' (current)' : ''}
+                        ${params.length ? `<div class="state-params">${params.join(' · ')}</div>` : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function renderRules(rules) {
+            if (!rules || rules.length === 0) {
+                rulesList.innerHTML = '<div class="empty-message">No rules defined</div>';
+                return;
+            }
+
+            rulesList.innerHTML = rules.map(r => {
+                let extra = [];
+                if (r.condition) extra.push(`if: ${r.condition}`);
+                if (r.action) extra.push(`do: ${r.action}`);
+                if (r.pipeline) extra.push(`pipeline: ${r.pipeline}`);
+
+                return `
+                    <div class="rule-item">
+                        <span class="state-name">${r.from}</span>
+                        <span class="rule-arrow"> → </span>
+                        <span class="rule-trigger">[${r.on}]</span>
+                        <span class="rule-arrow"> → </span>
+                        <span class="state-name">${r.to}</span>
+                        ${extra.length ? `<div class="rule-condition">${extra.join(' · ')}</div>` : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Agent Steps Panel
+        function toggleAgentSteps() {
+            agentStepsOpen = !agentStepsOpen;
+            agentStepsContent.classList.toggle('open', agentStepsOpen);
+            agentStepsToggle.textContent = agentStepsOpen ? '▲ Hide' : '▼ Show';
+        }
+
+        function renderAgentSteps(steps) {
+            if (!steps || steps.length === 0) {
+                agentStepsPanel.style.display = 'none';
+                return;
+            }
+
+            agentStepsPanel.style.display = 'block';
+            agentStepsCount.textContent = `(${steps.length})`;
+
+            const icons = {
+                'thinking': '💭',
+                'tool_call': '🔧',
+                'tool_result': '✅',
+                'api_timing': '⏱️',
+                'done': '🎉'
+            };
+
+            agentStepsList.innerHTML = steps.map(step => {
+                const icon = icons[step.step_type] || '•';
+                const timing = step.duration_ms ? `${step.duration_ms.toFixed(0)}ms` : '';
+
+                let content = '';
+                if (step.step_type === 'thinking' && step.content) {
+                    content = escapeHtml(step.content);
+                } else if (step.step_type === 'tool_call') {
+                    content = `<span class="step-tool-name">${escapeHtml(step.tool_name)}</span>\n${escapeHtml(JSON.stringify(step.tool_input, null, 2))}`;
+                } else if (step.step_type === 'tool_result') {
+                    content = `<span class="step-tool-name">${escapeHtml(step.tool_name)}</span>\n${escapeHtml(JSON.stringify(step.tool_result, null, 2))}`;
+                } else if (step.step_type === 'api_timing' && step.content) {
+                    content = escapeHtml(step.content);
+                } else if (step.step_type === 'done' && step.content) {
+                    content = escapeHtml(step.content);
+                }
+
+                return `
+                    <div class="agent-step ${step.step_type}">
+                        <div class="step-header">
+                            <span class="step-icon">${icon}</span>
+                            <span class="step-turn">Turn ${step.turn}</span>
+                            <span class="step-type ${step.step_type}">${step.step_type.replace('_', ' ')}</span>
+                            ${timing ? `<span class="step-timing">${timing}</span>` : ''}
+                        </div>
+                        ${content ? `<div class="step-content">${content}</div>` : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Quick feedback elements
+        const quickFeedback = document.getElementById('quickFeedback');
+        const feedbackGood = document.getElementById('feedbackGood');
+        const feedbackBad = document.getElementById('feedbackBad');
+        const feedbackSubmittedMsg = document.getElementById('feedbackSubmittedMsg');
+        let quickFeedbackSessionId = null;
+
+        function showQuickFeedback(sessionId) {
+            quickFeedbackSessionId = sessionId;
+            quickFeedback.style.display = 'flex';
+            feedbackGood.disabled = false;
+            feedbackBad.disabled = false;
+            feedbackGood.classList.remove('selected');
+            feedbackBad.classList.remove('selected');
+            feedbackSubmittedMsg.style.display = 'none';
+        }
+
+        function hideQuickFeedback() {
+            quickFeedback.style.display = 'none';
+            quickFeedbackSessionId = null;
+        }
+
+        async function submitQuickFeedback(isGood) {
+            if (!quickFeedbackSessionId) return;
+
+            // Disable both buttons immediately
+            feedbackGood.disabled = true;
+            feedbackBad.disabled = true;
+
+            // Show selected state
+            if (isGood) {
+                feedbackGood.classList.add('selected');
+            } else {
+                feedbackBad.classList.add('selected');
+            }
+
+            // Show thanks message
+            feedbackSubmittedMsg.style.display = 'inline';
+
+            // Send to backend
+            try {
+                await fetch('/api/quick-feedback', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: quickFeedbackSessionId,
+                        worked: isGood
+                    })
+                });
+            } catch (e) {
+                console.error('Failed to submit quick feedback:', e);
+            }
+        }
+    </script>
+</body>
+</html>

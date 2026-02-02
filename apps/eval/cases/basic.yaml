@@ -1,0 +1,43 @@
+# Basic test suite for AdaptLight brain
+
+- name: create_red_state
+  description: Create a simple red state
+  input: "create a state called red that is red"
+  expected:
+    tool_called: createState
+
+- name: create_blue_state
+  description: Create a simple blue state
+  input: "create a blue state called ocean"
+  expected:
+    tool_called: createState
+
+- name: set_state
+  description: Set the current state
+  input: "turn on the light"
+  expected:
+    state_name: "on"
+
+- name: turn_off
+  description: Turn off the light
+  input: "turn off"
+  expected:
+    state_name: "off"
+
+- name: create_rule
+  description: Create a button toggle rule
+  input: "make the button toggle between on and off"
+  expected:
+    tool_called: appendRules
+
+- name: get_states
+  description: List all states
+  input: "what states are there?"
+  expected:
+    tool_called: getStates
+
+- name: get_rules
+  description: List all rules
+  input: "show me the rules"
+  expected:
+    tool_called: getRules

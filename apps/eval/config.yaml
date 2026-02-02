@@ -1,0 +1,49 @@
+# AdaptLight Evaluation Configuration
+
+# Brain settings (base config)
+brain:
+  mode: agent
+  model: claude-haiku-4-5-20251001
+  prompt_variant: examples
+  max_turns: 10
+  verbose: false
+
+# API keys (loaded from environment or set here)
+anthropic:
+  api_key: ${ANTHROPIC_API_KEY}
+
+openai:
+  api_key: ${OPENAI_API_KEY}
+
+# Evaluation settings
+eval:
+  # Test suites to run
+  suites:
+    - basic
+    # - patterns
+    # - pipelines
+
+  # Variants to test (A/B testing different configurations)
+  variants:
+    - name: haiku-agent
+      brain:
+        mode: agent
+        model: claude-haiku-4-5-20251001
+
+    # - name: sonnet-agent
+    #   brain:
+    #     mode: agent
+    #     model: claude-sonnet-4-20250514
+
+    # - name: gpt4o-parser
+    #   brain:
+    #     mode: parser
+    #     model: gpt-4o
+
+  # Output settings
+  output_dir: ./results
+  save_transcripts: true
+
+# Storage
+storage:
+  dir: data/storage
