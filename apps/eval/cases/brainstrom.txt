@@ -1,0 +1,58 @@
+#failing right now. 
+Turn blue then turn red then turn green 
+Show me a camp fire with flickering flames
+Do a dance party with white flashes 60 % of the time 
+Become a sunset that slowly fades while I’m winding down, start after waiting 5 seconds 
+Create a timer that counts down to ten seconds. 
+Increase the brightness as I click and when the brightness have gone to max it should close. 
+Change into a different color everytime I click a button.
+Blick once when I click the button once, blink twice when I click the button twice. I want you to mirror the blicks with my clicks. 
+I want you to start party mode when I press the button, but when I press it again the next time it should slow down, and when I hold it it will turn off.
+Start dancing when I press the button, but when I press the button again within 5 seconds it should turn off, but when I press the button after 5 seconds it turns into a magic lamp.  
+Glow red if I’ve been sitting too long.
+Predict when I’ll lose focus and intervene before it happens.
+
+
+#Concept Understanding
+Pulse gently like breathing when I’m meditating.
+
+#Time Dep endent
+Become a sunset that slowly fades while I’m winding down in 5 seconds 
+
+for bed at 9 pm
+Turn the room into a forest morning when I wake up at 8 am. 
+Show me the passage of time as a slow color gradient across the day.
+Turn into a 10 second timer.
+When I click on the button turn white if today is a weekday, turn into party mode when it is the weekend. 
+
+
+#Multi Button Interaction
+
+#Just can't do -> Should know what it can and can't do. 
+Glow red if I’ve been sitting too long. #this would be cool. 
+Observe my routines for a week and redesign my lighting to optimize my sleep, focus, and mood.
+Predict when I’ll lose focus and intervene before it happens.
+Turn warm when someone enters the room and cool when it’s empty.
+Tell me a bedtime story using shifting shadows and color.
+
+
+
+
+# Two ways for evaluations.
+
+# prompt, # what the light did, #desired behavior or undesired behavior, #example what the undesired behavior is. 
+
+# prompt, # what the light did, #what the user wanted, #match vs #mismatch
+
+# how can we evaluate multi-turn fine feedback interaction with the lamp? 
+# does it reach to something that works at the end, or stuck in error. 
+
+
+
+#Sound Sensor
+Lower brightness when I’m talking.
+Translate music into living light sculpture.
+
+#External Pipeline
+Show me the weather tomorrow using only color and brightness.
+Use light to remind me of meetings instead of notifications
