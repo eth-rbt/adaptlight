@@ -125,6 +125,13 @@ class AdaptLightRaspi:
                     max_duty_cycle=hw_config.get('cob_max_duty_cycle', 2.0),
                     frequency=hw_config.get('cob_pwm_frequency', 1000)
                 )
+            elif hw_config['led_type'] == 'cob_serial':
+                from .hardware.cobled.cobled_serial import CobLedSerial
+                self.led = CobLedSerial(
+                    port=hw_config.get('cob_serial_port', '/dev/ttyAMA0'),
+                    baudrate=hw_config.get('cob_serial_baudrate', 115200),
+                    brightness=hw_config.get('led_brightness', 1.0)
+                )
             else:
                 from .hardware.led_controller import LEDController
                 self.led = LEDController(

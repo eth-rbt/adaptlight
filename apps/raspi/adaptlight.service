@@ -1,6 +1,7 @@
 [Unit]
 Description=AdaptLight Voice-Controlled Lighting
-After=network.target
+After=network.target dev-ttyAMA0.device
+Wants=dev-ttyAMA0.device
 
 [Service]
 Type=simple
