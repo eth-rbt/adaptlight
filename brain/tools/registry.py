@@ -140,17 +140,24 @@ class ToolRegistry:
         # State management tools
         self.register_tool(
             name="createState",
-            description="Create a named light state. Use expressions like 'random()' or 'sin(frame * 0.1) * 255' for dynamic colors. Use duration_ms + then for auto-transitioning states. Use voice_reactive for mic-reactive brightness.",
+            description="""Create a named light state. Two formats supported:
+
+1. Original format (r/g/b): Use expressions like 'sin(frame * 0.1) * 255' for animations.
+2. Code format: Define render(prev, t) function that returns ((r,g,b), next_ms).
+   - next_ms > 0: animation continues
+   - next_ms = None: static state
+   - next_ms = 0: state complete (triggers state_complete transition)
+
+Use voice_reactive for mic-reactive brightness.""",
             input_schema={
                 "type": "object",
                 "properties": {
                     "name": {"type": "string", "description": "State name"},
-                    "r": {"type": ["number", "string"], "description": "Red value (0-255) or expression"},
-                    "g": {"type": ["number", "string"], "description": "Green value (0-255) or expression"},
-                    "b": {"type": ["number", "string"], "description": "Blue value (0-255) or expression"},
-                    "speed": {"type": ["number", "null"], "description": "Animation speed in ms (null for static)"},
-                    "duration_ms": {"type": ["number", "null"], "description": "How long state runs before auto-transitioning (null = forever)"},
-                    "then": {"type": ["string", "null"], "description": "State to transition to when duration_ms expires"},
+                    "r": {"type": ["number", "string", "null"], "description": "Red value (0-255) or expression (original format)"},
+                    "g": {"type": ["number", "string", "null"], "description": "Green value (0-255) or expression (original format)"},
+                    "b": {"type": ["number", "string", "null"], "description": "Blue value (0-255) or expression (original format)"},
+                    "speed": {"type": ["number", "null"], "description": "Animation speed in ms (null for static, original format)"},
+                    "code": {"type": ["string", "null"], "description": "Python code defining render(prev, t) function (code format)"},
                     "description": {"type": ["string", "null"], "description": "Human-readable description"},
                     "voice_reactive": {
                         "type": ["object", "null"],
@@ -164,7 +171,7 @@ class ToolRegistry:
                         }
                     }
                 },
-                "required": ["name", "r", "g", "b"]
+                "required": ["name"]
             },
             handler=self._handle_create_state
         )
@@ -198,7 +205,7 @@ class ToolRegistry:
         # Rule management tools
         self.register_tool(
             name="appendRules",
-            description="Add transition rules. Rules are evaluated by priority (highest first). Use '*' for wildcard state matching. Supports pipelines and time-based triggers.",
+            description="Add transition rules. Rules are evaluated by priority (highest first). Use '*' for wildcard state matching. Supports pipelines and time-based triggers. Use 'state_complete' trigger for auto-transitions when a state's animation finishes.",
             input_schema={
                 "type": "object",
                 "properties": {
@@ -208,7 +215,7 @@ class ToolRegistry:
                             "type": "object",
                             "properties": {
                                 "from": {"type": "string", "description": "Source state ('*' for any, 'prefix/*' for prefix match)"},
-                                "on": {"type": "string", "description": "Trigger: button_click, button_hold, button_release, button_double_click, timer, interval, schedule"},
+                                "on": {"type": "string", "description": "Trigger: button_click, button_hold, button_release, button_double_click, timer, interval, schedule, state_complete"},
                                 "to": {"type": "string", "description": "Destination state"},
                                 "condition": {"type": ["string", "null"], "description": "Condition expression e.g. \"getData('x') > 0\""},
                                 "action": {"type": ["string", "null"], "description": "Action expression e.g. \"setData('x', getData('x') - 1)\""},
@@ -615,37 +622,44 @@ class ToolRegistry:
         from brain.core.state import State
 
         name = input["name"]
+        code = input.get("code")
         r = input.get("r")
         g = input.get("g")
         b = input.get("b")
         speed = input.get("speed")
-        duration_ms = input.get("duration_ms")
-        then = input.get("then")
         description = input.get("description", "")
         voice_reactive = input.get("voice_reactive")
 
-        # Validate: if duration_ms is set, then must also be set
-        if duration_ms is not None and then is None:
-            return {"error": "If duration_ms is set, 'then' must also be specified"}
+        # Validate: either code or r/g/b must be provided
+        if code is None and (r is None or g is None or b is None):
+            return {"error": "Either 'code' or 'r', 'g', 'b' must be provided"}
 
-        # Create a proper State object with RGB values
-        state = State(
-            name=name,
-            r=r,
-            g=g,
-            b=b,
-            speed=speed,
-            duration_ms=duration_ms,
-            then=then,
-            description=description,
-            voice_reactive=voice_reactive
-        )
+        # Create a proper State object
+        if code is not None:
+            # Code-based state (pure_python or stdlib mode)
+            state = State(
+                name=name,
+                code=code,
+                description=description,
+                voice_reactive=voice_reactive
+            )
+        else:
+            # Original r/g/b mode
+            state = State(
+                name=name,
+                r=r,
+                g=g,
+                b=b,
+                speed=speed,
+                description=description,
+                voice_reactive=voice_reactive
+            )
 
         # Add to state machine's state collection
         self.state_machine.states.add_state(state)
         print(f"State registered: {name}")
 
-        return {"success": True, "state": name}
+        return {"success": True, "state": name, "mode": "code" if code else "original"}
 
     def _handle_delete_state(self, input: Dict) -> Dict:
         """Handle deleteState tool call."""

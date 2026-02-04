@@ -11,6 +11,15 @@ Supports:
 - Wildcard matching: "*" matches any state, "prefix/*" matches states with that prefix
 - Priority: Higher priority rules are evaluated first (default: 0)
 - Enabled flag: Rules can be disabled without deletion
+
+Transition types:
+- button_click, button_hold, button_release, button_double_click: User input
+- timer: One-shot timer (trigger_config: {"delay_ms": <ms>})
+- interval: Repeating timer (trigger_config: {"delay_ms": <ms>, "repeat": true})
+- schedule: Time-of-day trigger (trigger_config: {"hour": <0-23>, "minute": <0-59>})
+- state_complete: Fires when a state's render function returns next_ms=0
+                  Use this for auto-transitions after animations complete.
+                  Example: {"state1": "blink_3x", "transition": "state_complete", "state2": "on"}
 """
 
 from datetime import datetime, timezone
