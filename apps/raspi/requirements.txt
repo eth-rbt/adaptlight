@@ -32,4 +32,7 @@ pyaudio>=0.2.14
 # Text-to-speech
 edge-tts>=6.1.0
 
+# Serial communication (for Arduino COB LED)
+pyserial>=3.5
+
 

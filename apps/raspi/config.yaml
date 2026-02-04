@@ -24,7 +24,7 @@ replicate:
 
 # Hardware (RASPi-specific)
 hardware:
-  led_type: cob                  # 'neopixel' or 'cob'
+  led_type: cob_serial           # 'neopixel', 'cob' (GPIO PWM), or 'cob_serial' (Arduino)
   led_count: 16
   led_brightness: 0.3
   button_pin: 23
@@ -35,18 +35,22 @@ hardware:
   feedback_yes_pin: 24
   feedback_no_pin: 25
 
-  # COB LED PWM pins
+  # COB LED GPIO PWM pins (for led_type: cob)
   cob_red_pin: 12
   cob_green_pin: 13
   cob_blue_pin: 19
   cob_max_duty_cycle: 2.0
   cob_pwm_frequency: 1000
 
+  # COB LED Serial settings (for led_type: cob_serial)
+  cob_serial_port: /dev/ttyAMA0
+  cob_serial_baudrate: 115200
+
 # Reactive lights (NeoPixel for voice feedback)
 reactive_lights:
   enabled: true
   type: neopixel
-  led_count: 32
+  led_count: 35
   spi_bus: 1                       # 0 = SPI0 (GPIO10), 1 = SPI1 (GPIO20)
   brightness: 0.5
 
