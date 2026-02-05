@@ -8,6 +8,14 @@ brain:
   max_turns: 10
   verbose: false
 
+# State representation settings
+# Options: "original", "pure_python", "stdlib"
+# - original: r/g/b expression strings with frame variable
+# - pure_python: full Python code with math module
+# - stdlib: Python code with helper functions (hsv, lerp, ease_in, etc.)
+representation:
+  version: stdlib
+
 # API keys (loaded from environment or set here)
 anthropic:
   api_key: ${ANTHROPIC_API_KEY}

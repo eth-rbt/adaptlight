@@ -35,6 +35,7 @@ hardware:
   feedback_yes_pin: 24
   feedback_no_pin: 25
 
+
   # COB LED GPIO PWM pins (for led_type: cob)
   cob_red_pin: 12
   cob_green_pin: 13

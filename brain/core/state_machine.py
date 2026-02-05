@@ -9,22 +9,26 @@ The state machine:
 2. Executes transitions based on events
 3. Manages state data and intervals
 4. Evaluates conditions and actions safely
+5. Manages state rendering via StateExecutor
 """
 
+import threading
 from typing import Any, Callable, Optional, List
 from .state import State, States
 from .rule import Rule
+from .state_executor import StateExecutor
 
 
 class StateMachine:
     """Main state machine for managing light behavior."""
 
-    def __init__(self, debug=False, default_rules=True):
+    def __init__(self, debug=False, default_rules=True, representation_version="stdlib"):
         """Initialize the state machine.
 
         Args:
             debug: Enable debug output (FPS timing)
             default_rules: If True, add default on/off toggle rules
+            representation_version: State representation version ("original", "pure_python", "stdlib")
         """
         self.rules: List[Rule] = []
         self.current_state = 'off'
@@ -37,6 +41,13 @@ class StateMachine:
         self.rule_id_counter = 0  # Unique ID for each rule
         self.pipeline_executor = None  # Set by tool_registry to enable pipeline execution
         self.debug = debug  # Enable debug output (FPS timing)
+
+        # State rendering
+        self.representation_version = representation_version
+        self.state_executor = StateExecutor(representation_version)
+        self.state_executor.set_on_state_complete(self._on_state_complete)
+        self.render_timer = None  # Timer for next render call
+        self._on_render_callback = None  # Callback for RGB updates
 
         # Add default rules
         if default_rules:
@@ -356,6 +367,53 @@ class StateMachine:
         self.active_timers[rule.id] = timer
         print(f"Schedule set: {target_hour:02d}:{target_minute:02d} ({'daily' if repeat_daily else 'once'}), firing in {delay:.0f}s")
 
+    def set_on_render_callback(self, callback):
+        """
+        Set callback for RGB updates during rendering.
+
+        Args:
+            callback: Function that takes (r, g, b) tuple
+        """
+        self._on_render_callback = callback
+        self.state_executor.set_on_rgb_update(callback)
+
+    def _on_state_complete(self):
+        """Called when renderer returns next_ms=0, signaling state completion."""
+        print(f"State '{self.current_state}' completed, firing state_complete transition")
+        self.execute_transition("state_complete")
+
+    def _schedule_render(self, delay_ms: int):
+        """
+        Schedule next render call.
+
+        Args:
+            delay_ms: Delay in milliseconds before next render
+        """
+        self._cancel_render()
+
+        if delay_ms and delay_ms > 0:
+            self.render_timer = threading.Timer(
+                delay_ms / 1000.0,
+                self._do_render
+            )
+            self.render_timer.daemon = True
+            self.render_timer.start()
+
+    def _do_render(self):
+        """Execute render and schedule next if needed."""
+        result = self.state_executor.render()
+        if result:
+            rgb, next_ms = result
+            # Schedule next render if animation continues
+            if next_ms and next_ms > 0:
+                self._schedule_render(next_ms)
+
+    def _cancel_render(self):
+        """Cancel any pending render timer."""
+        if self.render_timer:
+            self.render_timer.cancel()
+            self.render_timer = None
+
     def set_state(self, state_name: str, params=None):
         """
         Set the current state with optional parameters.
@@ -364,6 +422,9 @@ class StateMachine:
             state_name: The new state name
             params: Optional parameters to pass to the state's onEnter function
         """
+        # Cancel any pending renders from previous state
+        self._cancel_render()
+
         self.current_state = state_name
         self.current_state_params = params
         print(f"State changed to: {state_name}")
@@ -371,6 +432,14 @@ class StateMachine:
         # Execute the onEnter function for this state if it exists
         state_object = self.get_state_object(state_name)
         if state_object:
+            # Initialize executor with new state
+            prev_rgb = self.state_executor.get_current_rgb()
+            self.state_executor.enter_state(state_object, prev_rgb)
+
+            # Do initial render and schedule next if needed
+            self._do_render()
+
+            # Execute onEnter callback (for app-specific behavior)
             state_object.enter(params)
 
     def evaluate_rule_expression(self, expr: str, expr_type: str = 'condition'):
@@ -625,6 +694,7 @@ class StateMachine:
             restore_defaults: If True, clear all rules/states and restore defaults
         """
         self.stop_interval()
+        self._cancel_render()  # Cancel any pending render
         self.current_state = 'off'
         self.current_state_params = None
         self.state_data = {}
@@ -644,11 +714,17 @@ class StateMachine:
 
         print("State machine reset")
 
+    def get_current_rgb(self):
+        """Get the current RGB values from the state executor."""
+        return self.state_executor.get_current_rgb()
+
     def get_summary(self):
         """Get a summary of the state machine."""
         return {
             'rules_count': len(self.rules),
             'current_state': self.current_state,
+            'current_rgb': self.state_executor.get_current_rgb(),
             'state_data': dict(self.state_data),
-            'is_running': self.interval is not None
+            'is_running': self.interval is not None,
+            'representation_version': self.representation_version
         }

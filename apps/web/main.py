@@ -63,6 +63,9 @@ def create_app(config_path: str = None) -> Flask:
     """Create and configure the Flask application."""
     config = load_config(config_path)
 
+    # Get representation version from config
+    representation_version = config.get('representation', {}).get('version', 'stdlib')
+
     # Debug: confirm env loading (do not print secret values)
     env_anthropic = os.environ.get('ANTHROPIC_API_KEY', '')
     env_openai = os.environ.get('OPENAI_API_KEY', '')
@@ -91,6 +94,7 @@ def create_app(config_path: str = None) -> Flask:
         'anthropic_api_key': config['anthropic']['api_key'],
         'openai_api_key': config['openai']['api_key'],
         'storage_dir': config.get('storage', {}).get('dir', 'data/storage'),
+        'representation_version': representation_version,
     }
     smgen = SMgenerator(smgen_config)
 

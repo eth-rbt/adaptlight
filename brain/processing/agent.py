@@ -40,7 +40,7 @@ class AgentExecutor:
 
     def __init__(self, state_machine=None, api_key: str = None, model: str = "claude-sonnet-4-20250514",
                  max_turns: int = 10, verbose: bool = False, prompt_variant: str = "examples",
-                 speech_instructions: str = None):
+                 speech_instructions: str = None, representation_version: str = "stdlib"):
         """
         Initialize agent executor.
 
@@ -52,6 +52,7 @@ class AgentExecutor:
             verbose: Print debug information
             prompt_variant: 'concise' or 'examples' (default: examples)
             speech_instructions: Extra instructions for speech output (e.g., "Keep responses under 2 sentences")
+            representation_version: State representation ('original', 'pure_python', 'stdlib')
         """
         self.state_machine = state_machine
         self.api_key = api_key
@@ -60,6 +61,7 @@ class AgentExecutor:
         self.verbose = verbose
         self.prompt_variant = prompt_variant
         self.speech_instructions = speech_instructions
+        self.representation_version = representation_version
 
         # Initialize tool registry
         self.tools = ToolRegistry(state_machine, api_key=api_key)
@@ -104,7 +106,7 @@ Variables: {json.dumps(variables, indent=2)}"""
         """Build the full system prompt with current state."""
         system_state = self._get_system_state()
         if self.prompt_variant == "examples":
-            prompt = get_agent_system_prompt_with_examples(system_state)
+            prompt = get_agent_system_prompt_with_examples(system_state, self.representation_version)
         else:
             prompt = get_agent_system_prompt(system_state)
 
