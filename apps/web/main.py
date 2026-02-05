@@ -47,9 +47,39 @@ def load_config(config_path: str = None) -> dict:
     return expand_env(config)
 
 
+def load_eval_cases() -> list:
+    """Load eval cases from apps/eval/cases/cases.txt."""
+    cases_path = ROOT_DIR / 'apps' / 'eval' / 'cases' / 'cases.txt'
+    if not cases_path.exists():
+        return []
+
+    with open(cases_path, 'r', encoding='utf-8') as f:
+        lines = [line.strip() for line in f.readlines()]
+
+    return [line for line in lines if line]
+
+
 def create_app(config_path: str = None) -> Flask:
     """Create and configure the Flask application."""
     config = load_config(config_path)
+
+    # Debug: confirm env loading (do not print secret values)
+    env_anthropic = os.environ.get('ANTHROPIC_API_KEY', '')
+    env_openai = os.environ.get('OPENAI_API_KEY', '')
+    print(f"[env] cwd={os.getcwd()}")
+    print(f"[env] .env path={ROOT_DIR / '.env'} exists={os.path.exists(ROOT_DIR / '.env')}")
+    print(f"[env] ANTHROPIC_API_KEY loaded={bool(env_anthropic)} length={len(env_anthropic)}")
+    print(f"[env] OPENAI_API_KEY loaded={bool(env_openai)} length={len(env_openai)}")
+
+    # Trim whitespace from API keys to avoid hidden trailing spaces
+    if isinstance(config.get('anthropic', {}).get('api_key'), str):
+        config['anthropic']['api_key'] = config['anthropic']['api_key'].strip()
+    if isinstance(config.get('openai', {}).get('api_key'), str):
+        config['openai']['api_key'] = config['openai']['api_key'].strip()
+    if isinstance(config.get('supabase', {}).get('url'), str):
+        config['supabase']['url'] = config['supabase']['url'].strip()
+    if isinstance(config.get('supabase', {}).get('anon_key'), str):
+        config['supabase']['anon_key'] = config['supabase']['anon_key'].strip()
 
     # Initialize SMgenerator
     smgen_config = {
@@ -76,6 +106,11 @@ def create_app(config_path: str = None) -> Flask:
     def index():
         """Serve the main page."""
         return send_from_directory('static', 'index.html')
+
+    @app.route('/eval')
+    def eval_page():
+        """Serve the eval page."""
+        return send_from_directory('static', 'eval.html')
 
     @app.route('/static/<path:path>')
     def serve_static(path):
@@ -207,6 +242,44 @@ def create_app(config_path: str = None) -> Flask:
             return jsonify({
                 'success': False,
                 'error': str(e),
+            }), 500
+
+    @app.route('/api/eval/cases', methods=['GET'])
+    def get_eval_cases():
+        """Return evaluation cases from cases.txt."""
+        cases = load_eval_cases()
+        return jsonify({
+            'success': True,
+            'cases': cases,
+        })
+
+    @app.route('/api/eval/process', methods=['POST'])
+    def eval_process():
+        """Process eval input text with a chosen implementation (stubbed)."""
+        data = request.get_json()
+        text = data.get('text', '')
+        implementation = data.get('implementation', 'state_machine')
+
+        if not text:
+            return jsonify({'error': 'No text provided'}), 400
+
+        try:
+            result = smgen.process(text)
+
+            return jsonify({
+                'success': result.success,
+                'state': result.state,
+                'message': result.message,
+                'tool_calls': result.tool_calls,
+                'timing': result.timing,
+                'run_id': result.run_id,
+                'implementation': implementation,
+            })
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'error': str(e),
+                'implementation': implementation,
             }), 500
 
     @app.route('/api/feedback', methods=['POST'])

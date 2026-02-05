@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AdaptLight Eval</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #e0f2fe;
+            color: #1e293b;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 980px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 20px;
+            color: #0f172a;
+        }
+        .top-nav {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .top-nav a {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 12px 24px;
+            border-radius: 8px;
+            background: #0f172a;
+            color: #fff;
+            text-decoration: none;
+            font-size: 16px;
+            font-weight: 500;
+        }
+        .eval-header {
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+        .eval-header h2 {
+            margin-bottom: 10px;
+            font-size: 20px;
+            color: #0f172a;
+        }
+        .eval-nav {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .eval-nav button {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            padding: 0;
+            font-size: 18px;
+            border: none;
+            background: #0ea5e9;
+            color: #fff;
+            cursor: pointer;
+        }
+        .eval-nav button:disabled {
+            background: #cbd5e1;
+            cursor: not-allowed;
+        }
+        .eval-case-text {
+            flex: 1;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            padding: 10px 12px;
+            border-radius: 8px;
+            min-height: 48px;
+            display: flex;
+            align-items: center;
+            color: #1e293b;
+        }
+        .eval-case-meta {
+            margin-top: 8px;
+            font-size: 12px;
+            color: #64748b;
+        }
+        .eval-lamps {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 16px;
+        }
+        .eval-lamp-card {
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .eval-lamp-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+        }
+        .eval-lamp-title {
+            font-weight: 600;
+            color: #0f172a;
+            font-size: 14px;
+        }
+        .eval-run-btn {
+            background: #0ea5e9;
+            font-size: 12px;
+            padding: 8px 12px;
+            border: none;
+            border-radius: 8px;
+            color: #fff;
+            cursor: pointer;
+        }
+        .eval-lamp-display {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background: rgb(0, 0, 0);
+            margin: 0 auto;
+            box-shadow: 0 0 30px rgba(0, 0, 0, 0.2);
+        }
+        .eval-section label {
+            font-size: 11px;
+            text-transform: uppercase;
+            color: #64748b;
+            display: block;
+            margin-bottom: 6px;
+        }
+        .eval-response {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 10px 12px;
+            min-height: 64px;
+            font-size: 13px;
+            color: #1e293b;
+        }
+        .eval-user-response {
+            width: 100%;
+            min-height: 80px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 10px 12px;
+            font-size: 13px;
+            resize: vertical;
+        }
+        .eval-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .eval-check,
+        .eval-cross {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            padding: 0;
+            font-size: 16px;
+            font-weight: 600;
+            border: none;
+            color: #fff;
+            cursor: pointer;
+        }
+        .eval-check {
+            background: #22c55e;
+        }
+        .eval-cross {
+            background: #ef4444;
+        }
+        .eval-status {
+            font-size: 12px;
+            color: #64748b;
+        }
+        .user-badge {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            font-size: 12px;
+            color: #64748b;
+            margin-bottom: 12px;
+        }
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .modal {
+            background: #fff;
+            border-radius: 12px;
+            padding: 20px;
+            width: 100%;
+            max-width: 360px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            text-align: center;
+        }
+        .modal h2 {
+            margin-bottom: 10px;
+        }
+        .modal input {
+            width: 100%;
+            margin: 12px 0;
+            padding: 10px 12px;
+            border-radius: 8px;
+            border: 1px solid #cbd5e1;
+            font-size: 14px;
+        }
+        .modal button {
+            padding: 10px 16px;
+            border: none;
+            border-radius: 8px;
+            background: #0ea5e9;
+            color: #fff;
+            cursor: pointer;
+        }
+        .modal button:disabled {
+            background: #cbd5e1;
+            cursor: not-allowed;
+        }
+    </style>
+    <script src="/static/expression.js"></script>
+</head>
+<body>
+    <div class="modal-overlay" id="userModal" style="display: none;">
+        <div class="modal">
+            <h2>Welcome to AdaptLight Eval</h2>
+            <p>Please enter your name or ID to get started.</p>
+            <input type="text" id="userIdInput" placeholder="Enter your name or ID..." autocomplete="off">
+            <button id="userIdSubmit" onclick="submitUserId()" disabled>Continue</button>
+        </div>
+    </div>
+
+    <div class="container">
+        <h1>AdaptLight Eval</h1>
+
+        <div class="top-nav">
+            <a href="/">Back to Home</a>
+        </div>
+
+        <div class="user-badge" id="userBadge" style="display: none;">
+            <span>👤</span>
+            <span id="userDisplayName"></span>
+        </div>
+
+        <div class="eval-header">
+            <h2>Evaluation</h2>
+            <div class="eval-nav">
+                <button id="evalPrev" onclick="goToPrevCase()">&lt;</button>
+                <div class="eval-case-text" id="evalCaseText">Loading cases...</div>
+                <button id="evalNext" onclick="goToNextCase()">&gt;</button>
+            </div>
+            <div class="eval-case-meta" id="evalCaseMeta"></div>
+        </div>
+
+        <div class="eval-lamps">
+            <div class="eval-lamp-card" data-implementation="state_machine">
+                <div class="eval-lamp-header">
+                    <div class="eval-lamp-title">Lamp A — State Machine</div>
+                    <button class="eval-run-btn" onclick="runEval('lampA')">Run</button>
+                </div>
+                <div class="eval-lamp-display" id="evalLampA"></div>
+                <div class="eval-section">
+                    <label>Model response</label>
+                    <div class="eval-response" id="evalResponseA">Not run yet.</div>
+                </div>
+                <div class="eval-section">
+                    <label>Your response</label>
+                    <textarea class="eval-user-response" id="evalUserResponseA" placeholder="What did it do?"></textarea>
+                </div>
+                <div class="eval-actions">
+                    <button class="eval-check" onclick="setEvalStatus('lampA', true)">✓</button>
+                    <button class="eval-cross" onclick="setEvalStatus('lampA', false)">✗</button>
+                    <span class="eval-status" id="evalStatusA"></span>
+                </div>
+            </div>
+
+            <div class="eval-lamp-card" data-implementation="method_b">
+                <div class="eval-lamp-header">
+                    <div class="eval-lamp-title">Lamp B — Method B</div>
+                    <button class="eval-run-btn" onclick="runEval('lampB')">Run</button>
+                </div>
+                <div class="eval-lamp-display" id="evalLampB"></div>
+                <div class="eval-section">
+                    <label>Model response</label>
+                    <div class="eval-response" id="evalResponseB">Not run yet.</div>
+                </div>
+                <div class="eval-section">
+                    <label>Your response</label>
+                    <textarea class="eval-user-response" id="evalUserResponseB" placeholder="What did it do?"></textarea>
+                </div>
+                <div class="eval-actions">
+                    <button class="eval-check" onclick="setEvalStatus('lampB', true)">✓</button>
+                    <button class="eval-cross" onclick="setEvalStatus('lampB', false)">✗</button>
+                    <span class="eval-status" id="evalStatusB"></span>
+                </div>
+            </div>
+
+            <div class="eval-lamp-card" data-implementation="method_c">
+                <div class="eval-lamp-header">
+                    <div class="eval-lamp-title">Lamp C — Method C</div>
+                    <button class="eval-run-btn" onclick="runEval('lampC')">Run</button>
+                </div>
+                <div class="eval-lamp-display" id="evalLampC"></div>
+                <div class="eval-section">
+                    <label>Model response</label>
+                    <div class="eval-response" id="evalResponseC">Not run yet.</div>
+                </div>
+                <div class="eval-section">
+                    <label>Your response</label>
+                    <textarea class="eval-user-response" id="evalUserResponseC" placeholder="What did it do?"></textarea>
+                </div>
+                <div class="eval-actions">
+                    <button class="eval-check" onclick="setEvalStatus('lampC', true)">✓</button>
+                    <button class="eval-cross" onclick="setEvalStatus('lampC', false)">✗</button>
+                    <span class="eval-status" id="evalStatusC"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const evalCaseTextEl = document.getElementById('evalCaseText');
+        const evalCaseMetaEl = document.getElementById('evalCaseMeta');
+        const evalPrevBtn = document.getElementById('evalPrev');
+        const evalNextBtn = document.getElementById('evalNext');
+
+        const userModal = document.getElementById('userModal');
+        const userIdInput = document.getElementById('userIdInput');
+        const userIdSubmit = document.getElementById('userIdSubmit');
+        const userBadge = document.getElementById('userBadge');
+        const userDisplayName = document.getElementById('userDisplayName');
+        let currentUserId = null;
+
+        let evalCases = [];
+        let evalCaseIndex = 0;
+        const evalStatus = {
+            lampA: null,
+            lampB: null,
+            lampC: null
+        };
+
+        function initUser() {
+            const savedUserId = localStorage.getItem('adaptlight_user_id');
+            if (savedUserId) {
+                currentUserId = savedUserId;
+                showUserBadge();
+            } else {
+                showUserModal();
+            }
+        }
+
+        function showUserModal() {
+            userModal.style.display = 'flex';
+            userBadge.style.display = 'none';
+            userIdInput.value = '';
+            userIdInput.focus();
+        }
+
+        function showUserBadge() {
+            userModal.style.display = 'none';
+            userBadge.style.display = 'flex';
+            userDisplayName.textContent = currentUserId;
+        }
+
+        function submitUserId() {
+            const userId = userIdInput.value.trim();
+            if (userId) {
+                currentUserId = userId;
+                localStorage.setItem('adaptlight_user_id', userId);
+                showUserBadge();
+            }
+        }
+
+        userIdInput.addEventListener('input', () => {
+            userIdSubmit.disabled = !userIdInput.value.trim();
+        });
+
+        userIdInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && userIdInput.value.trim()) {
+                submitUserId();
+            }
+        });
+
+        initUser();
+
+        async function loadEvalCases() {
+            try {
+                const res = await fetch('/api/eval/cases');
+                const data = await res.json();
+                if (data.success) {
+                    evalCases = data.cases || [];
+                    if (evalCases.length === 0) {
+                        evalCaseTextEl.textContent = 'No cases found.';
+                        evalCaseMetaEl.textContent = '';
+                        evalPrevBtn.disabled = true;
+                        evalNextBtn.disabled = true;
+                        return;
+                    }
+                    evalCaseIndex = Math.min(evalCaseIndex, evalCases.length - 1);
+                    setEvalCase(evalCaseIndex);
+                }
+            } catch (e) {
+                evalCaseTextEl.textContent = 'Failed to load cases.';
+                evalCaseMetaEl.textContent = '';
+            }
+        }
+
+        function setEvalCase(index) {
+            if (!evalCases.length) return;
+            evalCaseIndex = index;
+            evalCaseTextEl.textContent = evalCases[evalCaseIndex];
+            evalCaseMetaEl.textContent = `Case ${evalCaseIndex + 1} of ${evalCases.length}`;
+            evalPrevBtn.disabled = evalCaseIndex === 0;
+            evalNextBtn.disabled = evalCaseIndex === evalCases.length - 1;
+            resetEvalLamps();
+        }
+
+        function goToNextCase() {
+            if (evalCaseIndex < evalCases.length - 1) {
+                setEvalCase(evalCaseIndex + 1);
+            }
+        }
+
+        function goToPrevCase() {
+            if (evalCaseIndex > 0) {
+                setEvalCase(evalCaseIndex - 1);
+            }
+        }
+
+        function resetEvalLamps() {
+            ['A', 'B', 'C'].forEach(letter => {
+                const responseEl = document.getElementById(`evalResponse${letter}`);
+                const statusEl = document.getElementById(`evalStatus${letter}`);
+                const userResponseEl = document.getElementById(`evalUserResponse${letter}`);
+                const lampEl = document.getElementById(`evalLamp${letter}`);
+                responseEl.textContent = 'Not run yet.';
+                statusEl.textContent = '';
+                userResponseEl.value = '';
+                setEvalLampColor(lampEl, 0, 0, 0);
+            });
+            evalStatus.lampA = null;
+            evalStatus.lampB = null;
+            evalStatus.lampC = null;
+        }
+
+        function setEvalStatus(lampKey, isGood) {
+            evalStatus[lampKey] = isGood;
+            const letter = lampKey === 'lampA' ? 'A' : lampKey === 'lampB' ? 'B' : 'C';
+            const statusEl = document.getElementById(`evalStatus${letter}`);
+            statusEl.textContent = isGood ? 'Marked ✓' : 'Marked ✗';
+        }
+
+        function getEvalImplementation(lampKey) {
+            if (lampKey === 'lampA') return 'state_machine';
+            if (lampKey === 'lampB') return 'method_b';
+            return 'method_c';
+        }
+
+        async function runEval(lampKey) {
+            if (!evalCases.length) return;
+            if (!currentUserId) {
+                showUserModal();
+                return;
+            }
+
+            const letter = lampKey === 'lampA' ? 'A' : lampKey === 'lampB' ? 'B' : 'C';
+            const responseEl = document.getElementById(`evalResponse${letter}`);
+            const lampEl = document.getElementById(`evalLamp${letter}`);
+            responseEl.textContent = 'Running...';
+
+            try {
+                const res = await fetch('/api/eval/process', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        text: evalCases[evalCaseIndex],
+                        implementation: getEvalImplementation(lampKey),
+                        user_id: currentUserId
+                    })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    responseEl.textContent = data.message || 'No response message.';
+                    updateEvalLamp(lampEl, data.state);
+                } else {
+                    responseEl.textContent = data.error || 'Eval failed.';
+                    setEvalLampColor(lampEl, 0, 0, 0);
+                }
+            } catch (e) {
+                responseEl.textContent = `Error: ${e.message}`;
+                setEvalLampColor(lampEl, 0, 0, 0);
+            }
+        }
+
+        function updateEvalLamp(lampEl, state) {
+            if (!state) {
+                setEvalLampColor(lampEl, 0, 0, 0);
+                return;
+            }
+
+            const r = typeof state.r === 'number' ? state.r : ExpressionEvaluator.evaluate(state.r, { r: 0, g: 0, b: 0 });
+            const g = typeof state.g === 'number' ? state.g : ExpressionEvaluator.evaluate(state.g, { r: 0, g: 0, b: 0 });
+            const b = typeof state.b === 'number' ? state.b : ExpressionEvaluator.evaluate(state.b, { r: 0, g: 0, b: 0 });
+            setEvalLampColor(lampEl, r, g, b);
+        }
+
+        function setEvalLampColor(lampEl, r, g, b) {
+            if (!lampEl) return;
+            lampEl.style.background = `rgb(${r}, ${g}, ${b})`;
+            const brightness = (r + g + b) / 3;
+            const glowIntensity = Math.max(14, brightness / 255 * 60);
+            lampEl.style.boxShadow = `0 0 ${glowIntensity}px rgba(${r}, ${g}, ${b}, 0.6)`;
+        }
+
+        loadEvalCases();
+    </script>
+</body>
+</html>

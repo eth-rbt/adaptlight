@@ -124,7 +124,7 @@ Variables: {json.dumps(variables, indent=2)}"""
         Returns:
             Final message to show user
         """
-        if not self.client:
+        if self.client is None:
             return "Error: Claude client not initialized. Check API key."
 
         # Reset steps for this run

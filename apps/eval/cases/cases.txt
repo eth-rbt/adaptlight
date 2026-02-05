@@ -1,0 +1,12 @@
+Turn blue then turn red then turn green 
+Show me a camp fire with flickering flames
+Do a dance party with white flashes 60 % of the time 
+Become a sunset that slowly fades while I’m winding down, start after waiting 5 seconds 
+Create a timer that counts down to ten seconds. 
+Increase the brightness as I click and when the brightness have gone to max it should close. 
+Change into a different color everytime I click a button.
+Blick once when I click the button once, blink twice when I click the button twice. I want you to mirror the blicks with my clicks. 
+I want you to start party mode when I press the button, but when I press it again the next time it should slow down, and when I hold it it will turn off.
+Start dancing when I press the button, but when I press the button again within 5 seconds it should turn off, but when I press the button after 5 seconds it turns into a magic lamp.  
+Glow red if I’ve been sitting too long.
+Predict when I’ll lose focus and intervene before it happens.

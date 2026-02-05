@@ -621,6 +621,24 @@
             color: #64748b;
             margin-left: 8px;
         }
+        .top-nav {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .top-nav a {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 12px 24px;
+            border-radius: 8px;
+            background: #0f172a;
+            color: #fff;
+            text-decoration: none;
+            font-size: 16px;
+            font-weight: 500;
+        }
     </style>
     <script src="/static/expression.js"></script>
 </head>
@@ -637,6 +655,10 @@
 
     <div class="container">
         <h1>AdaptLight</h1>
+
+        <div class="top-nav">
+            <a href="/eval">Go to Eval</a>
+        </div>
 
         <!-- User Badge -->
         <div class="user-badge" id="userBadge" style="display: none;">
@@ -841,6 +863,7 @@
         const feedbackSubmit = document.getElementById('feedbackSubmit');
         const feedbackSuccess = document.getElementById('feedbackSuccess');
         const feedbackTitle = document.getElementById('feedbackTitle');
+
 
         function showFeedback(sessionId) {
             currentSessionId = sessionId;
