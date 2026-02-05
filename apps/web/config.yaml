@@ -14,7 +14,7 @@ brain:
 # - pure_python: full Python code with math module
 # - stdlib: Python code with helper functions (hsv, lerp, ease_in, etc.)
 representation:
-  version: stdlib
+  version: stdlib # original, pure_python, stdlib
 
 # API keys (loaded from environment or set here)
 anthropic:

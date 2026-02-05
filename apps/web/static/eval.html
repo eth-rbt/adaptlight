@@ -405,6 +405,22 @@
 
         initUser();
 
+        // Fetch config to set representation version
+        async function fetchConfig() {
+            try {
+                const res = await fetch('/api/config');
+                const data = await res.json();
+                if (data.success && data.representation_version) {
+                    ExpressionEvaluator.setVersion(data.representation_version);
+                }
+            } catch (e) {
+                console.error('Failed to fetch config:', e);
+            }
+        }
+
+        // Initialize config then load cases
+        fetchConfig().then(() => loadEvalCases());
+
         async function loadEvalCases() {
             try {
                 const res = await fetch('/api/eval/cases');
@@ -521,10 +537,12 @@
                 return;
             }
 
-            const r = typeof state.r === 'number' ? state.r : ExpressionEvaluator.evaluate(state.r, { r: 0, g: 0, b: 0 });
-            const g = typeof state.g === 'number' ? state.g : ExpressionEvaluator.evaluate(state.g, { r: 0, g: 0, b: 0 });
-            const b = typeof state.b === 'number' ? state.b : ExpressionEvaluator.evaluate(state.b, { r: 0, g: 0, b: 0 });
-            setEvalLampColor(lampEl, r, g, b);
+            // Use the unified render API
+            const prev = [0, 0, 0];
+            const result = ExpressionEvaluator.render(state, prev, 0);
+            setEvalLampColor(lampEl, result.rgb[0], result.rgb[1], result.rgb[2]);
+
+            // TODO: If animated, could start animation loop here
         }
 
         function setEvalLampColor(lampEl, r, g, b) {
@@ -535,7 +553,6 @@
             lampEl.style.boxShadow = `0 0 ${glowIntensity}px rgba(${r}, ${g}, ${b}, 0.6)`;
         }
 
-        loadEvalCases();
     </script>
 </body>
 </html>

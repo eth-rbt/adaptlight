@@ -360,6 +360,14 @@ def create_app(config_path: str = None) -> Flask:
                 'error': str(e),
             }), 500
 
+    @app.route('/api/config', methods=['GET'])
+    def get_config():
+        """Get frontend-relevant config (representation version)."""
+        return jsonify({
+            'success': True,
+            'representation_version': representation_version,
+        })
+
     return app
 
 
