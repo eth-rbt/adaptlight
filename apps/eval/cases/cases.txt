@@ -10,3 +10,6 @@ I want you to start party mode when I press the button, but when I press it agai
 Start dancing when I press the button, but when I press the button again within 5 seconds it should turn off, but when I press the button after 5 seconds it turns into a magic lamp.  
 Glow red if I’ve been sitting too long.
 Predict when I’ll lose focus and intervene before it happens.
+Turn warm when someone enters the room and cool when it’s empty.
+
+
