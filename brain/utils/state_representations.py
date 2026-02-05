@@ -383,6 +383,56 @@ def render(prev, t):
 
 
 # =============================================================================
+# VERSION 4: Stdlib JS (JavaScript for frontend execution)
+# =============================================================================
+
+class StdlibJSRenderer:
+    """
+    JavaScript stdlib: code is executed directly in the browser.
+    The backend just stores the code; frontend evaluates it.
+
+    Available functions (same as Python stdlib, but in JS):
+    - Color: hsv(h,s,v), rgb(r,g,b), lerp_color(c1,c2,t)
+    - Math: sin, cos, tan, abs, min, max, floor, ceil, sqrt, pow, clamp, lerp, map_range
+    - Easing: ease_in(t), ease_out(t), ease_in_out(t)
+    - Random: random(), randint(lo,hi)
+    - Utility: int(x)
+    - Constants: PI, E
+
+    State definition:
+        {
+            "code": `
+function render(prev, t) {
+    return [hsv(t * 0.1 % 1, 1, 1), 30];
+}
+`
+        }
+
+    Return format: [[r, g, b], nextMs]
+    - nextMs > 0: animation continues
+    - nextMs = null: static state
+    - nextMs = 0: state complete, triggers transition
+    """
+
+    def __init__(self, code: str):
+        self.code = code
+        # No compilation on backend - JS runs in browser
+
+    def render(self, prev, t):
+        """
+        Backend render - returns a placeholder.
+        Actual rendering happens in the browser.
+        """
+        # For backend compatibility, return a neutral value
+        # The frontend will use the code directly
+        return prev, None
+
+    def get_code(self):
+        """Return the JS code for frontend execution."""
+        return self.code
+
+
+# =============================================================================
 # EXAMPLES
 # =============================================================================
 

@@ -1041,17 +1041,38 @@
                 // Schedule next frame based on nextMs from render
                 // nextMs > 0: continue animation
                 // nextMs = null: static, stop animation
-                // nextMs = 0: state complete, could trigger transition
+                // nextMs = 0: state complete, trigger transition
                 if (result.nextMs && result.nextMs > 0) {
                     animationId = setTimeout(animate, result.nextMs);
                 } else if (result.nextMs === null) {
                     // Static state, no more frames needed
                     stopAnimation();
+                } else if (result.nextMs === 0) {
+                    // State complete - trigger backend transition
+                    stopAnimation();
+                    triggerStateComplete();
                 }
-                // nextMs === 0 means state complete (could trigger event)
             }
 
             animate();
+        }
+
+        async function triggerStateComplete() {
+            console.log('State complete - triggering transition');
+            try {
+                const res = await fetch('/api/trigger', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ event: 'state_complete' })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    updateLight(data.state);
+                    if (detailsOpen) fetchDetails();
+                }
+            } catch (e) {
+                console.error('Failed to trigger state_complete:', e);
+            }
         }
 
         function stopAnimation() {

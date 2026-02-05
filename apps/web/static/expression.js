@@ -210,8 +210,10 @@ class StdlibEvaluator {
             return this.renderFn;
         }
 
+        let jsCode;
         try {
-            const jsCode = this._transpile(code);
+            jsCode = this._transpile(code);
+            console.log('Transpiled JS:', jsCode);  // Debug: show transpiled code
             // Create function with stdlib in scope
             const fn = new Function(
                 'hsv', 'rgb', 'lerp', 'lerp_color', 'clamp', 'map_range',
@@ -246,7 +248,8 @@ class StdlibEvaluator {
             return this.renderFn;
         } catch (e) {
             console.error('Compilation error:', e);
-            console.error('Code:', code);
+            console.error('Python code:', code);
+            console.error('Transpiled JS:', jsCode);
             this.renderFn = (prev, t) => [prev, null];
             return this.renderFn;
         }
@@ -258,6 +261,13 @@ class StdlibEvaluator {
     _transpile(pythonCode) {
         let js = pythonCode;
 
+        // FIRST: Strip and store comments to avoid mangling them
+        const comments = [];
+        js = js.replace(/#([^\n]*)/g, (match, comment) => {
+            comments.push(comment);
+            return `__COMMENT_${comments.length - 1}__`;
+        });
+
         // Remove 'def ' and add 'function '
         js = js.replace(/def\s+(\w+)\s*\(/g, 'function $1(');
 
@@ -266,13 +276,10 @@ class StdlibEvaluator {
         js = js.replace(/\bFalse\b/g, 'false');
         js = js.replace(/\bNone\b/g, 'null');
 
-        // Python 'and'/'or'/'not' -> JS
+        // Python 'and'/'or'/'not' -> JS (now safe, comments are stripped)
         js = js.replace(/\band\b/g, '&&');
         js = js.replace(/\bor\b/g, '||');
-        js = js.replace(/\bnot\b/g, '!');
-
-        // Python comments
-        js = js.replace(/#([^\n]*)/g, '//$1');
+        js = js.replace(/\bnot\s+/g, '!');
 
         // Python elif -> else if
         js = js.replace(/\belif\b/g, 'else if');
@@ -280,25 +287,38 @@ class StdlibEvaluator {
         // Handle Python's power operator **
         js = js.replace(/(\w+|\))\s*\*\*\s*(\w+|\()/g, 'pow($1, $2)');
 
-        // Handle Python tuple unpacking: "a, b, c = expr" -> "const [a, b, c] = expr"
-        // Also handles "r, g, b = prev" pattern
-        js = js.replace(/^(\s*)(\w+)\s*,\s*(\w+)\s*,\s*(\w+)\s*=\s*(.+)$/gm,
-            '$1const [$2, $3, $4] = $5');
-        js = js.replace(/^(\s*)(\w+)\s*,\s*(\w+)\s*=\s*(.+)$/gm,
-            '$1const [$2, $3] = $4');
+        // Handle Python tuple unpacking: "a, b, c = expr" -> "var [a, b, c] = expr"
+        js = js.replace(/^(\s*)(\w+)\s*,\s*(\w+)\s*,\s*(\w+)\s*=\s*(.+)$/gm, (match, indent, a, b, c, expr) => {
+            // Strip any trailing comment placeholder
+            expr = expr.replace(/__COMMENT_\d+__/, '').trim();
+            // If expr contains comma but no parens/brackets, wrap in brackets
+            if (expr.includes(',') && !expr.includes('(') && !expr.includes('[')) {
+                return `${indent}var [${a}, ${b}, ${c}] = [${expr}]`;
+            }
+            return `${indent}var [${a}, ${b}, ${c}] = ${expr}`;
+        });
+        js = js.replace(/^(\s*)(\w+)\s*,\s*(\w+)\s*=\s*(.+)$/gm, (match, indent, a, b, expr) => {
+            expr = expr.replace(/__COMMENT_\d+__/, '').trim();
+            if (expr.includes(',') && !expr.includes('(') && !expr.includes('[')) {
+                return `${indent}var [${a}, ${b}] = [${expr}]`;
+            }
+            return `${indent}var [${a}, ${b}] = ${expr}`;
+        });
 
-        // Handle simple variable assignments: "x = expr" -> "let x = expr"
-        // Only for simple variable names, not for object properties or array indices
-        js = js.replace(/^(\s*)([a-z_]\w*)\s*=\s*([^=].*)$/gim, '$1let $2 = $3');
+        // Handle simple variable assignments: "x = expr" -> "var x = expr"
+        js = js.replace(/^(\s*)([a-z_]\w*)\s*=\s*([^=].*)$/gim, '$1var $2 = $3');
 
         // Handle Python tuple returns: "return expr, value" -> "return [expr, value]"
-        // The render function returns (rgb, nextMs) where nextMs is simple (number/null)
-        // Process line by line to handle this correctly
         js = js.split('\n').map(line => {
             const returnMatch = line.match(/^(\s*)return\s+(.+)$/);
             if (returnMatch) {
                 const indent = returnMatch[1];
-                const expr = returnMatch[2];
+                let expr = returnMatch[2];
+                // Strip trailing comment placeholder for processing
+                const commentMatch = expr.match(/(__COMMENT_\d+__)$/);
+                if (commentMatch) {
+                    expr = expr.replace(commentMatch[1], '').trim();
+                }
                 // Find the last comma not inside parentheses
                 let depth = 0;
                 let lastCommaIdx = -1;
@@ -317,8 +337,11 @@ class StdlibEvaluator {
         }).join('\n');
 
         // Handle Python tuples in parentheses: (a, b, c) -> [a, b, c]
-        // Be careful not to break function calls - only convert obvious tuples
-        js = js.replace(/\((\d+)\s*,\s*(\d+)\s*,\s*(\d+)\)/g, '[$1, $2, $3]');
+        js = js.replace(/(?<!\w)\((\w+)\s*,\s*(\w+)\s*,\s*(\w+)\)/g, '[$1, $2, $3]');
+        js = js.replace(/(?<!\w)\((\w+)\s*,\s*(\w+)\)/g, '[$1, $2]');
+
+        // Remove any remaining comment placeholders before indentation processing
+        js = js.replace(/__COMMENT_\d+__/g, '');
 
         // Convert indentation-based blocks to braces
         js = this._convertIndentation(js);
@@ -355,8 +378,31 @@ class StdlibEvaluator {
 
             // Check if line ends with colon (start of block)
             if (trimmed.endsWith(':')) {
-                // Remove colon, add opening brace
-                line = line.slice(0, -1) + ' {';
+                const indent = line.substring(0, currentIndent);
+                let statement = trimmed.slice(0, -1); // Remove colon
+
+                // Add parentheses around if/else if conditions
+                if (statement.startsWith('if ')) {
+                    const condition = statement.substring(3).trim();
+                    line = `${indent}if (${condition}) {`;
+                } else if (statement.startsWith('else if ')) {
+                    const condition = statement.substring(8).trim();
+                    line = `${indent}} else if (${condition}) {`;
+                    // Don't push closing brace separately since we included it
+                    // Remove the last '}' we added when dedenting
+                    if (result.length > 0 && result[result.length - 1].trim() === '}') {
+                        result.pop();
+                    }
+                } else if (statement === 'else') {
+                    line = `${indent}} else {`;
+                    if (result.length > 0 && result[result.length - 1].trim() === '}') {
+                        result.pop();
+                    }
+                } else {
+                    // Other blocks (function, for, while, etc.)
+                    line = `${indent}${statement} {`;
+                }
+
                 result.push(line);
                 indentStack.push(currentIndent + 4);
             } else {
@@ -499,6 +545,125 @@ class PurePythonEvaluator extends StdlibEvaluator {
 
 
 // =============================================================================
+// STDLIB JS EVALUATOR (native JavaScript, no transpilation)
+// =============================================================================
+
+class StdlibJSEvaluator {
+    /**
+     * Stdlib JS: JavaScript code executed directly, no transpilation needed.
+     * State: { code: "function render(prev, t) { return [hsv(t * 0.1 % 1, 1, 1), 30]; }" }
+     */
+
+    constructor() {
+        this.renderFn = null;
+        this.compiledCode = null;
+    }
+
+    isAnimated(state) {
+        return state && state.code;
+    }
+
+    reset() {
+        this.renderFn = null;
+        this.compiledCode = null;
+    }
+
+    /**
+     * Compile JS code directly (no transpilation).
+     */
+    compile(code) {
+        if (this.compiledCode === code && this.renderFn) {
+            return this.renderFn;
+        }
+
+        try {
+            console.log('Compiling JS code directly');
+            // Create function with stdlib in scope - code is already JavaScript
+            const fn = new Function(
+                'hsv', 'rgb', 'lerp', 'lerp_color', 'clamp', 'map_range',
+                'ease_in', 'ease_out', 'ease_in_out',
+                'sin', 'cos', 'tan', 'abs', 'floor', 'ceil', 'sqrt', 'pow',
+                'min', 'max', 'round', 'random', 'randint', 'PI', 'E', 'int', 'float', 'len', 'range',
+                `${code}\nreturn render;`
+            );
+
+            this.renderFn = fn(
+                StdlibEvaluator.hsv,
+                StdlibEvaluator.rgb,
+                StdlibEvaluator.lerp,
+                StdlibEvaluator.lerp_color,
+                StdlibEvaluator.clamp,
+                StdlibEvaluator.map_range,
+                StdlibEvaluator.ease_in,
+                StdlibEvaluator.ease_out,
+                StdlibEvaluator.ease_in_out,
+                Math.sin, Math.cos, Math.tan, Math.abs, Math.floor, Math.ceil, Math.sqrt, Math.pow,
+                Math.min, Math.max, Math.round,
+                Math.random,
+                (lo, hi) => Math.floor(Math.random() * (hi - lo + 1)) + lo,
+                Math.PI, Math.E,
+                (x) => Math.floor(x),
+                (x) => parseFloat(x),
+                (x) => x.length,
+                (n) => [...Array(n).keys()]
+            );
+
+            this.compiledCode = code;
+            return this.renderFn;
+        } catch (e) {
+            console.error('JS Compilation error:', e);
+            console.error('Code:', code);
+            this.renderFn = (prev, t) => [prev, null];
+            return this.renderFn;
+        }
+    }
+
+    /**
+     * Render a frame.
+     * @returns {{ rgb: [r, g, b], nextMs: number|null }}
+     */
+    render(state, prev, elapsedMs) {
+        // If no code field, fall back to simple r/g/b values
+        if (!state.code) {
+            const r = typeof state.r === 'number' ? state.r : 0;
+            const g = typeof state.g === 'number' ? state.g : 0;
+            const b = typeof state.b === 'number' ? state.b : 0;
+            return {
+                rgb: [
+                    Math.max(0, Math.min(255, Math.floor(r))),
+                    Math.max(0, Math.min(255, Math.floor(g))),
+                    Math.max(0, Math.min(255, Math.floor(b)))
+                ],
+                nextMs: null
+            };
+        }
+
+        const renderFn = this.compile(state.code);
+
+        try {
+            // t is in seconds
+            const t = elapsedMs / 1000;
+            const result = renderFn(prev, t);
+
+            // Result is [[r, g, b], nextMs]
+            if (Array.isArray(result) && result.length === 2) {
+                const [rgb, nextMs] = result;
+                return {
+                    rgb: Array.isArray(rgb) ? rgb : [rgb.r || 0, rgb.g || 0, rgb.b || 0],
+                    nextMs: nextMs
+                };
+            }
+
+            return { rgb: prev, nextMs: null };
+        } catch (e) {
+            console.error('JS Render error:', e);
+            return { rgb: prev, nextMs: null };
+        }
+    }
+}
+
+
+// =============================================================================
 // UNIFIED EXPRESSION EVALUATOR
 // =============================================================================
 
@@ -508,7 +673,7 @@ const ExpressionEvaluator = {
 
     /**
      * Set the representation version.
-     * @param {string} version - 'original', 'pure_python', or 'stdlib'
+     * @param {string} version - 'original', 'pure_python', 'stdlib', or 'stdlib_js'
      */
     setVersion(version) {
         this.version = version;
@@ -522,9 +687,12 @@ const ExpressionEvaluator = {
             case 'stdlib':
                 this.evaluator = new StdlibEvaluator();
                 break;
+            case 'stdlib_js':
+                this.evaluator = new StdlibJSEvaluator();
+                break;
             default:
-                console.warn(`Unknown version: ${version}, using stdlib`);
-                this.evaluator = new StdlibEvaluator();
+                console.warn(`Unknown version: ${version}, using stdlib_js`);
+                this.evaluator = new StdlibJSEvaluator();
         }
         console.log(`ExpressionEvaluator: using ${version} renderer`);
     },
