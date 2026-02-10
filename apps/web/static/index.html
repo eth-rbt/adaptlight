@@ -621,6 +621,24 @@
             color: #64748b;
             margin-left: 8px;
         }
+        .top-nav {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .top-nav a {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 12px 24px;
+            border-radius: 8px;
+            background: #0f172a;
+            color: #fff;
+            text-decoration: none;
+            font-size: 16px;
+            font-weight: 500;
+        }
     </style>
     <script src="/static/expression.js"></script>
 </head>
@@ -637,6 +655,10 @@
 
     <div class="container">
         <h1>AdaptLight</h1>
+
+        <div class="top-nav">
+            <a href="/eval">Go to Eval</a>
+        </div>
 
         <!-- User Badge -->
         <div class="user-badge" id="userBadge" style="display: none;">
@@ -842,6 +864,7 @@
         const feedbackSuccess = document.getElementById('feedbackSuccess');
         const feedbackTitle = document.getElementById('feedbackTitle');
 
+
         function showFeedback(sessionId) {
             currentSessionId = sessionId;
             feedbackBox.classList.remove('hidden', 'submitted');
@@ -949,13 +972,25 @@
             }
         }
 
-        // Load initial state
-        fetchState();
+        // Load config first, then initial state
+        fetchConfig().then(() => fetchState());
 
         // Enter key to send
         inputEl.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') sendCommand();
         });
+
+        async function fetchConfig() {
+            try {
+                const res = await fetch('/api/config');
+                const data = await res.json();
+                if (data.success && data.representation_version) {
+                    ExpressionEvaluator.setVersion(data.representation_version);
+                }
+            } catch (e) {
+                console.error('Failed to fetch config:', e);
+            }
+        }
 
         function updateLight(state) {
             if (!state) return;
@@ -963,19 +998,21 @@
             // Stop any existing animation
             stopAnimation();
 
+            // Reset evaluator for new state
+            ExpressionEvaluator.reset();
+
             // Store current state
             currentState = state;
-            stateNameEl.textContent = state.name || 'unknown';
+            stateNameEl.textContent = state.name || state.state_name || 'unknown';
 
             // Check if this is an animated state
             if (ExpressionEvaluator.isAnimated(state)) {
                 startAnimation(state);
             } else {
-                // Static state - evaluate once
-                const r = typeof state.r === 'number' ? state.r : ExpressionEvaluator.evaluate(state.r, currentColor);
-                const g = typeof state.g === 'number' ? state.g : ExpressionEvaluator.evaluate(state.g, currentColor);
-                const b = typeof state.b === 'number' ? state.b : ExpressionEvaluator.evaluate(state.b, currentColor);
-                setLightColor(r, g, b);
+                // Static state - render once
+                const prev = [currentColor.r, currentColor.g, currentColor.b];
+                const result = ExpressionEvaluator.render(state, prev, 0);
+                setLightColor(result.rgb[0], result.rgb[1], result.rgb[2]);
             }
         }
 
@@ -993,25 +1030,49 @@
             animationFrame = 0;
             animationStartTime = performance.now();
 
-            const speed = state.speed || 50; // ms per frame
-
             function animate() {
                 const elapsed_ms = performance.now() - animationStartTime;
-                const { r, g, b } = ExpressionEvaluator.computeFrame(
-                    state,
-                    animationFrame,
-                    elapsed_ms,
-                    currentColor
-                );
+                const prev = [currentColor.r, currentColor.g, currentColor.b];
+                const result = ExpressionEvaluator.render(state, prev, elapsed_ms);
 
-                setLightColor(r, g, b);
+                setLightColor(result.rgb[0], result.rgb[1], result.rgb[2]);
                 animationFrame++;
 
-                // Schedule next frame based on speed
-                animationId = setTimeout(animate, speed);
+                // Schedule next frame based on nextMs from render
+                // nextMs > 0: continue animation
+                // nextMs = null: static, stop animation
+                // nextMs = 0: state complete, trigger transition
+                if (result.nextMs && result.nextMs > 0) {
+                    animationId = setTimeout(animate, result.nextMs);
+                } else if (result.nextMs === null) {
+                    // Static state, no more frames needed
+                    stopAnimation();
+                } else if (result.nextMs === 0) {
+                    // State complete - trigger backend transition
+                    stopAnimation();
+                    triggerStateComplete();
+                }
             }
 
             animate();
+        }
+
+        async function triggerStateComplete() {
+            console.log('State complete - triggering transition');
+            try {
+                const res = await fetch('/api/trigger', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ event: 'state_complete' })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    updateLight(data.state);
+                    if (detailsOpen) fetchDetails();
+                }
+            } catch (e) {
+                console.error('Failed to trigger state_complete:', e);
+            }
         }
 
         function stopAnimation() {

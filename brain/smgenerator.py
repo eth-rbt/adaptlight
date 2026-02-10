@@ -86,10 +86,14 @@ class SMgenerator:
                 - anthropic_api_key: API key for Claude (required for agent mode)
                 - openai_api_key: API key for OpenAI (required for parser mode)
                 - storage_dir: Directory for memory/pipeline storage (optional)
+                - representation_version: State representation ('original', 'pure_python', 'stdlib')
         """
         self.config = config
         self.hooks: Dict[str, List[Callable]] = {}
         self._last_tool_calls: List[Dict] = []
+
+        # Get representation version
+        self.representation_version = config.get('representation_version', 'stdlib')
 
         # Configure storage if provided
         storage_dir = config.get('storage_dir')
@@ -99,9 +103,12 @@ class SMgenerator:
             set_memory_storage_dir(storage_dir)
             set_pipeline_storage_dir(storage_dir)
 
-        # Initialize core state machine
+        # Initialize core state machine with representation version
         from brain.core.state_machine import StateMachine
-        self.state_machine = StateMachine(debug=config.get('verbose', False))
+        self.state_machine = StateMachine(
+            debug=config.get('verbose', False),
+            representation_version=self.representation_version
+        )
 
         # Initialize tool registry
         from brain.tools.registry import ToolRegistry
@@ -123,7 +130,8 @@ class SMgenerator:
                 max_turns=config.get('max_turns', 10),
                 verbose=config.get('verbose', False),
                 prompt_variant=config.get('prompt_variant', 'examples'),
-                speech_instructions=config.get('speech_instructions')
+                speech_instructions=config.get('speech_instructions'),
+                representation_version=self.representation_version
             )
         else:
             from brain.processing.parser import CommandParser
@@ -334,6 +342,7 @@ class SMgenerator:
         """Get current state as a dictionary."""
         state_name = self.state_machine.get_state()
         state_obj = self.state_machine.get_state_object(state_name)
+        current_rgb = self.state_machine.get_current_rgb()
 
         if state_obj:
             return {
@@ -342,9 +351,9 @@ class SMgenerator:
                 'g': state_obj.g,
                 'b': state_obj.b,
                 'speed': state_obj.speed,
-                'duration_ms': state_obj.duration_ms,
-                'then': state_obj.then,
+                'code': state_obj.code,
                 'voice_reactive': state_obj.voice_reactive,
+                'current_rgb': current_rgb,
             }
         else:
             # Built-in state without object
@@ -354,9 +363,9 @@ class SMgenerator:
                 'g': 255 if state_name == 'on' else 0,
                 'b': 255 if state_name == 'on' else 0,
                 'speed': None,
-                'duration_ms': None,
-                'then': None,
+                'code': None,
                 'voice_reactive': {},
+                'current_rgb': current_rgb,
             }
 
     def reset(self) -> None:
@@ -383,8 +392,7 @@ class SMgenerator:
                 'g': 0,
                 'b': 0,
                 'speed': None,
-                'duration_ms': None,
-                'then': None,
+                'code': None,
                 'description': 'Light off (built-in)',
             },
             {
@@ -393,8 +401,7 @@ class SMgenerator:
                 'g': 255,
                 'b': 255,
                 'speed': None,
-                'duration_ms': None,
-                'then': None,
+                'code': None,
                 'description': 'Light on (built-in)',
             },
         ]
@@ -409,8 +416,7 @@ class SMgenerator:
                 'g': state.g,
                 'b': state.b,
                 'speed': state.speed,
-                'duration_ms': state.duration_ms,
-                'then': state.then,
+                'code': state.code,
                 'description': state.description,
             })
 

@@ -8,6 +8,15 @@ brain:
   max_turns: 10
   verbose: false
 
+# State representation settings
+# Options: "original", "pure_python", "stdlib", "stdlib_js"
+# - original: r/g/b expression strings with frame variable
+# - pure_python: full Python code with math module
+# - stdlib: Python code with helper functions (hsv, lerp, ease_in, etc.)
+# - stdlib_js: JavaScript code with helper functions (RECOMMENDED - runs natively in browser)
+representation:
+  version: stdlib_js # original, pure_python, stdlib, stdlib_js
+
 # API keys (loaded from environment or set here)
 anthropic:
   api_key: ${ANTHROPIC_API_KEY}

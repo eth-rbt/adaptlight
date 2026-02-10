@@ -14,18 +14,21 @@ class State:
     """Represents a single state in the state machine."""
 
     def __init__(self, name: str, r=None, g=None, b=None, speed=None,
-                 duration_ms=None, then=None, description: str = '', voice_reactive=None):
+                 code=None, description: str = '', voice_reactive=None):
         """
         Initialize a state with unified parameters.
 
         Args:
             name: Unique identifier for this state
-            r: Red value (0-255) or expression string
-            g: Green value (0-255) or expression string
-            b: Blue value (0-255) or expression string
-            speed: Animation speed in milliseconds (None for static states)
-            duration_ms: How long this state runs before auto-transitioning (None = forever)
-            then: State to transition to when duration_ms expires (required if duration_ms set)
+            r: Red value (0-255) or expression string (for original mode)
+            g: Green value (0-255) or expression string (for original mode)
+            b: Blue value (0-255) or expression string (for original mode)
+            speed: Animation speed in milliseconds (None for static states, for original mode)
+            code: Python code defining render(prev, t) function (for pure_python/stdlib modes)
+                  The function should return ((r, g, b), next_ms) where:
+                  - next_ms > 0: call again in next_ms milliseconds
+                  - next_ms = None: static, no more updates
+                  - next_ms = 0: state complete, triggers state_complete transition
             description: Human-readable description for AI parsing
             voice_reactive: Optional dict to enable mic-reactive brightness. Example:
                            {"enabled": true, "color": [0,255,0], "smoothing_alpha": 0.6,
@@ -36,8 +39,7 @@ class State:
         self.g = g
         self.b = b
         self.speed = speed
-        self.duration_ms = duration_ms
-        self.then = then
+        self.code = code
         self.voice_reactive = voice_reactive or {}
         self.description = description or self._generate_description()
 
@@ -47,13 +49,12 @@ class State:
     def _generate_description(self):
         """Generate a default description based on state parameters."""
         base = ""
-        if self.speed is not None:
+        if self.code is not None:
+            base = f"Code-based state with render function"
+        elif self.speed is not None:
             base = f"Animation state with r={self.r}, g={self.g}, b={self.b}, speed={self.speed}ms"
         else:
             base = f"Static color state with r={self.r}, g={self.g}, b={self.b}"
-
-        if self.duration_ms is not None and self.then is not None:
-            base += f", runs for {self.duration_ms}ms then transitions to '{self.then}'"
 
         # Add voice-reactive hint for the AI
         if self.voice_reactive.get('enabled'):
@@ -75,8 +76,7 @@ class State:
             'g': self.g,
             'b': self.b,
             'speed': self.speed,
-            'duration_ms': self.duration_ms,
-            'then': self.then,
+            'code': self.code,
             'voice_reactive': self.voice_reactive,
             'state_name': self.name
         }
@@ -210,9 +210,10 @@ class States:
 
         lines = []
         for s in self.states:
-            params = f"r={s.r}, g={s.g}, b={s.b}, speed={s.speed}"
-            if s.duration_ms is not None:
-                params += f", duration_ms={s.duration_ms}, then={s.then}"
+            if s.code is not None:
+                params = "code=<render function>"
+            else:
+                params = f"r={s.r}, g={s.g}, b={s.b}, speed={s.speed}"
             if s.voice_reactive.get('enabled'):
                 vr = s.voice_reactive
                 params += f", voice_reactive={{enabled: True"
