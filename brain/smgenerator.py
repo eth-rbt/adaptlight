@@ -119,20 +119,37 @@ class SMgenerator:
 
         # Initialize processor based on mode
         mode = config.get('mode', 'agent')
+        speech_mode = config.get('speech_mode', 'default')
         self.mode = mode
+        self.speech_mode = speech_mode
 
         if mode == 'agent':
-            from brain.processing.agent import AgentExecutor
-            self.processor = AgentExecutor(
-                state_machine=self.state_machine,
-                api_key=config.get('anthropic_api_key'),
-                model=config.get('model', 'claude-haiku-4-5'),
-                max_turns=config.get('max_turns', 10),
-                verbose=config.get('verbose', False),
-                prompt_variant=config.get('prompt_variant', 'examples'),
-                speech_instructions=config.get('speech_instructions'),
-                representation_version=self.representation_version
-            )
+            # Check if parallel speech mode is enabled
+            if speech_mode == 'parallel':
+                from brain.processing.parallel_agent import ParallelAgentExecutor
+                self.processor = ParallelAgentExecutor(
+                    state_machine=self.state_machine,
+                    api_key=config.get('anthropic_api_key'),
+                    model=config.get('model', 'claude-haiku-4-5'),
+                    verbose=config.get('verbose', False),
+                    prompt_variant=config.get('prompt_variant', 'examples'),
+                    speech_instructions=config.get('speech_instructions'),
+                    representation_version=self.representation_version,
+                    on_message_ready=lambda msg: self._emit('message_ready', {'message': msg})
+                )
+            else:
+                from brain.processing.agent import AgentExecutor
+                self.processor = AgentExecutor(
+                    state_machine=self.state_machine,
+                    api_key=config.get('anthropic_api_key'),
+                    model=config.get('model', 'claude-haiku-4-5'),
+                    max_turns=config.get('max_turns', 10),
+                    verbose=config.get('verbose', False),
+                    prompt_variant=config.get('prompt_variant', 'examples'),
+                    speech_instructions=config.get('speech_instructions'),
+                    representation_version=self.representation_version,
+                    on_message_ready=lambda msg: self._emit('message_ready', {'message': msg})
+                )
         else:
             from brain.processing.parser import CommandParser
             self.processor = CommandParser(

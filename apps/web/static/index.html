@@ -756,6 +756,7 @@
     </div>
 
     <script>
+        console.log('=== MAIN PAGE LOADED (v2 with polling) ===');
         const lightEl = document.getElementById('light');
         const stateNameEl = document.getElementById('stateName');
         const responseEl = document.getElementById('response');
@@ -844,6 +845,41 @@
         let animationStartTime = 0;
         let currentState = null;
         let currentColor = { r: 0, g: 0, b: 0 };
+
+        // Polling for timer-triggered state changes
+        let statePollingId = null;
+        let lastStateName = null;
+
+        function startStatePolling() {
+            // Poll every 500ms for state changes (timers, etc.)
+            if (statePollingId) return; // Already polling
+
+            console.log('Starting state polling...');
+            statePollingId = setInterval(async () => {
+                try {
+                    const res = await fetch('/api/state');
+                    const data = await res.json();
+                    if (data.success && data.state) {
+                        // Only update if state changed
+                        if (data.state.name !== lastStateName) {
+                            console.log(`State changed: ${lastStateName} → ${data.state.name}`);
+                            lastStateName = data.state.name;
+                            updateLight(data.state);
+                            if (detailsOpen) fetchDetails();
+                        }
+                    }
+                } catch (e) {
+                    console.error('Polling error:', e);
+                }
+            }, 500);
+        }
+
+        function stopStatePolling() {
+            if (statePollingId) {
+                clearInterval(statePollingId);
+                statePollingId = null;
+            }
+        }
 
         // Details panel state
         let detailsOpen = false;
@@ -1088,6 +1124,7 @@
                 const data = await res.json();
                 if (data.success) {
                     updateLight(data.state);
+                    lastStateName = data.state?.name;
                 }
             } catch (e) {
                 console.error('Failed to fetch state:', e);
@@ -1118,6 +1155,8 @@
                     responseEl.className = 'response success';
                     responseTextEl.textContent = data.message || 'Command executed successfully.';
                     updateLight(data.state);
+                    lastStateName = data.state?.name;
+                    startStatePolling(); // Start polling for timer changes
 
                     if (data.timing) {
                         timingEl.textContent = `Took ${data.timing.total_ms?.toFixed(0) || '?'}ms`;

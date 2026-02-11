@@ -40,7 +40,8 @@ class AgentExecutor:
 
     def __init__(self, state_machine=None, api_key: str = None, model: str = "claude-sonnet-4-20250514",
                  max_turns: int = 10, verbose: bool = False, prompt_variant: str = "examples",
-                 speech_instructions: str = None, representation_version: str = "stdlib"):
+                 speech_instructions: str = None, representation_version: str = "stdlib",
+                 on_message_ready: callable = None):
         """
         Initialize agent executor.
 
@@ -53,6 +54,7 @@ class AgentExecutor:
             prompt_variant: 'concise' or 'examples' (default: examples)
             speech_instructions: Extra instructions for speech output (e.g., "Keep responses under 2 sentences")
             representation_version: State representation ('original', 'pure_python', 'stdlib')
+            on_message_ready: Callback when message is ready (before safety check completes)
         """
         self.state_machine = state_machine
         self.api_key = api_key
@@ -62,6 +64,7 @@ class AgentExecutor:
         self.prompt_variant = prompt_variant
         self.speech_instructions = speech_instructions
         self.representation_version = representation_version
+        self.on_message_ready = on_message_ready
 
         # Initialize tool registry
         self.tools = ToolRegistry(state_machine, api_key=api_key)
@@ -229,17 +232,22 @@ Variables: {json.dumps(variables, indent=2)}"""
 
                         # Check if done
                         if result.get("done"):
+                            message = result.get("message", "Done")
                             # Record done step
                             self.steps.append(AgentStep(
                                 turn=turn + 1,
                                 step_type="done",
-                                content=result.get("message", "Done")
+                                content=message
                             ))
                             if self.verbose:
                                 print(f"✅ Agent finished")
+                            # Fire message ready callback BEFORE safety check
+                            # This allows TTS to start generating while we finish up
+                            if self.on_message_ready:
+                                self.on_message_ready(message)
                             # Run safety check before returning
                             self._run_safety_check()
-                            return result.get("message", "Done")
+                            return message
 
                         tool_results.append({
                             "type": "tool_result",

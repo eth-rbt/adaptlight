@@ -109,17 +109,23 @@ def create_app(config_path: str = None) -> Flask:
     @app.route('/')
     def index():
         """Serve the main page."""
-        return send_from_directory('static', 'index.html')
+        response = send_from_directory('static', 'index.html')
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        return response
 
     @app.route('/eval')
     def eval_page():
         """Serve the eval page."""
-        return send_from_directory('static', 'eval.html')
+        response = send_from_directory('static', 'eval.html')
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        return response
 
     @app.route('/static/<path:path>')
     def serve_static(path):
         """Serve static files."""
-        return send_from_directory('static', path)
+        response = send_from_directory('static', path)
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        return response
 
     @app.route('/api/process', methods=['POST'])
     def process():

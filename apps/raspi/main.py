@@ -75,6 +75,7 @@ class AdaptLightRaspi:
 
         # Initialize Brain
         speech_config = self.config.get('speech', {})
+        representation_config = self.config.get('representation', {})
         brain_config = {
             'mode': self.config['brain']['mode'],
             'model': self.config['brain']['model'],
@@ -85,6 +86,8 @@ class AdaptLightRaspi:
             'openai_api_key': self.config['openai']['api_key'],
             'storage_dir': self.config.get('storage', {}).get('dir', 'data/storage'),
             'speech_instructions': speech_config.get('instructions') if speech_config.get('enabled') else None,
+            'representation_version': representation_config.get('version', 'stdlib'),
+            'speech_mode': speech_config.get('mode', 'default'),
         }
         self.smgen = SMgenerator(brain_config)
 
@@ -93,6 +96,7 @@ class AdaptLightRaspi:
         self.smgen.on('processing_end', self._on_processing_end)
         self.smgen.on('tool_end', self._on_tool_end)
         self.smgen.on('error', self._on_error)
+        self.smgen.on('message_ready', self._on_message_ready)
 
         # Initialize hardware (lazy load to avoid import errors on non-Pi)
         self.led = None
@@ -101,6 +105,7 @@ class AdaptLightRaspi:
         self.record_button = None
         self.feedback_yes_button = None
         self.tts = None  # Text-to-speech
+        self.tts_thread = None  # Background TTS thread for early generation
         self.feedback_no_button = None
         self.voice = None
 
@@ -200,8 +205,18 @@ class AdaptLightRaspi:
             if reactive_led_target and self.config['voice'].get('reactive_enabled', True):
                 try:
                     from .voice.reactive import VoiceReactiveLight
-                    self.voice_reactive = VoiceReactiveLight(reactive_led_target)
-                    print("Voice reactive controller initialized")
+                    # Get voice reactive settings from config
+                    smoothing = reactive_config.get('smoothing_alpha', 0.25)
+                    self.voice_reactive = VoiceReactiveLight(
+                        reactive_led_target,
+                        smoothing_alpha=smoothing
+                    )
+                    # Set amplitude range from config
+                    min_amp = reactive_config.get('min_amplitude')
+                    max_amp = reactive_config.get('max_amplitude')
+                    if min_amp is not None or max_amp is not None:
+                        self.voice_reactive.set_amplitude_range(min_amp, max_amp)
+                    print(f"Voice reactive initialized (min={min_amp}, max={max_amp}, smooth={smoothing})")
                 except Exception as e:
                     print(f"Voice reactive init failed: {e}")
 
@@ -231,12 +246,17 @@ class AdaptLightRaspi:
         if speech_config.get('enabled', False):
             try:
                 from .voice.tts import TextToSpeech
+                speaker_config = self.config.get('speaker', {})
+                audio_device = speaker_config.get('device', 'plughw:2,0')
+                volume = speaker_config.get('volume', 1.0)
                 self.tts = TextToSpeech(
                     provider=speech_config.get('provider', 'openai'),
                     voice=speech_config.get('voice'),
-                    api_key=self.config['openai']['api_key']
+                    api_key=self.config['openai']['api_key'],
+                    audio_device=audio_device,
+                    volume=volume
                 )
-                print("Text-to-speech initialized")
+                print(f"Text-to-speech initialized (device: {audio_device}, volume: {volume}x)")
             except Exception as e:
                 print(f"TTS initialization failed: {e}")
 
@@ -282,6 +302,25 @@ class AdaptLightRaspi:
         elif self.led:
             self.led.stop_loading_animation()
 
+    def _on_message_ready(self, data):
+        """Called when agent's done() message is ready - start TTS early."""
+        message = data.get('message')
+        if message and self.tts:
+            import threading
+
+            # Wait for any existing TTS to finish first
+            if self.tts_thread and self.tts_thread.is_alive():
+                print(f"🔊 Waiting for previous TTS to finish...")
+                self.tts_thread.join(timeout=10)
+
+            print(f"🔊 Starting early TTS generation...")
+            # Start TTS generation in background thread (non-daemon so it completes)
+            self.tts_thread = threading.Thread(
+                target=self.tts.speak,
+                args=(message,)
+            )
+            self.tts_thread.start()
+
     # ─────────────────────────────────────────────────────────────
     # Event Handlers
     # ─────────────────────────────────────────────────────────────
@@ -316,12 +355,23 @@ class AdaptLightRaspi:
             transcribed_text = self.voice.stop_recording()
             if transcribed_text:
                 print(f"Transcribed: {transcribed_text}")
+                # Reset TTS thread before processing
+                self.tts_thread = None
                 result = self.smgen.process(transcribed_text)
                 if result.message:
                     print(f"Response: {result.message}")
 
-                    # Speak the response
-                    if self.tts:
+                    # Wait for early TTS thread if it was started, otherwise speak now
+                    if self.tts_thread:
+                        if self.tts_thread.is_alive():
+                            print("🔊 Waiting for TTS to finish...")
+                            self.tts_thread.join()
+                            print("🔊 TTS thread completed")
+                        else:
+                            print("🔊 TTS thread already finished")
+                    elif self.tts:
+                        # Fallback: TTS wasn't started early, speak now
+                        print("🔊 Fallback: speaking now...")
                         self.tts.speak(result.message)
 
                 # Log to Supabase
