@@ -1,0 +1,30 @@
+# Virtual environments
+light/
+venv/
+.venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Git
+.git/
+
+# IDE
+.vscode/
+.idea/
+
+# Data files (created at runtime)
+data/
+
+# OS files
+.DS_Store
+*.swp
+*.swo
+
+# Test files
+*.log
