@@ -341,6 +341,7 @@
     </div>
 
     <script>
+        console.log('=== EVAL PAGE LOADED (v2) ===');
         const evalCaseTextEl = document.getElementById('evalCaseText');
         const evalCaseMetaEl = document.getElementById('evalCaseMeta');
         const evalPrevBtn = document.getElementById('evalPrev');
@@ -466,6 +467,9 @@
         }
 
         function resetEvalLamps() {
+            // Stop polling when resetting
+            stopAllPolling();
+
             ['A', 'B', 'C'].forEach(letter => {
                 const responseEl = document.getElementById(`evalResponse${letter}`);
                 const statusEl = document.getElementById(`evalStatus${letter}`);
@@ -520,7 +524,7 @@
 
                 if (data.success) {
                     responseEl.textContent = data.message || 'No response message.';
-                    updateEvalLamp(lampEl, data.state);
+                    updateEvalLamp(lampEl, data.state, lampKey);
                 } else {
                     responseEl.textContent = data.error || 'Eval failed.';
                     setEvalLampColor(lampEl, 0, 0, 0);
@@ -531,7 +535,14 @@
             }
         }
 
-        function updateEvalLamp(lampEl, state) {
+        // Track which lamps are actively polling
+        const activeLampPolling = {
+            lampA: null,
+            lampB: null,
+            lampC: null
+        };
+
+        function updateEvalLamp(lampEl, state, lampKey) {
             if (!state) {
                 setEvalLampColor(lampEl, 0, 0, 0);
                 return;
@@ -542,7 +553,44 @@
             const result = ExpressionEvaluator.render(state, prev, 0);
             setEvalLampColor(lampEl, result.rgb[0], result.rgb[1], result.rgb[2]);
 
-            // TODO: If animated, could start animation loop here
+            // Start polling for state changes (timers, etc.)
+            if (lampKey) {
+                startPolling(lampKey, lampEl);
+            }
+        }
+
+        function startPolling(lampKey, lampEl) {
+            // Stop any existing polling for this lamp
+            if (activeLampPolling[lampKey]) {
+                clearInterval(activeLampPolling[lampKey]);
+            }
+
+            console.log(`Starting polling for ${lampKey}`);
+
+            // Poll every 500ms for state changes
+            activeLampPolling[lampKey] = setInterval(async () => {
+                try {
+                    const res = await fetch('/api/state');
+                    const data = await res.json();
+                    console.log('Poll result:', data.state?.name);
+                    if (data.success && data.state) {
+                        const prev = [0, 0, 0];
+                        const result = ExpressionEvaluator.render(data.state, prev, 0);
+                        setEvalLampColor(lampEl, result.rgb[0], result.rgb[1], result.rgb[2]);
+                    }
+                } catch (e) {
+                    console.error('Polling error:', e);
+                }
+            }, 500);
+        }
+
+        function stopAllPolling() {
+            Object.keys(activeLampPolling).forEach(key => {
+                if (activeLampPolling[key]) {
+                    clearInterval(activeLampPolling[key]);
+                    activeLampPolling[key] = null;
+                }
+            });
         }
 
         function setEvalLampColor(lampEl, r, g, b) {

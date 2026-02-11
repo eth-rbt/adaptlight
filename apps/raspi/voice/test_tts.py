@@ -106,6 +106,8 @@ def main():
     parser.add_argument("--provider", "-p", choices=["openai", "edge", "all"], default="openai")
     parser.add_argument("--voice", "-v", help="Voice name")
     parser.add_argument("--text", "-t", default="Hello, this is a test of the text to speech system.")
+    parser.add_argument("--device", "-d", default="plughw:2,0", help="ALSA audio device")
+    parser.add_argument("--volume", type=float, default=3.0, help="Volume multiplier (default: 3.0)")
     parser.add_argument("--compare", action="store_true", help="Compare all OpenAI voices")
     args = parser.parse_args()
 
@@ -120,13 +122,15 @@ def main():
         TextToSpeech = get_tts_class()
         voice = args.voice or "nova"
         print(f"\nProvider: openai, Voice: {voice}")
-        tts = TextToSpeech(provider="openai", voice=voice)
+        print(f"Device: {args.device}, Volume: {args.volume}x")
+        tts = TextToSpeech(provider="openai", voice=voice, audio_device=args.device, volume=args.volume)
         tts.speak(args.text)
     elif args.provider == "edge":
         TextToSpeech = get_tts_class()
         voice = args.voice or "en-US-AriaNeural"
         print(f"\nProvider: edge, Voice: {voice}")
-        tts = TextToSpeech(provider="edge", voice=voice)
+        print(f"Device: {args.device}, Volume: {args.volume}x")
+        tts = TextToSpeech(provider="edge", voice=voice, audio_device=args.device, volume=args.volume)
         tts.speak(args.text)
 
 

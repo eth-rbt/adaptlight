@@ -9,6 +9,11 @@
 
 set -e
 
+# Change to project root (parent of scripts/)
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+cd "$PROJECT_ROOT"
+
 # Configuration
 RASPI_HOST="${RASPI_HOST:-lamp@100.108.65.92}" #100.114.12.83
 #RASPI_HOST="${RASPI_HOST:-pi@raspberrypi.local}"

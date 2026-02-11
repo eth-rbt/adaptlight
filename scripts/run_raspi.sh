@@ -25,8 +25,8 @@ fi
 # Ensure brain is importable
 export PYTHONPATH="/home/lamp/adaptlight:$PYTHONPATH"
 
-# Set USB speaker volume (card 2)
-/usr/bin/amixer -c 2 sset PCM 85% || echo "Failed to set volume"
+# Note: I2S DAC (MAX98357A) doesn't have software volume control
+# Volume is controlled via software amplification in TTS or GAIN pin hardware
 
 # Run the raspi app
 python -m raspi.main "$@"

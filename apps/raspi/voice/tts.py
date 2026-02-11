@@ -33,7 +33,7 @@ except ImportError:
 class TextToSpeech:
     """Text-to-speech with multiple backend support."""
 
-    def __init__(self, provider="openai", voice=None, api_key=None):
+    def __init__(self, provider="openai", voice=None, api_key=None, audio_device=None, volume=1.0):
         """
         Initialize TTS.
 
@@ -41,9 +41,13 @@ class TextToSpeech:
             provider: "openai" or "edge" (edge_tts)
             voice: Voice name (provider-specific)
             api_key: OpenAI API key (for openai provider)
+            audio_device: ALSA device (e.g., "hw:2,0" or "plughw:2,0")
+            volume: Volume multiplier (1.0 = normal, 2.0 = 2x louder)
         """
         self.provider = provider
         self.api_key = api_key or os.environ.get("OPENAI_API_KEY")
+        self.audio_device = audio_device
+        self.volume = volume
 
         # Default voices
         if voice is None:
@@ -92,15 +96,16 @@ class TextToSpeech:
         try:
             client = OpenAI(api_key=self.api_key)
 
-            # Create temp file for audio
-            with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
+            # Create temp file for audio (PCM format for best quality)
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
                 temp_path = f.name
 
-            # Generate speech
+            # Generate speech in PCM format (uncompressed)
             response = client.audio.speech.create(
-                model="tts-1",
+                model="tts-1-hd",
                 voice=self.voice,
-                input=text
+                input=text,
+                response_format="wav"
             )
 
             # Save to file
@@ -148,30 +153,70 @@ class TextToSpeech:
     def _play_audio(self, file_path: str, block: bool = True):
         """Play audio file using system player."""
         try:
-            # Try different players (with max volume boost, target USB audio)
-            players = [
-                ["mpv", "--no-video", "--volume=400", "--audio-device=alsa/plughw:2,0", file_path],
-                ["ffplay", "-nodisp", "-autoexit", "-volume", "400", file_path],
-                ["aplay", "-D", "plughw:2,0", file_path],
-                ["paplay", file_path],
-            ]
-
-            for player_cmd in players:
+            # Amplify audio if volume > 1.0
+            play_path = file_path
+            amplified_path = None
+            if self.volume != 1.0:
+                amplified_path = file_path.replace(".wav", "_amp.wav")
                 try:
-                    if block:
-                        subprocess.run(player_cmd, check=True,
-                                      stdout=subprocess.DEVNULL,
-                                      stderr=subprocess.DEVNULL)
-                    else:
-                        subprocess.Popen(player_cmd,
-                                        stdout=subprocess.DEVNULL,
-                                        stderr=subprocess.DEVNULL)
-                    return
+                    # Use sox to amplify (install: sudo apt install sox)
+                    subprocess.run(
+                        ["sox", file_path, amplified_path, "vol", str(self.volume)],
+                        check=True, capture_output=True
+                    )
+                    play_path = amplified_path
                 except FileNotFoundError:
-                    continue
+                    # sox not installed, try ffmpeg
+                    try:
+                        subprocess.run(
+                            ["ffmpeg", "-y", "-i", file_path, "-filter:a", f"volume={self.volume}", amplified_path],
+                            check=True, capture_output=True
+                        )
+                        play_path = amplified_path
+                    except FileNotFoundError:
+                        print("Warning: sox/ffmpeg not found, playing at normal volume")
 
-            print("No audio player found. Install mpv, ffplay, or aplay.")
+            # Try configured device first, then fallback to alternatives
+            # Card number can change between reboots
+            primary_device = self.audio_device or "plughw:2,0"
+            fallback_devices = ["plughw:2,0", "plughw:3,0", "plughw:1,0", "default"]
 
+            # Put primary first, then add others (avoiding duplicates)
+            devices_to_try = [primary_device] + [d for d in fallback_devices if d != primary_device]
+
+            for device in devices_to_try:
+                player_cmd = ["aplay", "-D", device, play_path]
+
+                if block:
+                    result = subprocess.run(player_cmd, capture_output=True, text=True)
+                    if result.returncode == 0:
+                        # Success - remember this device for next time
+                        if device != self.audio_device:
+                            print(f"Audio device changed: {self.audio_device} → {device}")
+                            self.audio_device = device
+                        # Small delay to ensure audio buffer is fully flushed
+                        import time
+                        time.sleep(0.1)
+                        break
+                    else:
+                        # Log failure and try next device
+                        if result.stderr:
+                            print(f"aplay {device} failed: {result.stderr.strip()}")
+                else:
+                    # For non-blocking, just try the first one
+                    subprocess.Popen(player_cmd,
+                                    stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.DEVNULL)
+                    break
+            else:
+                print(f"aplay error: no working audio device found")
+
+            # Cleanup amplified file
+            if amplified_path and os.path.exists(amplified_path):
+                os.unlink(amplified_path)
+
+        except FileNotFoundError:
+            print("aplay not found. Install alsa-utils: sudo apt install alsa-utils")
         except Exception as e:
             print(f"Audio playback error: {e}")
 

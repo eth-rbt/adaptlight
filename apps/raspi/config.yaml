@@ -12,6 +12,14 @@ brain:
   max_turns: 10
   verbose: false
 
+# State representation settings
+# Options: "original", "pure_python", "stdlib"
+# - original: r/g/b expression strings with frame variable
+# - pure_python: full Python code with math module
+# - stdlib: Python code with helper functions (hsv, lerp, ease_in, etc.) - RECOMMENDED for Pi
+representation:
+  version: stdlib
+
 # API keys (loaded from environment or set here)
 anthropic:
   api_key: ${ANTHROPIC_API_KEY}
@@ -52,17 +60,30 @@ reactive_lights:
   enabled: true
   type: neopixel
   led_count: 35
-  spi_bus: 1                       # 0 = SPI0 (GPIO10), 1 = SPI1 (GPIO20)
+  spi_bus: 0                       # 0 = SPI0 (GPIO10), 1 = SPI1 (GPIO20)
   brightness: 0.5
+
+  # Voice reactive sensitivity settings
+  min_amplitude: 5000             # Noise floor (below this = silence)
+  max_amplitude: 30000             # Max RMS for full brightness (lower = more sensitive)
+  smoothing_alpha: 0.25            # Smoothing (0.1 = smooth/slow, 0.5 = responsive/jittery)
 
 # Voice input
 voice:
   enabled: true
   stt_provider: replicate        # 'whisper' or 'replicate'
 
+# Speaker hardware
+speaker:
+  type: i2s                      # 'usb', 'i2s', or 'hdmi'
+  device: plughw:3,0             # ALSA device (MAX98357A is card 3)
+  volume: 6.0                    # Volume multiplier (1.0 = normal, 2.0 = 2x louder)
+  # For MAX98357A I2S DAC: uses GPIO 18 (BCLK), GPIO 19 (LRCLK), GPIO 21 (DIN)
+
 # Text-to-speech output
 speech:
   enabled: true
+  mode: default                  # 'default' (TTS after done) or 'parallel' (plan-first, faster TTS)
   provider: openai               # 'openai' or 'edge'
   voice: nova                    # OpenAI: alloy, echo, fable, onyx, nova, shimmer
   instructions: |
@@ -73,7 +94,7 @@ speech:
 
 # Button timing
 button:
-  double_click_threshold: 0.2
+  double_click_threshold: 0.3
   hold_threshold: 0.5
   bounce_time: 0.05
 
