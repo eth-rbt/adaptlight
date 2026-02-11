@@ -56,26 +56,6 @@
             font-size: 20px;
             color: #0f172a;
         }
-        .eval-nav {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-        .eval-nav button {
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            padding: 0;
-            font-size: 18px;
-            border: none;
-            background: #0ea5e9;
-            color: #fff;
-            cursor: pointer;
-        }
-        .eval-nav button:disabled {
-            background: #cbd5e1;
-            cursor: not-allowed;
-        }
         .eval-case-text {
             flex: 1;
             background: #f8fafc;
@@ -91,6 +71,26 @@
             margin-top: 8px;
             font-size: 12px;
             color: #64748b;
+        }
+        .eval-footer-nav {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            justify-content: flex-start;
+            margin-top: 16px;
+        }
+        .eval-footer-nav button {
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-size: 13px;
+            border: none;
+            background: #0ea5e9;
+            color: #fff;
+            cursor: pointer;
+        }
+        .eval-footer-nav button:disabled {
+            background: #cbd5e1;
+            cursor: not-allowed;
         }
         .eval-lamps {
             display: grid;
@@ -266,11 +266,7 @@
 
         <div class="eval-header">
             <h2>Evaluation</h2>
-            <div class="eval-nav">
-                <button id="evalPrev" onclick="goToPrevCase()">&lt;</button>
-                <div class="eval-case-text" id="evalCaseText">Loading cases...</div>
-                <button id="evalNext" onclick="goToNextCase()">&gt;</button>
-            </div>
+            <div class="eval-case-text" id="evalCaseText">Loading cases...</div>
             <div class="eval-case-meta" id="evalCaseMeta"></div>
         </div>
 
@@ -337,6 +333,11 @@
                     <span class="eval-status" id="evalStatusC"></span>
                 </div>
             </div>
+        </div>
+
+        <div class="eval-footer-nav">
+            <button id="evalPrev" onclick="goToPrevCase()">Previous case</button>
+            <button id="evalNext" onclick="goToNextCase()">Next case</button>
         </div>
     </div>
 
