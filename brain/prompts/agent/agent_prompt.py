@@ -48,8 +48,8 @@ def get_agent_system_prompt(system_state: str = "") -> str:
   - r, g, b: 0-255 or expression string like "random()" or "sin(frame * 0.1) * 255"
   - speed: null for static, milliseconds for animation (e.g., 50)
   - voice_reactive: object to enable mic-reactive brightness (see below)
-  - vision_reactive: object to enable camera-reactive behavior (CV, VLM, or hybrid)
-    - Use this for continuous adaptation while state is active (e.g., people_count drives brightness)
+  - vision_reactive: legacy compatibility object for camera-reactive behavior (CV, VLM, or hybrid)
+    - Canonical output style for generated code states is inline `vision.*` comments in `code`
   - Example: createState("red", 255, 0, 0, null)
   - Example animation: createState("pulse", "sin(frame*0.1)*255", 0, 0, 50)
   - Example timed: createState("alert", 255, 0, 0, null, 5000, "off") - red for 5 seconds then off
@@ -187,6 +187,8 @@ ALWAYS add exit rules! If you create a state, add a way to exit it:
 - **DO NOT add vision watchers unless camera/vision intent is explicit** (camera, watch, detect, see, people count, hand wave, entering room)
 - **Use interval policy for vision watchers:** CV-only `interval_ms >= 1000`, VLM-only `interval_ms >= 2000`, hybrid(CV+VLM) `interval_ms >= 2000`
 - **Prefer CV (`engine: "cv"`) for simple presence/pose/motion checks; use VLM for semantic understanding**
+- **When generating state-level data mapping, set `engine: "cv"` explicitly for CV-native fields (`person_count`, `face_count`, `motion_score`, `pose_landmarks`)**
+- **Canonical style for code states:** put vision config inside `code` comments (`# vision.*` for Python, `// vision.*` for JS). Avoid emitting top-level `vision_reactive` unless user explicitly requests legacy object style.
 - Use **state-level watcher** for continuous camera-driven behavior; use **rule-level watcher** for event transitions
 - Keep it minimal - do exactly what is asked, nothing more
 - Call multiple tools in one turn if they don't depend on each other

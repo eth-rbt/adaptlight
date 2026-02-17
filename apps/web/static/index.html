@@ -735,6 +735,7 @@
             <video id="visionVideo" class="vision-preview" autoplay playsinline muted></video>
             <canvas id="visionCanvas" width="320" height="240" style="display:none;"></canvas>
             <div class="vision-debug" id="visionDebugLabel">Vision State: idle</div>
+            <div class="vision-debug" id="visionDebugEngine">Engine: -</div>
             <div class="vision-debug" id="visionDebugCountdown">Next capture in: -</div>
             <div class="vision-debug" id="visionDebugDescription">Description: -</div>
             <div class="vision-debug" id="visionDebugData">Data: -</div>
@@ -823,6 +824,7 @@
         const visionVideo = document.getElementById('visionVideo');
         const visionCanvas = document.getElementById('visionCanvas');
         const visionDebugLabel = document.getElementById('visionDebugLabel');
+        const visionDebugEngine = document.getElementById('visionDebugEngine');
         const visionDebugCountdown = document.getElementById('visionDebugCountdown');
         const visionDebugDescription = document.getElementById('visionDebugDescription');
         const visionDebugData = document.getElementById('visionDebugData');
@@ -914,24 +916,62 @@
         let visionLoopIntervalMs = 2000;
         let visionCountdownId = null;
         let lastVlmStateText = 'Vision State: idle';
+        let lastVlmEngineText = 'Engine: -';
         let lastVlmDescriptionText = 'Description: -';
         let lastVlmDataText = 'Data: -';
         let lastVlmTimingText = 'Timing: -';
+        const sharedStateData = {};
         const VISION_SEND_MAX_WIDTH = 640;
+        ExpressionEvaluator.setDataStore(sharedStateData);
 
-        function setVisionDebug({ state = 'Vision State: idle', countdown = null, description = 'Description: -', data = 'Data: -', timing = 'Timing: -' } = {}) {
+        function setVisionDebug({ state = 'Vision State: idle', engine = 'Engine: -', countdown = null, description = 'Description: -', data = 'Data: -', timing = 'Timing: -' } = {}) {
             if (visionDebugLabel) visionDebugLabel.textContent = state;
+            if (visionDebugEngine) visionDebugEngine.textContent = engine;
             if (visionDebugCountdown && countdown !== null) visionDebugCountdown.textContent = countdown;
             if (visionDebugDescription) visionDebugDescription.textContent = description;
             if (visionDebugData) visionDebugData.textContent = data;
             if (visionDebugTiming) visionDebugTiming.textContent = timing;
         }
 
-        function rememberLatestVlm({ state, description, data, timing } = {}) {
+        function rememberLatestVlm({ state, engine, description, data, timing } = {}) {
             if (state) lastVlmStateText = state;
+            if (engine) lastVlmEngineText = engine;
             if (description) lastVlmDescriptionText = description;
             if (data) lastVlmDataText = data;
             if (timing) lastVlmTimingText = timing;
+        }
+
+        function formatVisionValue(value) {
+            if (value === null || value === undefined) return '-';
+            if (typeof value === 'number') {
+                if (!Number.isFinite(value)) return String(value);
+                return Number.isInteger(value) ? String(value) : value.toFixed(2);
+            }
+            if (typeof value === 'object') {
+                try {
+                    return JSON.stringify(value);
+                } catch (e) {
+                    return '[object]';
+                }
+            }
+            return String(value);
+        }
+
+        function applyMappedDataToStore(mappedData) {
+            if (!Array.isArray(mappedData)) return;
+            for (const item of mappedData) {
+                if (!item || typeof item.key !== 'string' || item.key.length === 0) continue;
+                sharedStateData[item.key] = item.value;
+            }
+        }
+
+        function hydrateStateDataFromState(state) {
+            if (!state || typeof state !== 'object') return;
+            const candidates = [state.state_data, state.data, state.context_data];
+            for (const source of candidates) {
+                if (!source || typeof source !== 'object') continue;
+                Object.assign(sharedStateData, source);
+            }
         }
 
         function stopVisionCountdownTicker() {
@@ -1176,6 +1216,7 @@
                 if (data.success && data.representation_version) {
                     ExpressionEvaluator.setVersion(data.representation_version);
                 }
+                ExpressionEvaluator.setDataStore(sharedStateData);
                 if (data.success && data.vision) {
                     visionConfig = data.vision;
                     visionLoopIntervalMs = Math.max(1000, Number(visionConfig.interval_ms || 2000));
@@ -1194,6 +1235,8 @@
 
         function updateLight(state) {
             if (!state) return;
+
+            hydrateStateDataFromState(state);
 
             // Stop any existing animation
             stopAnimation();
@@ -1683,6 +1726,7 @@
                 visionStatus.textContent = `Vision running (${visionConfig.mode || 'polling'}, ${visionVideo.videoWidth}x${visionVideo.videoHeight})`;
                 setVisionDebug({
                     state: 'Vision State: active',
+                    engine: lastVlmEngineText,
                     countdown: 'Next capture in: now',
                     description: lastVlmDescriptionText,
                     data: lastVlmDataText,
@@ -1743,6 +1787,7 @@
             visionStatus.textContent = visionConfig.enabled ? 'Vision idle' : 'Vision disabled in server config';
             setVisionDebug({
                 state: 'Vision State: idle',
+                engine: lastVlmEngineText,
                 countdown: 'Next capture in: -',
                 description: lastVlmDescriptionText,
                 data: lastVlmDataText,
@@ -1763,6 +1808,7 @@
             try {
                 setVisionDebug({
                     state: 'Vision State: capturing',
+                    engine: visionDebugEngine ? visionDebugEngine.textContent : lastVlmEngineText,
                     countdown: 'Next capture in: capturing now',
                     description: visionDebugDescription ? visionDebugDescription.textContent : 'Description: -',
                     data: visionDebugData ? visionDebugData.textContent : 'Data: -',
@@ -1795,6 +1841,8 @@
 
                 const data = await res.json();
                 const clientRoundTripMs = Math.round(performance.now() - clientStartMs);
+                const mappedData = Array.isArray(data?.vision_debug?.mapped_data) ? data.vision_debug.mapped_data : [];
+                applyMappedDataToStore(mappedData);
                 if (data.success && data.state) {
                     updateLight(data.state);
                 }
@@ -1808,36 +1856,43 @@
                             visionStatus.textContent = 'Vision frame error: invalid image payload';
                             setVisionDebug({
                                 state: 'Vision State: error',
+                                engine: 'Engine: -',
                                 description: `Description: ${top.error}`,
                                 timing: `Timing: client ${clientRoundTripMs}ms | dropped ${visionDroppedFrames}`
                             });
                         } else {
-                            const conf = Number(top.confidence || 0).toFixed(2);
-                            const eventName = top.event || (top.detected ? 'vision_detected' : 'vision_not_detected');
                             const backendMs = Number(data?.vision_debug?.backend_latency_ms || 0);
                             const watcherMs = Number(top.latency_ms || 0);
                             const engine = top.engine || 'unknown';
-                            const transport = top.transport || 'unknown';
                             const reason = top.reason || 'No description';
-                            const cadence = Math.max(1000, Number(visionLoopIntervalMs || 0));
-                            const mappedData = Array.isArray(data?.vision_debug?.mapped_data) ? data.vision_debug.mapped_data : [];
                             const mappedSkips = Array.isArray(data?.vision_debug?.mapped_data_skips) ? data.vision_debug.mapped_data_skips : [];
                             const mappingDiagnostics = Array.isArray(data?.vision_debug?.mapping_diagnostics) ? data.vision_debug.mapping_diagnostics : [];
+                            const watcherFields = (top && typeof top.fields === 'object' && top.fields !== null) ? top.fields : {};
+                            const watcherFieldEntries = Object.entries(watcherFields);
                             if (mappingDiagnostics.length > 0) {
                                 console.log('[vision] mapping diagnostics', mappingDiagnostics);
                             }
-                            const dataText = mappedData.length > 0
-                                ? `Data: ${mappedData.map(item => `${item.key}=${item.value}`).join(' | ')}`
-                                : (mappedSkips.length > 0
-                                    ? `Data: not mapped (${mappedSkips.map(item => `${item.watcher}: ${item.reason}${item.field ? ` [expected=${item.field}]` : ''}${Array.isArray(item.available_fields) && item.available_fields.length ? ` [available=${item.available_fields.join(',')}]` : ''}`).join(' | ')})`
-                                    : 'Data: no mapped fields this frame');
+                            const mappedText = mappedData.length > 0
+                                ? mappedData.map(item => `${item.key}=${formatVisionValue(item.value)}`).join(' | ')
+                                : '-';
+                            const watcherText = watcherFieldEntries.length > 0
+                                ? watcherFieldEntries.map(([key, value]) => `${key}=${formatVisionValue(value)}`).join(' | ')
+                                : '-';
+                            const skipText = mappedSkips.length > 0
+                                ? mappedSkips.map(item => `${item.watcher}: ${item.reason}${item.field ? ` [expected=${item.field}]` : ''}${Array.isArray(item.available_fields) && item.available_fields.length ? ` [available=${item.available_fields.join(',')}]` : ''}`).join(' | ')
+                                : '';
+                            const dataText = skipText
+                                ? `Data (getData): ${mappedText} | Watcher output: ${watcherText} | Mapping: ${skipText}`
+                                : `Data (getData): ${mappedText} | Watcher output: ${watcherText}`;
 
-                            const stateText = `Vision State: ${top.detected ? 'detection active' : 'waiting for detection'} | event=${eventName} | conf=${conf} | engine=${engine} | mode=${visionConfig.mode || 'polling'} | transport=${transport} | cadence=${cadence}ms`;
+                            const stateText = `Vision State: ${top.detected ? 'detection active' : 'waiting for detection'}`;
+                            const engineText = `Engine: ${engine}`;
                             const descriptionText = `Description: ${reason}`;
                             const timingText = `Timing: client ${clientRoundTripMs}ms | backend ${backendMs}ms | watcher ${watcherMs}ms | dropped ${visionDroppedFrames}`;
-                            rememberLatestVlm({ state: stateText, description: descriptionText, data: dataText, timing: timingText });
+                            rememberLatestVlm({ state: stateText, engine: engineText, description: descriptionText, data: dataText, timing: timingText });
                             setVisionDebug({
                                 state: stateText,
+                                engine: engineText,
                                 description: descriptionText,
                                 data: dataText,
                                 timing: timingText
@@ -1846,7 +1901,7 @@
                             if (data.emitted_events && data.emitted_events.length > 0) {
                                 visionStatus.textContent = `Vision event: ${data.emitted_events.join(', ')}`;
                             } else {
-                                visionStatus.textContent = `Vision: ${top.detected ? 'detection active' : 'waiting for detection'} (conf ${conf})`;
+                                visionStatus.textContent = `Vision: ${top.detected ? 'detection active' : 'waiting for detection'}`;
                             }
                         }
                     } else if (data.emitted_events && data.emitted_events.length > 0) {
@@ -1856,7 +1911,8 @@
                     const backendMs = Number(data?.vision_debug?.backend_latency_ms || 0);
                     visionStatus.textContent = `Vision idle: ${data.reason}`;
                     setVisionDebug({
-                        state: `Vision State: ${data.reason} | using last VLM result`,
+                        state: `Vision State: ${data.reason}`,
+                        engine: lastVlmEngineText,
                         description: lastVlmDescriptionText,
                         data: lastVlmDataText,
                         timing: `Timing: backend ${backendMs}ms | dropped ${visionDroppedFrames} | no new inference`
@@ -1867,6 +1923,7 @@
                 visionStatus.textContent = `Vision send failed: ${e.message}`;
                 setVisionDebug({
                     state: 'Vision State: send failed',
+                    engine: 'Engine: -',
                     description: `Description: ${e.message}`,
                     timing: 'Timing: -'
                 });

@@ -49,7 +49,7 @@ createState(
 | `then` | string | NO | State to transition to (required if duration_ms set) |
 | `description` | string | NO | Human-readable description |
 | `voice_reactive` | object | NO | Enable mic-reactive brightness |
-| `vision_reactive` | object | NO | Enable camera-reactive behavior (CV, VLM, or hybrid) |
+| `vision_reactive` | object | NO | Legacy compatibility object for camera-reactive behavior (prefer inline `vision.*` in `code`) |
 
 ### State Modes
 
@@ -57,7 +57,7 @@ createState(
 2. **Animation**: speed is set, r/g/b can be expressions
 3. **Timed**: duration_ms + then for auto-transition
 4. **Voice-Reactive**: voice_reactive.enabled=true
-5. **Vision-Reactive**: vision_reactive.enabled=true
+5. **Vision-Reactive**: inline `vision.enabled=true` in state code comments (or legacy `vision_reactive.enabled=true`)
 
 ### Vision-Reactive Mode
 
@@ -67,15 +67,18 @@ Use watcher engines to detect events from camera frames. Prefer CV for simple de
 createState(
   name="wave_watch",
   r=255, g=255, b=255,
-  vision_reactive={
-    "enabled": true,
-    "engine": "cv",
-    "cv_detector": "posenet",
-    "prompt": "Detect hand wave. Return detected=true only for clear wave",
-    "event": "vision_hand_wave",
-    "interval_ms": 1000,
-    "cooldown_ms": 1500
-  }
+  code='''
+# vision.enabled = true
+# vision.engine = cv
+# vision.cv_detector = posenet
+# vision.prompt = Detect hand wave. Return detected=true only for clear wave
+# vision.event = vision_hand_wave
+# vision.interval_ms = 1000
+# vision.cooldown_ms = 1500
+
+def render(prev, t):
+    return (255, 255, 255), None
+'''
 )
 ```
 
@@ -114,13 +117,36 @@ def render(prev, t):
 )
 ```
 
+```python
+createState(
+  name="crowd_brightness_cv",
+  description="Brighter when more people are visible (CV-only)",
+  code="""
+# vision.enabled = true
+# vision.engine = cv
+# vision.cv_detector = opencv_hog
+# vision.prompt = Detect person presence and count visible people.
+# vision.set_data_field = person_count
+# vision.set_data_key = person_count
+# vision.interval_ms = 1000
+
+def render(prev, t):
+    n = Number(getData('person_count', 0))
+    b = clamp(map_range(n, 0, 4, 0.2, 1.0), 0.2, 1.0)
+    return [[int(255*b), int(255*b), int(255*b)], 30]
+"""
+)
+```
+
 Notes:
-- Explicit top-level `vision_reactive` fields override matching inline `# vision.*` values.
+- Canonical style: put vision config inline in the state `code` block (`# vision.*` for Python, `// vision.*` for JS).
+- Top-level `vision_reactive` is legacy compatibility only and should be used only when explicitly requested.
 - Use `engine=vlm` for semantic fields like `hand_distance`.
+- Use `engine=cv` with a compatible `cv_detector` for CV-native fields like `person_count`, `face_count`, `motion_score`, `pose_landmarks`.
 - UI debug line shows `engine=...` so runtime path is visible.
 
 When to use which watcher type:
-- **State-level watcher (`vision_reactive`)**: continuous adaptation while state is active (e.g., people count controls brightness/color)
+- **State-level watcher (inline `vision.*` in state `code`)**: continuous adaptation while state is active (e.g., people count controls brightness/color)
 - **Rule-level watcher (`trigger_config.vision`)**: discrete event transitions (e.g., person enters room -> transition to alert state)
 
 ---
@@ -1060,7 +1086,7 @@ Hi AdaptLight,
 Please configure party mode using camera input in two ways:
 
 1) While state is `party`, continuously adjust brightness/color based on crowd size.
-  - Use a state-level vision watcher (`vision_reactive`) on `party`.
+  - Use inline `vision.*` comments inside `party` state code.
   - Prompt should estimate `people_count` and write it to state_data key `people_count`.
   - Do data mapping only (no event) for this watcher.
 
@@ -1079,7 +1105,7 @@ Thanks!
 
 Expected model behavior:
 - Creates/updates `party` state code that reads `getData('people_count')`.
-- Adds state-level `vision_reactive` with `set_data_key="people_count"` and `set_data_field="people_count"`.
+- Adds inline state-level vision config (`vision.set_data_key=people_count`, `vision.set_data_field=people_count`).
 - Adds rule with `trigger_config.vision` for `vision_person_entered`.
 - Does not add unrelated rules/watchers.
 

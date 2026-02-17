@@ -115,7 +115,7 @@ class ToolRegistry:
         }
 
         for line in code.splitlines():
-            match = re.match(r'^\s*#\s*vision\.(\w+)\s*[:=]\s*(.+?)\s*$', line)
+            match = re.match(r'^\s*(?:#|//)\s*vision\.(\w+)\s*[:=]\s*(.+?)\s*$', line)
             if not match:
                 continue
 

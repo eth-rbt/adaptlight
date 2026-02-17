@@ -124,6 +124,32 @@ class StdlibEvaluator {
     constructor() {
         this.renderFn = null;
         this.compiledCode = null;
+        this.dataStore = {};
+    }
+
+    setDataStore(dataStore) {
+        if (dataStore && typeof dataStore === 'object') {
+            this.dataStore = dataStore;
+        }
+    }
+
+    _getData(key, defaultValue = null) {
+        if (!this.dataStore || typeof this.dataStore !== 'object') {
+            return defaultValue;
+        }
+        if (Object.prototype.hasOwnProperty.call(this.dataStore, key)) {
+            const value = this.dataStore[key];
+            return value === undefined ? defaultValue : value;
+        }
+        return defaultValue;
+    }
+
+    _setData(key, value) {
+        if (!this.dataStore || typeof this.dataStore !== 'object') {
+            this.dataStore = {};
+        }
+        this.dataStore[key] = value;
+        return value;
     }
 
     // --- Helper functions (stdlib) ---
@@ -220,6 +246,7 @@ class StdlibEvaluator {
                 'ease_in', 'ease_out', 'ease_in_out',
                 'sin', 'cos', 'tan', 'abs', 'floor', 'ceil', 'sqrt', 'pow',
                 'min', 'max', 'round', 'random', 'randint', 'PI', 'E', 'int', 'float', 'len', 'range',
+                'getData', 'setData',
                 `${jsCode}\nreturn render;`
             );
 
@@ -241,7 +268,9 @@ class StdlibEvaluator {
                 (x) => Math.floor(x),
                 (x) => parseFloat(x),
                 (x) => x.length,
-                (n) => [...Array(n).keys()]
+                (n) => [...Array(n).keys()],
+                (key, defaultValue = null) => this._getData(key, defaultValue),
+                (key, value) => this._setData(key, value)
             );
 
             this.compiledCode = code;
@@ -517,7 +546,7 @@ class PurePythonEvaluator extends StdlibEvaluator {
 
             const fn = new Function(
                 'math', 'random',
-                'abs', 'min', 'max', 'round', 'int', 'float', 'bool', 'len', 'range', 'sum',
+                'abs', 'min', 'max', 'round', 'int', 'float', 'bool', 'len', 'range', 'sum', 'getData', 'setData',
                 `${jsCode}\nreturn render;`
             );
 
@@ -530,7 +559,9 @@ class PurePythonEvaluator extends StdlibEvaluator {
                 (x) => !!x,
                 (x) => x.length,
                 (n) => [...Array(n).keys()],
-                (arr) => arr.reduce((a, b) => a + b, 0)
+                (arr) => arr.reduce((a, b) => a + b, 0),
+                (key, defaultValue = null) => this._getData(key, defaultValue),
+                (key, value) => this._setData(key, value)
             );
 
             this.compiledCode = code;
@@ -557,6 +588,32 @@ class StdlibJSEvaluator {
     constructor() {
         this.renderFn = null;
         this.compiledCode = null;
+        this.dataStore = {};
+    }
+
+    setDataStore(dataStore) {
+        if (dataStore && typeof dataStore === 'object') {
+            this.dataStore = dataStore;
+        }
+    }
+
+    _getData(key, defaultValue = null) {
+        if (!this.dataStore || typeof this.dataStore !== 'object') {
+            return defaultValue;
+        }
+        if (Object.prototype.hasOwnProperty.call(this.dataStore, key)) {
+            const value = this.dataStore[key];
+            return value === undefined ? defaultValue : value;
+        }
+        return defaultValue;
+    }
+
+    _setData(key, value) {
+        if (!this.dataStore || typeof this.dataStore !== 'object') {
+            this.dataStore = {};
+        }
+        this.dataStore[key] = value;
+        return value;
     }
 
     isAnimated(state) {
@@ -583,7 +640,7 @@ class StdlibJSEvaluator {
                 'hsv', 'rgb', 'lerp', 'lerp_color', 'clamp', 'map_range',
                 'ease_in', 'ease_out', 'ease_in_out',
                 'sin', 'cos', 'tan', 'abs', 'floor', 'ceil', 'sqrt', 'pow',
-                'min', 'max', 'round', 'random', 'randint', 'PI', 'E', 'int', 'float', 'len', 'range',
+                'min', 'max', 'round', 'random', 'randint', 'PI', 'E', 'int', 'float', 'len', 'range', 'getData', 'setData',
                 `${code}\nreturn render;`
             );
 
@@ -605,7 +662,9 @@ class StdlibJSEvaluator {
                 (x) => Math.floor(x),
                 (x) => parseFloat(x),
                 (x) => x.length,
-                (n) => [...Array(n).keys()]
+                (n) => [...Array(n).keys()],
+                (key, defaultValue = null) => this._getData(key, defaultValue),
+                (key, value) => this._setData(key, value)
             );
 
             this.compiledCode = code;
@@ -677,6 +736,7 @@ const ExpressionEvaluator = {
      */
     setVersion(version) {
         this.version = version;
+        const prevDataStore = this.evaluator && this.evaluator.dataStore ? this.evaluator.dataStore : null;
         switch (version) {
             case 'original':
                 this.evaluator = new OriginalEvaluator();
@@ -694,7 +754,16 @@ const ExpressionEvaluator = {
                 console.warn(`Unknown version: ${version}, using stdlib_js`);
                 this.evaluator = new StdlibJSEvaluator();
         }
+        if (prevDataStore && typeof this.evaluator.setDataStore === 'function') {
+            this.evaluator.setDataStore(prevDataStore);
+        }
         console.log(`ExpressionEvaluator: using ${version} renderer`);
+    },
+
+    setDataStore(dataStore) {
+        if (this.evaluator && typeof this.evaluator.setDataStore === 'function') {
+            this.evaluator.setDataStore(dataStore);
+        }
     },
 
     /**
