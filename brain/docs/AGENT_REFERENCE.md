@@ -49,6 +49,7 @@ createState(
 | `then` | string | NO | State to transition to (required if duration_ms set) |
 | `description` | string | NO | Human-readable description |
 | `voice_reactive` | object | NO | Enable mic-reactive brightness |
+| `vision_reactive` | object | NO | Enable camera-reactive behavior (CV, VLM, or hybrid) |
 
 ### State Modes
 
@@ -56,6 +57,71 @@ createState(
 2. **Animation**: speed is set, r/g/b can be expressions
 3. **Timed**: duration_ms + then for auto-transition
 4. **Voice-Reactive**: voice_reactive.enabled=true
+5. **Vision-Reactive**: vision_reactive.enabled=true
+
+### Vision-Reactive Mode
+
+Use watcher engines to detect events from camera frames. Prefer CV for simple detection and VLM for semantic understanding.
+
+```json
+createState(
+  name="wave_watch",
+  r=255, g=255, b=255,
+  vision_reactive={
+    "enabled": true,
+    "engine": "cv",
+    "cv_detector": "posenet",
+    "prompt": "Detect hand wave. Return detected=true only for clear wave",
+    "event": "vision_hand_wave",
+    "interval_ms": 1000,
+    "cooldown_ms": 1500
+  }
+)
+```
+
+Watcher interval policy:
+- CV-only: `interval_ms >= 1000`
+- VLM-only: `interval_ms >= 2000`
+- Hybrid (CV + VLM in one watcher): `interval_ms >= 2000`
+
+Optional continuous mapping keys:
+- `set_data_key`: state_data key to write
+- `set_data_field`: field from VLM JSON `fields` object
+
+#### Inline Vision Config Inside `code` (supported)
+
+For code-based states, you can place vision config directly in the `code` block using comment headers.
+This keeps render logic + watcher config in one place.
+
+```python
+createState(
+  name="hand_proximity",
+  description="Brighter when hand is closer",
+  code="""
+# vision.enabled = true
+# vision.engine = vlm
+# vision.model = gpt-4o-mini
+# vision.prompt = Estimate closest hand distance on a 0-100 scale; return numeric value in fields.hand_distance.
+# vision.set_data_field = hand_distance
+# vision.set_data_key = hand_distance
+# vision.interval_ms = 2000
+
+def render(prev, t):
+    d = Number(getData('hand_distance', 100))
+    b = clamp(map_range(d, 0, 100, 1.0, 0.2), 0.2, 1.0)
+    return [[int(255*b), int(255*b), int(255*b)], 30]
+"""
+)
+```
+
+Notes:
+- Explicit top-level `vision_reactive` fields override matching inline `# vision.*` values.
+- Use `engine=vlm` for semantic fields like `hand_distance`.
+- UI debug line shows `engine=...` so runtime path is visible.
+
+When to use which watcher type:
+- **State-level watcher (`vision_reactive`)**: continuous adaptation while state is active (e.g., people count controls brightness/color)
+- **Rule-level watcher (`trigger_config.vision`)**: discrete event transitions (e.g., person enters room -> transition to alert state)
 
 ---
 
@@ -283,6 +349,7 @@ Rules define state transitions. When a trigger occurs, matching rules are evalua
 | `timer` | One-shot delay (requires trigger_config) |
 | `interval` | Repeating timer (requires trigger_config) |
 | `schedule` | Time-of-day (requires trigger_config) |
+| `vision_*` | Custom camera/VLM event names (e.g., `vision_hand_wave`) |
 
 ### Wildcard Matching
 
@@ -307,6 +374,37 @@ Conditions use `getData()`, actions use `setData()`:
   "action": "setData('counter', getData('counter') - 1)"
 }
 ```
+
+### Rule-level Vision Watchers
+
+Attach watcher settings to a rule using `trigger_config.vision`:
+
+```json
+{
+  "from": "*",
+  "on": "vision_person_entered",
+  "to": "red_alert",
+  "trigger_config": {
+    "vision": {
+      "enabled": true,
+      "engine": "hybrid",
+      "cv_detector": "opencv_hog",
+      "prompt": "Detect person entering room. detected=true only when crossing into frame",
+      "event": "vision_person_entered",
+      "model": "gpt-4o-mini",
+      "interval_ms": 2000,
+      "cooldown_ms": 2000,
+      "min_confidence": 0.6,
+      "mode": "event_only"
+    }
+  }
+}
+```
+
+`mode` values:
+- `event_only` (default for rules): emit event only
+- `data_only`: write mapped data only
+- `both`: write data and emit event
 
 ### Priority
 
@@ -947,6 +1045,62 @@ These examples show how to handle common voice commands.
 - "set up" / "configure" / "click to" / "hold to" → OK to add rules
 
 **Keywords that allow rules**: set up, configure, toggle, click, hold, press, double-click, button, when I, schedule, timer, at [time]
+
+### Email-Style Request Template (Dual Watchers)
+
+Use this when you want both:
+1) continuous camera-driven adaptation in a state, and
+2) a discrete vision-triggered transition rule.
+
+```text
+Subject: Set up party mode with camera-based behavior
+
+Hi AdaptLight,
+
+Please configure party mode using camera input in two ways:
+
+1) While state is `party`, continuously adjust brightness/color based on crowd size.
+  - Use a state-level vision watcher (`vision_reactive`) on `party`.
+  - Prompt should estimate `people_count` and write it to state_data key `people_count`.
+  - Do data mapping only (no event) for this watcher.
+
+2) While in `party`, if someone enters the room, transition to `red_alert`.
+  - Use a rule-level watcher in `trigger_config.vision`.
+  - Rule should be from `party` on `vision_person_entered` to `red_alert`.
+  - Watcher should be event-only with cooldown and confidence threshold.
+
+Requirements:
+- No hardcoded backend behavior for color mapping.
+- State code must read `getData('people_count')` and compute visuals.
+- Keep existing non-camera behavior unchanged.
+
+Thanks!
+```
+
+Expected model behavior:
+- Creates/updates `party` state code that reads `getData('people_count')`.
+- Adds state-level `vision_reactive` with `set_data_key="people_count"` and `set_data_field="people_count"`.
+- Adds rule with `trigger_config.vision` for `vision_person_entered`.
+- Does not add unrelated rules/watchers.
+
+### Ready-to-Use Vision Test Commands (1s/2s cadence)
+
+Paste these directly into the UI input box to validate cadence behavior:
+
+#### CV-only (1s)
+```text
+Set up CV-only person detection at 1 second. Create state "cv_watch" and switch to it. Add rule from cv_watch on vision_cv_person to red. Use trigger_config.vision with enabled true, engine cv, cv_detector opencv_hog, prompt "Detect person presence", event vision_cv_person, interval_ms 1000, cooldown_ms 1000, mode event_only.
+```
+
+#### VLM-only (2s)
+```text
+Set up VLM-only person detection at 2 seconds. Create state "vlm_watch" and switch to it. Add rule from vlm_watch on vision_vlm_person to blue. Use trigger_config.vision with enabled true, engine vlm, model gpt-4o-mini, prompt "Detect if at least one person is visible. Return detected true only when clearly visible.", event vision_vlm_person, interval_ms 2000, cooldown_ms 1500, mode event_only.
+```
+
+#### Hybrid CV+VLM (2s)
+```text
+Set up hybrid detection at 2 seconds. Create state "hybrid_watch" and switch to it. Add rule from hybrid_watch on vision_hybrid_person to green. Use trigger_config.vision with enabled true, engine hybrid, cv_detector posenet, model gpt-4o-mini, prompt "Detect person entering room with pose/body evidence.", event vision_hybrid_person, interval_ms 2000, cooldown_ms 2000, mode event_only.
+```
 
 ### Basic Commands (NO rules needed)
 

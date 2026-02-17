@@ -14,6 +14,7 @@ Manages all tools available to the Claude agent, including:
 """
 
 import json
+import re
 from typing import Dict, Any, Callable, List, Optional
 
 from .custom import CustomToolExecutor
@@ -76,6 +77,59 @@ class ToolRegistry:
             from brain.llm.llm_parser import LLMParser
             return LLMParser(api_key=self.api_key)
         return None
+
+    @staticmethod
+    def _coerce_inline_value(raw: str):
+        value = str(raw or '').strip()
+        if len(value) >= 2 and ((value[0] == '"' and value[-1] == '"') or (value[0] == "'" and value[-1] == "'")):
+            value = value[1:-1]
+
+        lowered = value.lower()
+        if lowered in ('true', 'false'):
+            return lowered == 'true'
+
+        if re.match(r'^-?\d+$', value):
+            try:
+                return int(value)
+            except Exception:
+                return value
+
+        if re.match(r'^-?\d+\.\d+$', value):
+            try:
+                return float(value)
+            except Exception:
+                return value
+
+        return value
+
+    @classmethod
+    def _extract_vision_reactive_from_code(cls, code: str) -> Optional[Dict[str, Any]]:
+        if not isinstance(code, str) or not code.strip():
+            return None
+
+        inline = {}
+        allowed = {
+            'enabled', 'prompt', 'model', 'engine', 'cv_detector', 'interval_ms',
+            'event', 'min_confidence', 'cooldown_ms', 'set_data_key', 'set_data_field',
+            'mode'
+        }
+
+        for line in code.splitlines():
+            match = re.match(r'^\s*#\s*vision\.(\w+)\s*[:=]\s*(.+?)\s*$', line)
+            if not match:
+                continue
+
+            key = match.group(1)
+            if key not in allowed:
+                continue
+
+            inline[key] = cls._coerce_inline_value(match.group(2))
+
+        if not inline:
+            return None
+
+        inline.setdefault('enabled', True)
+        return inline
 
     def _register_agent_tools(self):
         """Register all agent tools."""
@@ -148,7 +202,8 @@ class ToolRegistry:
    - next_ms = None: static state
    - next_ms = 0: state complete (triggers state_complete transition)
 
-Use voice_reactive for mic-reactive brightness.""",
+Use voice_reactive for mic-reactive brightness.
+Use vision_reactive for camera-reactive behavior (CV, VLM, or hybrid).""",
             input_schema={
                 "type": "object",
                 "properties": {
@@ -168,6 +223,23 @@ Use voice_reactive for mic-reactive brightness.""",
                             "smoothing_alpha": {"type": "number", "description": "Smoothing factor 0-1 (lower=smoother, default 0.6)"},
                             "min_amplitude": {"type": "number", "description": "Noise floor threshold (default 100)"},
                             "max_amplitude": {"type": "number", "description": "Full brightness threshold (default 5000)"}
+                        }
+                    },
+                    "vision_reactive": {
+                        "type": ["object", "null"],
+                        "description": "Enable camera-reactive behavior. Runtime chooses CV packages or VLM based on engine config.",
+                        "properties": {
+                            "enabled": {"type": "boolean", "description": "Enable vision-reactive mode"},
+                            "prompt": {"type": "string", "description": "Detection prompt/instructions (required for VLM, optional for CV)"},
+                            "model": {"type": "string", "description": "OpenAI vision model (default gpt-4o-mini)"},
+                            "engine": {"type": "string", "description": "auto | cv | vlm | hybrid (hybrid runs both CV+VLM)"},
+                            "cv_detector": {"type": "string", "description": "opencv_hog | opencv_face | opencv_motion | posenet"},
+                            "interval_ms": {"type": "number", "description": "Analyze interval in milliseconds: CV >=1000, VLM >=2000, hybrid >=2000"},
+                            "event": {"type": "string", "description": "Event name to emit when detection is positive"},
+                            "min_confidence": {"type": "number", "description": "Optional confidence threshold from VLM output"},
+                            "cooldown_ms": {"type": "number", "description": "Minimum time between identical emitted events"},
+                            "set_data_key": {"type": "string", "description": "Optional state_data key for continuous numeric output"},
+                            "set_data_field": {"type": "string", "description": "Field name from VLM JSON to write into state_data"}
                         }
                     }
                 },
@@ -205,7 +277,7 @@ Use voice_reactive for mic-reactive brightness.""",
         # Rule management tools
         self.register_tool(
             name="appendRules",
-            description="Add transition rules. Rules are evaluated by priority (highest first). Use '*' for wildcard state matching. Supports pipelines and time-based triggers. Use 'state_complete' trigger for auto-transitions when a state's animation finishes.",
+            description="Add transition rules. Rules are evaluated by priority (highest first). Use '*' for wildcard state matching. Supports pipelines, time-based triggers, and vision watchers via trigger_config.vision. Use 'state_complete' trigger for auto-transitions when a state's animation finishes.",
             input_schema={
                 "type": "object",
                 "properties": {
@@ -215,7 +287,7 @@ Use voice_reactive for mic-reactive brightness.""",
                             "type": "object",
                             "properties": {
                                 "from": {"type": "string", "description": "Source state ('*' for any, 'prefix/*' for prefix match)"},
-                                "on": {"type": "string", "description": "Trigger: button_click, button_hold, button_release, button_double_click, timer, interval, schedule, state_complete"},
+                                "on": {"type": "string", "description": "Trigger: button_click, button_hold, button_release, button_double_click, timer, interval, schedule, state_complete, or vision_* custom events"},
                                 "to": {"type": "string", "description": "Destination state"},
                                 "condition": {"type": ["string", "null"], "description": "Condition expression e.g. \"getData('x') > 0\""},
                                 "action": {"type": ["string", "null"], "description": "Action expression e.g. \"setData('x', getData('x') - 1)\""},
@@ -224,14 +296,32 @@ Use voice_reactive for mic-reactive brightness.""",
                                 "enabled": {"type": "boolean", "description": "Whether rule is active (default true)"},
                                 "trigger_config": {
                                     "type": ["object", "null"],
-                                    "description": "Config for time-based triggers (timer/interval/schedule)",
+                                    "description": "Config for time-based triggers (timer/interval/schedule) or vision watcher config",
                                     "properties": {
                                         "delay_ms": {"type": "number", "description": "Delay in ms (for timer/interval)"},
                                         "repeat": {"type": "boolean", "description": "Repeat interval (for interval)"},
                                         "auto_cleanup": {"type": "boolean", "description": "Remove rule after firing (for timer)"},
                                         "hour": {"type": "number", "description": "Hour 0-23 (for schedule)"},
                                         "minute": {"type": "number", "description": "Minute 0-59 (for schedule)"},
-                                        "repeat_daily": {"type": "boolean", "description": "Repeat daily (for schedule)"}
+                                        "repeat_daily": {"type": "boolean", "description": "Repeat daily (for schedule)"},
+                                        "vision": {
+                                            "type": "object",
+                                            "description": "Rule-level watcher config (CV, VLM, or hybrid; active when rule's from-state matches current state)",
+                                            "properties": {
+                                                "enabled": {"type": "boolean", "description": "Enable this watcher"},
+                                                "prompt": {"type": "string", "description": "Detection prompt/instructions (required for VLM, optional for CV)"},
+                                                "event": {"type": "string", "description": "Event to emit (should start with vision_)"},
+                                                "model": {"type": "string", "description": "OpenAI vision model"},
+                                                "engine": {"type": "string", "description": "auto | cv | vlm | hybrid"},
+                                                "cv_detector": {"type": "string", "description": "opencv_hog | opencv_face | opencv_motion | posenet"},
+                                                "interval_ms": {"type": "number", "description": "Analyze interval in ms: CV >=1000, VLM >=2000, hybrid >=2000"},
+                                                "cooldown_ms": {"type": "number", "description": "Cooldown for repeated events"},
+                                                "min_confidence": {"type": "number", "description": "Minimum confidence to emit event"},
+                                                "mode": {"type": "string", "description": "event_only, data_only, or both"},
+                                                "set_data_key": {"type": "string", "description": "Optional state_data key for mapped output"},
+                                                "set_data_field": {"type": "string", "description": "Field name from VLM JSON fields object"}
+                                            }
+                                        }
                                     }
                                 }
                             },
@@ -629,6 +719,12 @@ Use voice_reactive for mic-reactive brightness.""",
         speed = input.get("speed")
         description = input.get("description", "")
         voice_reactive = input.get("voice_reactive")
+        vision_reactive = input.get("vision_reactive")
+
+        inline_vision_reactive = self._extract_vision_reactive_from_code(code) if code is not None else None
+        if inline_vision_reactive:
+            explicit_vision = vision_reactive if isinstance(vision_reactive, dict) else {}
+            vision_reactive = {**inline_vision_reactive, **explicit_vision}
 
         # Validate: either code or r/g/b must be provided
         if code is None and (r is None or g is None or b is None):
@@ -641,7 +737,8 @@ Use voice_reactive for mic-reactive brightness.""",
                 name=name,
                 code=code,
                 description=description,
-                voice_reactive=voice_reactive
+                voice_reactive=voice_reactive,
+                vision_reactive=vision_reactive
             )
         else:
             # Original r/g/b mode
@@ -652,7 +749,8 @@ Use voice_reactive for mic-reactive brightness.""",
                 b=b,
                 speed=speed,
                 description=description,
-                voice_reactive=voice_reactive
+                voice_reactive=voice_reactive,
+                vision_reactive=vision_reactive
             )
 
         # Add to state machine's state collection

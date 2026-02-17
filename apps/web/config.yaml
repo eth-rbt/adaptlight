@@ -38,3 +38,18 @@ server:
 # Storage
 storage:
   dir: data/storage
+
+# Web camera + VLM runtime
+vision:
+  enabled: true               # Set true to allow /api/vision/* endpoints
+  mode: realtime              # polling | realtime (streaming path with fallback)
+  latest_frame_only: true     # Keep only newest frame while processing to avoid backlog
+  model: gpt-4o-mini          # Fast OpenAI vision model
+  interval_ms: 2000           # Default VLM interval (>=2s)
+  cooldown_ms: 1500           # Minimum event cooldown
+  min_confidence: 0.55        # Default confidence threshold for emitting events
+  max_image_chars: 2500000    # Guardrail on data URL payload size
+  cv:
+    enabled: true             # Enable CV package path (OpenCV / pose detector)
+    interval_ms: 1000         # Default CV interval (>=1s)
+    detector: opencv_hog      # opencv_hog | opencv_face | opencv_motion | posenet

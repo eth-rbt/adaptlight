@@ -14,7 +14,7 @@ class State:
     """Represents a single state in the state machine."""
 
     def __init__(self, name: str, r=None, g=None, b=None, speed=None,
-                 code=None, description: str = '', voice_reactive=None):
+                 code=None, description: str = '', voice_reactive=None, vision_reactive=None):
         """
         Initialize a state with unified parameters.
 
@@ -33,6 +33,15 @@ class State:
             voice_reactive: Optional dict to enable mic-reactive brightness. Example:
                            {"enabled": true, "color": [0,255,0], "smoothing_alpha": 0.6,
                             "min_amplitude": 100, "max_amplitude": 5000}
+                        vision_reactive: Optional dict to enable camera/VLM-reactive behavior.
+                                                        Example:
+                                                        {
+                                                            "enabled": true,
+                                                            "prompt": "Detect hand wave. Reply JSON only.",
+                                                            "model": "gpt-4o-mini",
+                                                            "interval_ms": 700,
+                                                            "event": "vision_hand_wave"
+                                                        }
         """
         self.name = name
         self.r = r
@@ -41,6 +50,7 @@ class State:
         self.speed = speed
         self.code = code
         self.voice_reactive = voice_reactive or {}
+        self.vision_reactive = vision_reactive or {}
         self.description = description or self._generate_description()
 
         # Callback for state entry - set by the app
@@ -67,6 +77,23 @@ class State:
             if smoothing is not None:
                 base += f", smoothing_alpha={smoothing}"
 
+        # Add vision-reactive hint for the AI
+        if self.vision_reactive.get('enabled'):
+            vis = self.vision_reactive
+            prompt = vis.get('prompt')
+            interval_ms = vis.get('interval_ms')
+            event = vis.get('event')
+            base += " | vision-reactive enabled"
+            if interval_ms is not None:
+                base += f", interval_ms={interval_ms}"
+            if event:
+                base += f", event={event}"
+            if prompt:
+                prompt_preview = str(prompt).strip().replace('\n', ' ')
+                if len(prompt_preview) > 80:
+                    prompt_preview = prompt_preview[:77] + "..."
+                base += f", prompt='{prompt_preview}'"
+
         return base
 
     def get_params(self):
@@ -78,6 +105,7 @@ class State:
             'speed': self.speed,
             'code': self.code,
             'voice_reactive': self.voice_reactive,
+            'vision_reactive': self.vision_reactive,
             'state_name': self.name
         }
 
@@ -225,6 +253,22 @@ class States:
                     params += f", min_amplitude: {vr.get('min_amplitude')}"
                 if vr.get('max_amplitude') is not None:
                     params += f", max_amplitude: {vr.get('max_amplitude')}"
+                params += "}"
+
+            if s.vision_reactive.get('enabled'):
+                vis = s.vision_reactive
+                params += ", vision_reactive={enabled: True"
+                if vis.get('model') is not None:
+                    params += f", model: {vis.get('model')}"
+                if vis.get('interval_ms') is not None:
+                    params += f", interval_ms: {vis.get('interval_ms')}"
+                if vis.get('event') is not None:
+                    params += f", event: {vis.get('event')}"
+                if vis.get('prompt') is not None:
+                    prompt = str(vis.get('prompt')).strip().replace('\n', ' ')
+                    if len(prompt) > 60:
+                        prompt = prompt[:57] + "..."
+                    params += f", prompt: {prompt}"
                 params += "}"
             desc = s.description if s.description else "No description"
             lines.append(f"- {s.name}: {params} | {desc}")

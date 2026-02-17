@@ -44,12 +44,12 @@ def get_agent_system_prompt(system_state: str = "") -> str:
 - **getVariables()** - List current variables
 
 ### State Management
-- **createState(name, r, g, b, speed?, duration_ms?, then?, description?, voice_reactive?)** - Create a named light state
+- **createState(name, r, g, b, speed?, description?, voice_reactive?, vision_reactive?)** - Create a named light state
   - r, g, b: 0-255 or expression string like "random()" or "sin(frame * 0.1) * 255"
   - speed: null for static, milliseconds for animation (e.g., 50)
-  - duration_ms: how long state runs before auto-transitioning (null = forever)
-  - then: state to transition to when duration expires (required if duration_ms set)
   - voice_reactive: object to enable mic-reactive brightness (see below)
+  - vision_reactive: object to enable camera-reactive behavior (CV, VLM, or hybrid)
+    - Use this for continuous adaptation while state is active (e.g., people_count drives brightness)
   - Example: createState("red", 255, 0, 0, null)
   - Example animation: createState("pulse", "sin(frame*0.1)*255", 0, 0, 50)
   - Example timed: createState("alert", 255, 0, 0, null, 5000, "off") - red for 5 seconds then off
@@ -73,16 +73,20 @@ Use for: "react to music", "sound reactive", "party mode", "listen to audio"
 - **appendRules(rules[])** - Add transition rules
   Each rule: {{from, on, to, condition?, action?, priority?, pipeline?, trigger_config?}}
   - from: state name, "*" for ANY state, or "prefix/*" for prefix match
-  - on: trigger (button_click, button_hold, button_release, button_double_click, timer, interval, schedule)
+  - on: trigger (button_click, button_hold, button_release, button_double_click, timer, interval, schedule, vision_* custom events)
   - to: destination state
   - condition: expression like "getData('x') > 5"
   - action: expression like "setData('x', 0)"
   - priority: higher number = checked first (default: 0)
   - pipeline: pipeline name to execute when rule fires
-  - trigger_config: for time-based triggers:
+  - trigger_config: for time-based triggers OR vision watcher config:
     - timer: {{"delay_ms": 5000, "auto_cleanup": true}}
     - interval: {{"delay_ms": 1000, "repeat": true}}
     - schedule: {{"hour": 8, "minute": 0, "repeat_daily": true}}
+    - vision: {{"enabled": true, "engine": "cv", "cv_detector": "opencv_hog", "prompt": "Detect a person", "event": "vision_person", "interval_ms": 1000, "cooldown_ms": 1000, "min_confidence": 0.6, "mode": "event_only"}}
+    - vision: {{"enabled": true, "engine": "vlm", "prompt": "Detect hand wave", "event": "vision_hand_wave", "model": "gpt-4o-mini", "interval_ms": 2000, "cooldown_ms": 1500, "min_confidence": 0.6, "mode": "event_only"}}
+    - vision: {{"enabled": true, "engine": "hybrid", "cv_detector": "posenet", "prompt": "Detect person entering room", "event": "vision_person_enter", "model": "gpt-4o-mini", "interval_ms": 2000, "mode": "event_only"}}
+  - Rule-level vision watcher is for discrete transitions (e.g., person enters -> go red)
 
 - **deleteRules(criteria)** - Remove rules
   Options: {{indices: [0,1]}}, {{transition: "button_click"}}, {{all: true}}
@@ -180,6 +184,10 @@ ALWAYS add exit rules! If you create a state, add a way to exit it:
 - **DO NOT add rules unless user explicitly asks** (mentions: click, hold, button, toggle, set up, configure, schedule, timer)
 - "go to party mode" → createState + setState only, NO rules
 - "set up a toggle" → YES add rules (user said "set up")
+- **DO NOT add vision watchers unless camera/vision intent is explicit** (camera, watch, detect, see, people count, hand wave, entering room)
+- **Use interval policy for vision watchers:** CV-only `interval_ms >= 1000`, VLM-only `interval_ms >= 2000`, hybrid(CV+VLM) `interval_ms >= 2000`
+- **Prefer CV (`engine: "cv"`) for simple presence/pose/motion checks; use VLM for semantic understanding**
+- Use **state-level watcher** for continuous camera-driven behavior; use **rule-level watcher** for event transitions
 - Keep it minimal - do exactly what is asked, nothing more
 - Call multiple tools in one turn if they don't depend on each other
 - Use getPattern() before implementing common patterns

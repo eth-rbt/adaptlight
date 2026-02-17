@@ -370,6 +370,7 @@ class SMgenerator:
                 'speed': state_obj.speed,
                 'code': state_obj.code,
                 'voice_reactive': state_obj.voice_reactive,
+                'vision_reactive': state_obj.vision_reactive,
                 'current_rgb': current_rgb,
             }
         else:
@@ -382,6 +383,7 @@ class SMgenerator:
                 'speed': None,
                 'code': None,
                 'voice_reactive': {},
+                'vision_reactive': {},
                 'current_rgb': current_rgb,
             }
 
@@ -434,6 +436,8 @@ class SMgenerator:
                 'b': state.b,
                 'speed': state.speed,
                 'code': state.code,
+                'voice_reactive': state.voice_reactive,
+                'vision_reactive': state.vision_reactive,
                 'description': state.description,
             })
 
@@ -449,6 +453,7 @@ class SMgenerator:
                 'priority': rule.priority,
                 'enabled': rule.enabled,
                 'pipeline': rule.pipeline,
+                'trigger_config': rule.trigger_config,
             })
 
         return {

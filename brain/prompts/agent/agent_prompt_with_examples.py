@@ -11,7 +11,7 @@ def get_state_docs(representation_version: str = "stdlib") -> str:
 
     if representation_version == "original":
         return """### States (Original Mode)
-- **createState(name, r, g, b, speed?, description?, voice_reactive?)** - Create a light state
+- **createState(name, r, g, b, speed?, description?, voice_reactive?, vision_reactive?)** - Create a light state
   - r, g, b: 0-255 for static, or expression string for animation
   - speed: null=static, or milliseconds for animation frame rate
   - Available functions: sin, cos, abs, min, max, floor, ceil, random, PI
@@ -19,7 +19,7 @@ def get_state_docs(representation_version: str = "stdlib") -> str:
 """
     elif representation_version == "pure_python":
         return """### States (Pure Python Mode)
-- **createState(name, code, description?, voice_reactive?)** - Create a light state
+- **createState(name, code, description?, voice_reactive?, vision_reactive?)** - Create a light state
   - code: Python function that returns ((r,g,b), next_ms)
   - next_ms > 0: animation continues, call again in next_ms milliseconds
   - next_ms = None: static state, no more updates needed
@@ -48,7 +48,7 @@ def render(prev, t):
 """
     elif representation_version == "stdlib_js":
         return """### States (Stdlib JS Mode)
-- **createState(name, code, description?, voice_reactive?)** - Create a light state
+- **createState(name, code, description?, voice_reactive?, vision_reactive?)** - Create a light state
   - code: JavaScript function using stdlib helpers
 
   Available functions:
@@ -110,7 +110,7 @@ function render(prev, t) {
 """
     else:  # stdlib (default)
         return """### States (Stdlib Mode)
-- **createState(name, code, description?, voice_reactive?)** - Create a light state
+- **createState(name, code, description?, voice_reactive?, vision_reactive?)** - Create a light state
   - code: Python function using stdlib helpers
 
   Available functions:
@@ -180,6 +180,12 @@ function render(prev, t) {
 ### "React to music"
 createState(name="music", code='function render(prev, t) { return [[0, 255, 0], null]; }', voice_reactive={{"enabled": true}}) → setState → done()
 
+### "Turn red when a hand wave is detected"
+appendRules([{{"from": "*", "on": "vision_hand_wave", "to": "red", "trigger_config": {{"vision": {{"enabled": true, "engine": "cv", "cv_detector": "posenet", "prompt": "Detect a hand wave. Return detected true only for clear wave.", "event": "vision_hand_wave", "interval_ms": 1000}}}}}}]) → done()
+
+### "Party mode: adapt to crowd size, but turn red when someone enters"
+createState(name="party", code='function render(prev, t) {\n  const n = Number(getData("people_count", 0));\n  const v = clamp(0.2 + n * 0.15, 0.2, 1.0);\n  return [hsv((t * 0.1 + n * 0.05) % 1, 1, v), 60];\n}', vision_reactive={{"enabled": true, "prompt": "Return people_count in fields.people_count.", "set_data_key": "people_count", "set_data_field": "people_count", "mode": "data_only", "interval_ms": 2000}}) → appendRules([{{"from": "party", "on": "vision_person_entered", "to": "red_alert", "priority": 90, "trigger_config": {{"vision": {{"enabled": true, "prompt": "Detect a person entering the room. detected=true only on entry.", "event": "vision_person_entered", "mode": "event_only", "interval_ms": 2000, "cooldown_ms": 2500}}}}}}]) → done()
+
 For more examples, use: getDocs("examples")"""
     else:
         return """## QUICK EXAMPLES
@@ -207,6 +213,12 @@ def render(prev, t):
 
 ### "React to music"
 createState(name="music", code='def render(prev, t): return (0, 255, 0), None', voice_reactive={{"enabled": true}}) → setState → done()
+
+### "Get warmer as person gets closer" (state-level vision)
+createState(name="proximity_warm", code='def render(prev, t):\n    return prev, 100', vision_reactive={{"enabled": true, "prompt": "Estimate person distance in meters in field distance_m. detected=true if person exists.", "set_data_key": "person_distance_m", "set_data_field": "distance_m", "model": "gpt-4o-mini", "interval_ms": 2000}}) → setState(name="proximity_warm") → done()
+
+### "Party mode + person enters alert" (state + rule watchers)
+createState(name="party", code='''\ndef render(prev, t):\n    n = float(getData("people_count", 0) or 0)\n    v = clamp(0.2 + n * 0.15, 0.2, 1.0)\n    return hsv((t * 0.1 + n * 0.05) % 1, 1, v), 60\n''', vision_reactive={{"enabled": true, "prompt": "Return people_count in fields.people_count.", "set_data_key": "people_count", "set_data_field": "people_count", "mode": "data_only", "interval_ms": 2000}}) → appendRules([{{"from": "party", "on": "vision_person_entered", "to": "red_alert", "priority": 90, "trigger_config": {{"vision": {{"enabled": true, "prompt": "Detect person entering the room. detected=true only on entry.", "event": "vision_person_entered", "mode": "event_only", "interval_ms": 2000, "cooldown_ms": 2500}}}}}}]) → done()
 
 For more examples, use: getDocs("examples")"""
 
@@ -251,12 +263,16 @@ Users speak voice commands to configure their smart lamp. You interpret what the
 ### Rules
 - **appendRules(rules[])** - Add rules. Each rule:
   - from: source state ("*" = any, "prefix/*" = prefix match)
-  - on: trigger (button_click, button_hold, button_release, button_double_click, timer, interval, schedule, state_complete)
+    - on: trigger (button_click, button_hold, button_release, button_double_click, timer, interval, schedule, state_complete, vision_* custom events)
   - to: destination state
   - condition/action: expressions using getData()/setData()
   - priority: higher = checked first
   - pipeline: pipeline name to execute
-  - trigger_config: for timer/interval/schedule (see getDocs)
+    - trigger_config: for timer/interval/schedule OR vision watcher config
+    - vision watcher format: trigger_config.vision={{enabled, engine?, cv_detector?, prompt?, event?, model?, interval_ms?, cooldown_ms?, min_confidence?, mode?, set_data_key?, set_data_field?}}
+    - vision interval rule: CV-only >=1000ms, VLM-only >=2000ms, hybrid(CV+VLM) >=2000ms
+    - prefer engine="cv" for simple person/pose/motion checks to reduce VLM cost
+    - watcher modes: event_only (default for rules), data_only, both
   - **state_complete**: fires when a state's render returns next_ms=0 (animation finished)
 - **deleteRules(indices?, transition?, from_state?, to_state?, all?)** - Delete rules
 
@@ -298,15 +314,22 @@ Users speak voice commands to configure their smart lamp. You interpret what the
 
 3. **Keywords that allow rules**: set up, configure, toggle, click, hold, press, double-click, button, when I, schedule, timer, at [time]
 
-4. **Create states before using them** - don't set to a state that doesn't exist
+4. **Only create vision watchers when camera/vision intent is explicit**
+    - explicit signals: camera, vision, see, watch, detect people, hand wave, entering room, crowd count
 
-5. **Use getDocs("examples") if unsure** - look up detailed examples for any command type
+5. **Use state-level watcher for continuous behavior; rule-level watcher for discrete transitions**
+    - continuous adaptation (brightness/color from people_count/distance): state `vision_reactive`
+    - event transition (enter room → red): rule `trigger_config.vision`
 
-6. **Keep it minimal** - do exactly what is asked, nothing more
+6. **Create states before using them** - don't set to a state that doesn't exist
 
-7. **Use wildcards "*"** for rules that should apply from any state
+7. **Use getDocs("examples") if unsure** - look up detailed examples for any command type
 
-8. **Use priority** for important rules (safety rules should be priority 100)
+8. **Keep it minimal** - do exactly what is asked, nothing more
+
+9. **Use wildcards "*"** for rules that should apply from any state
+
+10. **Use priority** for important rules (safety rules should be priority 100)
 
 {quick_examples}
 

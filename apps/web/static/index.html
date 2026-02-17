@@ -125,6 +125,41 @@
             justify-content: center;
             margin-bottom: 20px;
         }
+        .vision-controls {
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .vision-preview {
+            width: 220px;
+            height: 165px;
+            border-radius: 8px;
+            border: 1px solid #cbd5e1;
+            object-fit: cover;
+            background: #0f172a;
+            display: none;
+        }
+        .vision-status {
+            font-size: 12px;
+            color: #64748b;
+        }
+        .vision-debug {
+            width: 100%;
+            font-size: 12px;
+            color: #475569;
+            line-height: 1.4;
+        }
+        .vision-btn {
+            padding: 8px 14px;
+            font-size: 13px;
+        }
         .response {
             background: #fff;
             padding: 16px;
@@ -693,6 +728,19 @@
             <button class="reset-btn" onclick="resetSM()">Reset</button>
         </div>
 
+        <div class="vision-controls" id="visionControls">
+            <button class="vision-btn" id="visionStartBtn" onclick="startCameraVision()">Start Camera Vision</button>
+            <button class="vision-btn reset-btn" id="visionStopBtn" onclick="stopCameraVision()" disabled>Stop Camera Vision</button>
+            <span class="vision-status" id="visionStatus">Vision idle</span>
+            <video id="visionVideo" class="vision-preview" autoplay playsinline muted></video>
+            <canvas id="visionCanvas" width="320" height="240" style="display:none;"></canvas>
+            <div class="vision-debug" id="visionDebugLabel">Vision State: idle</div>
+            <div class="vision-debug" id="visionDebugCountdown">Next capture in: -</div>
+            <div class="vision-debug" id="visionDebugDescription">Description: -</div>
+            <div class="vision-debug" id="visionDebugData">Data: -</div>
+            <div class="vision-debug" id="visionDebugTiming">Timing: -</div>
+        </div>
+
         <div class="response" id="response">
             <div class="loading" id="loading" style="display: none;">
                 <span>Processing...</span>
@@ -768,6 +816,17 @@
         const sendBtn = document.getElementById('sendBtn');
         const mainButton = document.getElementById('mainButton');
         const gestureIndicator = document.getElementById('gestureIndicator');
+        const visionControls = document.getElementById('visionControls');
+        const visionStartBtn = document.getElementById('visionStartBtn');
+        const visionStopBtn = document.getElementById('visionStopBtn');
+        const visionStatus = document.getElementById('visionStatus');
+        const visionVideo = document.getElementById('visionVideo');
+        const visionCanvas = document.getElementById('visionCanvas');
+        const visionDebugLabel = document.getElementById('visionDebugLabel');
+        const visionDebugCountdown = document.getElementById('visionDebugCountdown');
+        const visionDebugDescription = document.getElementById('visionDebugDescription');
+        const visionDebugData = document.getElementById('visionDebugData');
+        const visionDebugTiming = document.getElementById('visionDebugTiming');
 
         // User identification
         const userModal = document.getElementById('userModal');
@@ -845,6 +904,100 @@
         let animationStartTime = 0;
         let currentState = null;
         let currentColor = { r: 0, g: 0, b: 0 };
+        let visionConfig = { enabled: false, mode: 'polling', interval_ms: 2000 };
+        let visionSessionId = null;
+        let visionStream = null;
+        let visionLoopId = null;
+        let visionFrameInFlight = false;
+        let visionDroppedFrames = 0;
+        let visionNextCaptureAtMs = 0;
+        let visionLoopIntervalMs = 2000;
+        let visionCountdownId = null;
+        let lastVlmStateText = 'Vision State: idle';
+        let lastVlmDescriptionText = 'Description: -';
+        let lastVlmDataText = 'Data: -';
+        let lastVlmTimingText = 'Timing: -';
+        const VISION_SEND_MAX_WIDTH = 640;
+
+        function setVisionDebug({ state = 'Vision State: idle', countdown = null, description = 'Description: -', data = 'Data: -', timing = 'Timing: -' } = {}) {
+            if (visionDebugLabel) visionDebugLabel.textContent = state;
+            if (visionDebugCountdown && countdown !== null) visionDebugCountdown.textContent = countdown;
+            if (visionDebugDescription) visionDebugDescription.textContent = description;
+            if (visionDebugData) visionDebugData.textContent = data;
+            if (visionDebugTiming) visionDebugTiming.textContent = timing;
+        }
+
+        function rememberLatestVlm({ state, description, data, timing } = {}) {
+            if (state) lastVlmStateText = state;
+            if (description) lastVlmDescriptionText = description;
+            if (data) lastVlmDataText = data;
+            if (timing) lastVlmTimingText = timing;
+        }
+
+        function stopVisionCountdownTicker() {
+            if (visionCountdownId) {
+                clearInterval(visionCountdownId);
+                visionCountdownId = null;
+            }
+        }
+
+        function startVisionCountdownTicker() {
+            stopVisionCountdownTicker();
+            visionCountdownId = setInterval(() => {
+                if (!visionSessionId || !visionNextCaptureAtMs || visionFrameInFlight) {
+                    return;
+                }
+
+                const remainingMs = Math.max(0, visionNextCaptureAtMs - Date.now());
+                const remainingSec = Math.ceil(remainingMs / 1000);
+                if (visionDebugCountdown) {
+                    visionDebugCountdown.textContent = `Next capture in: ${remainingSec}s`;
+                }
+            }, 200);
+        }
+
+        function scheduleVisionLoop(delayMs = 0) {
+            if (!visionSessionId) return;
+            if (visionLoopId) {
+                clearTimeout(visionLoopId);
+                visionLoopId = null;
+            }
+            visionNextCaptureAtMs = Date.now() + Math.max(0, delayMs);
+            if (visionDebugCountdown) {
+                if (delayMs <= 0) {
+                    visionDebugCountdown.textContent = 'Next capture in: now';
+                } else {
+                    visionDebugCountdown.textContent = `Next capture in: ${Math.ceil(delayMs / 1000)}s`;
+                }
+            }
+            startVisionCountdownTicker();
+            visionLoopId = setTimeout(async () => {
+                if (visionDebugCountdown) {
+                    visionDebugCountdown.textContent = 'Next capture in: capturing now';
+                }
+                await sendVisionFrame();
+                const loopMs = Math.max(1000, Number(visionLoopIntervalMs || visionConfig.interval_ms || 2000));
+                scheduleVisionLoop(loopMs);
+            }, Math.max(0, delayMs));
+        }
+
+        function updateVisionLoopIntervalFromWatchers(watchers) {
+            if (!Array.isArray(watchers) || watchers.length === 0) {
+                visionLoopIntervalMs = Math.max(1000, Number(visionConfig.interval_ms || 2000));
+                return;
+            }
+
+            const intervals = watchers
+                .map(w => Number(w.effective_interval_ms || w.interval_ms || 0))
+                .filter(v => Number.isFinite(v) && v > 0);
+
+            if (intervals.length === 0) {
+                visionLoopIntervalMs = Math.max(1000, Number(visionConfig.interval_ms || 2000));
+                return;
+            }
+
+            visionLoopIntervalMs = Math.max(1000, Math.min(...intervals));
+        }
 
         // Polling for timer-triggered state changes
         let statePollingId = null;
@@ -1023,6 +1176,17 @@
                 if (data.success && data.representation_version) {
                     ExpressionEvaluator.setVersion(data.representation_version);
                 }
+                if (data.success && data.vision) {
+                    visionConfig = data.vision;
+                    visionLoopIntervalMs = Math.max(1000, Number(visionConfig.interval_ms || 2000));
+                    if (!visionConfig.enabled) {
+                        visionStartBtn.disabled = true;
+                        visionStopBtn.disabled = true;
+                        visionStatus.textContent = 'Vision disabled in server config';
+                    } else {
+                        visionStatus.textContent = `Vision ready (${visionConfig.mode || 'polling'})`;
+                    }
+                }
             } catch (e) {
                 console.error('Failed to fetch config:', e);
             }
@@ -1040,6 +1204,13 @@
             // Store current state
             currentState = state;
             stateNameEl.textContent = state.name || state.state_name || 'unknown';
+
+            const wantsVision = Boolean(state.vision_reactive && state.vision_reactive.enabled);
+            if (visionConfig.enabled && wantsVision && !visionSessionId) {
+                visionStatus.textContent = 'State has vision watcher (camera not started)';
+            } else if (visionSessionId && !wantsVision) {
+                visionStatus.textContent = 'Camera running (no active state watcher)';
+            }
 
             // Check if this is an animated state
             if (ExpressionEvaluator.isAnimated(state)) {
@@ -1459,6 +1630,260 @@
                 console.error('Failed to submit quick feedback:', e);
             }
         }
+
+        async function startCameraVision() {
+            if (!visionConfig.enabled) {
+                visionStatus.textContent = 'Vision disabled in server config';
+                return;
+            }
+
+            if (visionSessionId) {
+                visionStatus.textContent = 'Vision already running';
+                return;
+            }
+
+            try {
+                visionStatus.textContent = 'Requesting camera access...';
+                visionStream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        width: { ideal: 640, max: 640 },
+                        height: { ideal: 360, max: 360 },
+                        facingMode: 'user'
+                    },
+                    audio: false
+                });
+                visionVideo.srcObject = visionStream;
+                visionVideo.style.display = 'block';
+
+                await new Promise((resolve, reject) => {
+                    const timeoutId = setTimeout(() => reject(new Error('Camera did not become ready in time')), 4000);
+                    visionVideo.onloadedmetadata = () => {
+                        clearTimeout(timeoutId);
+                        resolve();
+                    };
+                });
+                await visionVideo.play();
+
+                const sessionRes = await fetch('/api/vision/session/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id: currentUserId || 'anonymous' })
+                });
+                const sessionData = await sessionRes.json();
+                if (!sessionData.success) {
+                    throw new Error(sessionData.error || 'Failed to start vision session');
+                }
+
+                visionSessionId = sessionData.session_id;
+                visionStartBtn.disabled = true;
+                visionStopBtn.disabled = false;
+                visionFrameInFlight = false;
+                visionDroppedFrames = 0;
+                visionLoopIntervalMs = Math.max(1000, Number(visionConfig.interval_ms || 2000));
+                visionStatus.textContent = `Vision running (${visionConfig.mode || 'polling'}, ${visionVideo.videoWidth}x${visionVideo.videoHeight})`;
+                setVisionDebug({
+                    state: 'Vision State: active',
+                    countdown: 'Next capture in: now',
+                    description: lastVlmDescriptionText,
+                    data: lastVlmDataText,
+                    timing: 'Timing: -'
+                });
+
+                scheduleVisionLoop(0);
+            } catch (e) {
+                console.error('Failed to start camera vision:', e);
+                visionStatus.textContent = `Vision start failed: ${e.message}`;
+                setVisionDebug({
+                    state: 'Vision State: start failed',
+                    countdown: 'Next capture in: -',
+                    description: `Description: ${e.message}`,
+                    timing: 'Timing: -'
+                });
+                if (visionStream) {
+                    visionStream.getTracks().forEach(track => track.stop());
+                    visionStream = null;
+                }
+            }
+        }
+
+        async function stopCameraVision() {
+            if (visionLoopId) {
+                clearTimeout(visionLoopId);
+                visionLoopId = null;
+            }
+
+            if (visionStream) {
+                visionStream.getTracks().forEach(track => track.stop());
+                visionStream = null;
+            }
+            if (visionVideo) {
+                visionVideo.srcObject = null;
+                visionVideo.style.display = 'none';
+            }
+
+            if (visionSessionId) {
+                try {
+                    await fetch('/api/vision/session/stop', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ session_id: visionSessionId })
+                    });
+                } catch (e) {
+                    console.error('Failed to stop vision session:', e);
+                }
+            }
+
+            visionSessionId = null;
+            visionFrameInFlight = false;
+            visionDroppedFrames = 0;
+            visionNextCaptureAtMs = 0;
+            stopVisionCountdownTicker();
+            visionStartBtn.disabled = !visionConfig.enabled;
+            visionStopBtn.disabled = true;
+            visionStatus.textContent = visionConfig.enabled ? 'Vision idle' : 'Vision disabled in server config';
+            setVisionDebug({
+                state: 'Vision State: idle',
+                countdown: 'Next capture in: -',
+                description: lastVlmDescriptionText,
+                data: lastVlmDataText,
+                timing: 'Timing: -'
+            });
+        }
+
+        async function sendVisionFrame() {
+            if (!visionSessionId || !visionVideo || visionVideo.readyState < 2) {
+                return;
+            }
+            if (visionFrameInFlight) {
+                visionDroppedFrames += 1;
+                return;
+            }
+
+            visionFrameInFlight = true;
+            try {
+                setVisionDebug({
+                    state: 'Vision State: capturing',
+                    countdown: 'Next capture in: capturing now',
+                    description: visionDebugDescription ? visionDebugDescription.textContent : 'Description: -',
+                    data: visionDebugData ? visionDebugData.textContent : 'Data: -',
+                    timing: visionDebugTiming ? visionDebugTiming.textContent : 'Timing: -'
+                });
+
+                const clientStartMs = performance.now();
+                const srcWidth = visionVideo.videoWidth || 640;
+                const srcHeight = visionVideo.videoHeight || 480;
+                const scale = Math.min(1, VISION_SEND_MAX_WIDTH / srcWidth);
+                const frameWidth = Math.max(320, Math.round(srcWidth * scale));
+                const frameHeight = Math.max(240, Math.round(srcHeight * scale));
+                if (visionCanvas.width !== frameWidth || visionCanvas.height !== frameHeight) {
+                    visionCanvas.width = frameWidth;
+                    visionCanvas.height = frameHeight;
+                }
+
+                const ctx = visionCanvas.getContext('2d');
+                ctx.drawImage(visionVideo, 0, 0, visionCanvas.width, visionCanvas.height);
+                const imageDataUrl = visionCanvas.toDataURL('image/jpeg', 0.9);
+
+                const res = await fetch('/api/vision/frame', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: visionSessionId,
+                        image: imageDataUrl
+                    })
+                });
+
+                const data = await res.json();
+                const clientRoundTripMs = Math.round(performance.now() - clientStartMs);
+                if (data.success && data.state) {
+                    updateLight(data.state);
+                }
+                updateVisionLoopIntervalFromWatchers(data.watchers);
+
+                if (data.success && data.processed) {
+                    if (Array.isArray(data.detections) && data.detections.length > 0) {
+                        const sortedDetections = [...data.detections].sort((a, b) => Number(b.confidence || 0) - Number(a.confidence || 0));
+                        const top = sortedDetections.find(item => !item.error) || sortedDetections[0];
+                        if (top.error) {
+                            visionStatus.textContent = 'Vision frame error: invalid image payload';
+                            setVisionDebug({
+                                state: 'Vision State: error',
+                                description: `Description: ${top.error}`,
+                                timing: `Timing: client ${clientRoundTripMs}ms | dropped ${visionDroppedFrames}`
+                            });
+                        } else {
+                            const conf = Number(top.confidence || 0).toFixed(2);
+                            const eventName = top.event || (top.detected ? 'vision_detected' : 'vision_not_detected');
+                            const backendMs = Number(data?.vision_debug?.backend_latency_ms || 0);
+                            const watcherMs = Number(top.latency_ms || 0);
+                            const engine = top.engine || 'unknown';
+                            const transport = top.transport || 'unknown';
+                            const reason = top.reason || 'No description';
+                            const cadence = Math.max(1000, Number(visionLoopIntervalMs || 0));
+                            const mappedData = Array.isArray(data?.vision_debug?.mapped_data) ? data.vision_debug.mapped_data : [];
+                            const mappedSkips = Array.isArray(data?.vision_debug?.mapped_data_skips) ? data.vision_debug.mapped_data_skips : [];
+                            const mappingDiagnostics = Array.isArray(data?.vision_debug?.mapping_diagnostics) ? data.vision_debug.mapping_diagnostics : [];
+                            if (mappingDiagnostics.length > 0) {
+                                console.log('[vision] mapping diagnostics', mappingDiagnostics);
+                            }
+                            const dataText = mappedData.length > 0
+                                ? `Data: ${mappedData.map(item => `${item.key}=${item.value}`).join(' | ')}`
+                                : (mappedSkips.length > 0
+                                    ? `Data: not mapped (${mappedSkips.map(item => `${item.watcher}: ${item.reason}${item.field ? ` [expected=${item.field}]` : ''}${Array.isArray(item.available_fields) && item.available_fields.length ? ` [available=${item.available_fields.join(',')}]` : ''}`).join(' | ')})`
+                                    : 'Data: no mapped fields this frame');
+
+                            const stateText = `Vision State: ${top.detected ? 'detection active' : 'waiting for detection'} | event=${eventName} | conf=${conf} | engine=${engine} | mode=${visionConfig.mode || 'polling'} | transport=${transport} | cadence=${cadence}ms`;
+                            const descriptionText = `Description: ${reason}`;
+                            const timingText = `Timing: client ${clientRoundTripMs}ms | backend ${backendMs}ms | watcher ${watcherMs}ms | dropped ${visionDroppedFrames}`;
+                            rememberLatestVlm({ state: stateText, description: descriptionText, data: dataText, timing: timingText });
+                            setVisionDebug({
+                                state: stateText,
+                                description: descriptionText,
+                                data: dataText,
+                                timing: timingText
+                            });
+
+                            if (data.emitted_events && data.emitted_events.length > 0) {
+                                visionStatus.textContent = `Vision event: ${data.emitted_events.join(', ')}`;
+                            } else {
+                                visionStatus.textContent = `Vision: ${top.detected ? 'detection active' : 'waiting for detection'} (conf ${conf})`;
+                            }
+                        }
+                    } else if (data.emitted_events && data.emitted_events.length > 0) {
+                        visionStatus.textContent = `Vision event: ${data.emitted_events.join(', ')}`;
+                    }
+                } else if (data.success && !data.processed && data.reason) {
+                    const backendMs = Number(data?.vision_debug?.backend_latency_ms || 0);
+                    visionStatus.textContent = `Vision idle: ${data.reason}`;
+                    setVisionDebug({
+                        state: `Vision State: ${data.reason} | using last VLM result`,
+                        description: lastVlmDescriptionText,
+                        data: lastVlmDataText,
+                        timing: `Timing: backend ${backendMs}ms | dropped ${visionDroppedFrames} | no new inference`
+                    });
+                }
+            } catch (e) {
+                console.error('Vision frame send failed:', e);
+                visionStatus.textContent = `Vision send failed: ${e.message}`;
+                setVisionDebug({
+                    state: 'Vision State: send failed',
+                    description: `Description: ${e.message}`,
+                    timing: 'Timing: -'
+                });
+            } finally {
+                visionFrameInFlight = false;
+            }
+        }
+
+        window.addEventListener('beforeunload', () => {
+            if (visionLoopId) {
+                clearTimeout(visionLoopId);
+            }
+            stopVisionCountdownTicker();
+            if (visionStream) {
+                visionStream.getTracks().forEach(track => track.stop());
+            }
+        });
     </script>
 </body>
 </html>
