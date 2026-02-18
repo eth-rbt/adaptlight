@@ -8,6 +8,7 @@ The agent decides what to do with the data (colors, states, etc.)
 import requests
 import random
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from typing import Dict, Any, Optional
 from .preset_apis import PRESET_APIS, get_api_info
 
@@ -81,18 +82,20 @@ class APIExecutor:
         response.raise_for_status()
 
         data = response.json()
+        print(data) #Defaults to sunny, even at night (Might be API issue)
         current = data["current_condition"][0]
 
         # Determine if it's day or night
         try:
-            obs_time = current.get("observation_time", "12:00 PM")
-            hour = int(obs_time.split(":")[0])
+            obs_time = current.get("localObsDateTime", "12:00 PM") #Changing to localObsDateTime because its more accurate
+            hour = int(obs_time.split(" ")[1][:2])
+            print("did we get here okay?")
             if "PM" in obs_time and hour != 12:
                 hour += 12
             is_day = 6 <= hour <= 18
         except:
+            print("Error detected, nuking system")
             is_day = True
-
         # Map weather codes to conditions
         weather_code = int(current.get("weatherCode", 0))
         condition = self._weather_code_to_condition(weather_code)
@@ -270,9 +273,11 @@ class APIExecutor:
 
     def _fetch_time(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Get current time information."""
-        now = datetime.now()
+        now = datetime.now(ZoneInfo(params.get('timezone', "Asia/Tokyo"))) #MUST SPECIFY TIMEZONE
+        print("Your date and time is this =", now) #Checking if issue is with Datetime class
 
         weekday = now.weekday()
+        print("The weekday is ", weekday)
         is_weekend = weekday >= 5
         is_business = not is_weekend and 9 <= now.hour < 17
 

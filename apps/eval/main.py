@@ -17,10 +17,6 @@ from typing import List, Dict, Any, Optional
 ROOT_DIR = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(ROOT_DIR))
 
-# Load .env file from root directory
-from dotenv import load_dotenv
-load_dotenv(ROOT_DIR / '.env')
-
 from brain import SMgenerator, SMResult
 
 
@@ -194,7 +190,7 @@ class EvalRunner:
         results = []
         for case in cases:
             # Reset SMgenerator between cases
-            smgen.reset()
+            #smgen.reset().  //Lets not reset so we can try rule-based evals
 
             if self.verbose:
                 print(f"  Running: {case.name}...")
