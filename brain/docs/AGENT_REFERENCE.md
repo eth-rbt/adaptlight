@@ -98,21 +98,36 @@ This keeps render logic + watcher config in one place.
 
 ```python
 createState(
-  name="hand_proximity",
-  description="Brighter when hand is closer",
+  name="hand_size_brightness",
+  description="Brighter when one hand appears bigger/closer to camera",
   code="""
 # vision.enabled = true
-# vision.engine = vlm
-# vision.model = gpt-4o-mini
-# vision.prompt = Estimate closest hand distance on a 0-10 scale; return numeric value in fields.hand_distance.
-# vision.set_data_field = hand_distance
-# vision.set_data_key = hand_distance
-# vision.interval_ms = 2000
+# vision.engine = cv
+# vision.cv_detector = posenet
+# vision.prompt = Return hand and pose coordinates in fields.hand_pose and fields.pose_positions.
+# vision.set_data_field = hand_pose
+# vision.set_data_key = hand_pose
+# vision.interval_ms = 1000
 
 def render(prev, t):
-  d = Number(getData('hand_distance', 10))
-  b = clamp(map_range(d, 0, 10, 1.0, 0.2), 0.2, 1.0)
-    return [[int(255*b), int(255*b), int(255*b)], 30]
+  hand = getData('hand_pose', [])
+  if not hand:
+    return (40, 40, 40), 30
+
+  visible = [p for p in hand if float(p.get('confidence', 0.0)) >= 0.05]
+  if len(visible) < 4:
+    return (40, 40, 40), 30
+
+  # Use landmark spread as a proxy for hand size in frame (bigger ~= closer)
+  xs = [float(p.get('x', 0.0)) for p in visible]
+  ys = [float(p.get('y', 0.0)) for p in visible]
+  span_x = max(xs) - min(xs)
+  span_y = max(ys) - min(ys)
+  area = span_x * span_y
+
+  b = clamp(map_range(area, 0.01, 0.08, 0.2, 1.0), 0.2, 1.0)
+  v = int(255 * b)
+  return (v, v, v), 30
 """
 )
 ```
@@ -141,9 +156,10 @@ def render(prev, t):
 Notes:
 - Canonical style: put vision config inline in the state `code` block (`# vision.*` for Python, `// vision.*` for JS).
 - Top-level `vision_reactive` is legacy compatibility only and should be used only when explicitly requested.
-- Engine selection policy: default to `engine=cv` for measurable detector-native fields (e.g., counts/motion/pose/hand metrics exposed by the selected detector), but prefer `engine=vlm` when behavior is complex/nuanced even if measurable (multi-condition/contextual interpretation, richer semantic reasoning, or unstable CV output).
+- Engine selection policy: default to `engine=cv` for measurable detector-native fields (e.g., boxes/regions/pose points exposed by the selected detector), but prefer `engine=vlm` when behavior is complex/nuanced even if measurable (multi-condition/contextual interpretation, richer semantic reasoning, or unstable CV output).
 - `set_data_key` is user/task-defined and can be any variable name; `set_data_field` must match an output field produced by the selected engine/detector.
-- Scale-aware render rule: map render math to field scale (CV `hand_distance` is `0..10`, CV `distance_normalized` is `0..1`; VLM scale should be explicitly defined in prompt and matched in render).
+- CV raw-data rule: CV watchers return raw arrays/regions (for example `hand_pose`, `pose_positions`, `person_boxes`, `face_boxes`, `motion_regions`). Render code must parse these arrays directly via `getData(...)`.
+- Single-hand proximity rule: for "hand bigger/closer" behaviors, compute size from hand landmark spread (for example bounding-box area from `x`/`y`); do not use `avgY`, `maxY`, or inferred `z` depth as the primary metric.
 - UI debug line shows `engine=...` so runtime path is visible.
 
 When to use which watcher type:

@@ -183,8 +183,8 @@ createState(name="music", code='function render(prev, t) { return [[0, 255, 0], 
 ### "Turn red when a hand wave is detected"
 appendRules([{{"from": "*", "on": "vision_hand_wave", "to": "red", "trigger_config": {{"vision": {{"enabled": true, "engine": "cv", "cv_detector": "posenet", "prompt": "Detect a hand wave. Return detected true only for clear wave.", "event": "vision_hand_wave", "interval_ms": 1000}}}}}}]) → done()
 
-### "Use hand coordinates to drive color" (state-level CV data mapping)
-createState(name="hand_control", code='''
+### "Make light brighter when one hand looks bigger/closer" (state-level CV data mapping)
+createState(name="hand_size_brightness", code='''
 # vision.enabled = true
 # vision.engine = cv
 # vision.cv_detector = posenet
@@ -197,18 +197,22 @@ createState(name="hand_control", code='''
 def render(prev, t):
     hands = getData("hand_pose", [])
     if not hands:
-        return (0, 0, 20), 60
+        return (40, 40, 40), 60
 
-    visible = [p for p in hands if float(p.get("confidence", 0)) >= 0.4]
-    if not visible:
-        return (0, 0, 20), 60
+    visible = [p for p in hands if float(p.get("confidence", 0)) >= 0.05]
+    if len(visible) < 4:
+        return (40, 40, 40), 60
 
-    avg_x = sum(float(p.get("x", 0.5)) for p in visible) / len(visible)
-    avg_y = sum(float(p.get("y", 0.5)) for p in visible) / len(visible)
-    r = int(max(0, min(255, avg_x * 255)))
-    b = int(max(0, min(255, avg_y * 255)))
-    return (r, 30, b), 60
-''') → setState(name="hand_control") → done()
+    xs = [float(p.get("x", 0.0)) for p in visible]
+    ys = [float(p.get("y", 0.0)) for p in visible]
+    span_x = max(xs) - min(xs)
+    span_y = max(ys) - min(ys)
+    area = span_x * span_y
+
+    brightness = clamp(map_range(area, 0.01, 0.08, 0.2, 1.0), 0.2, 1.0)
+    v = int(brightness * 255)
+    return (v, v, v), 60
+''') → setState(name="hand_size_brightness") → done()
 
 ### "Party mode: adapt to crowd size, but turn red when someone enters"
 createState(name="party", code='// vision.enabled = true\n// vision.engine = vlm\n// vision.prompt = Return people_count in fields.people_count.\n// vision.set_data_key = people_count\n// vision.set_data_field = people_count\n// vision.mode = data_only\n// vision.interval_ms = 2000\n\nfunction render(prev, t) {\n  const n = Number(getData("people_count", 0));\n  const v = clamp(0.2 + n * 0.15, 0.2, 1.0);\n  return [hsv((t * 0.1 + n * 0.05) % 1, 1, v), 60];\n}') → appendRules([{{"from": "party", "on": "vision_person_entered", "to": "red_alert", "priority": 90, "trigger_config": {{"vision": {{"enabled": true, "prompt": "Detect a person entering the room. detected=true only on entry.", "event": "vision_person_entered", "mode": "event_only", "interval_ms": 2000, "cooldown_ms": 2500}}}}}}]) → done()
@@ -322,10 +326,16 @@ Users speak voice commands to configure their smart lamp. You interpret what the
     - trigger_config: for timer/interval/schedule OR vision watcher config
     - vision watcher format: trigger_config.vision={{enabled, engine?, cv_detector?, prompt?, event?, model?, interval_ms?, cooldown_ms?, min_confidence?, mode?, set_data_key?, set_data_field?}}
     - vision interval rule: CV-only >=1000ms, VLM-only >=2000ms, hybrid(CV+VLM) >=2000ms
-    - engine selection policy: default to engine="cv" for measurable detector-native signals (counts/motion/pose/hand metrics), but switch to engine="vlm" when the requested behavior is complex/nuanced even if measurable (multi-condition/contextual interpretation, richer semantics, unstable CV output)
-    - for CV-native mapped fields (person_count, face_count, motion_score, pose_landmarks, hand_distance, distance_normalized, hand_near_score), set engine="cv" explicitly
+    - engine selection policy: default to engine="cv" for measurable detector-native signals (boxes/regions/pose points), but switch to engine="vlm" when the requested behavior is complex/nuanced even if measurable (multi-condition/contextual interpretation, richer semantics, unstable CV output)
+    - for CV-native mapped fields (person_boxes, face_boxes, motion_regions, pose_positions, hand_positions, hand_pose), set engine="cv" explicitly
     - mapping contract: choose any `set_data_key` name for state data, but `set_data_field` must be a real output field from the selected detector/engine (do not invent CV field names)
-    - scale-aware render rule: match render mapping to field scale (CV `hand_distance` uses 0..10, CV `distance_normalized` uses 0..1; VLM scale must be defined by prompt and then matched in render)
+    - coordinate/array rule: when CV fields are arrays (e.g., `hand_pose`, `pose_positions`, `person_boxes`), generate render/condition code that parses those arrays directly via `getData(...)`
+    - hard rule for CV distance/size requests: do NOT map to invented scalar fields like `hand_distance`; map raw arrays (`hand_pose` / `hand_positions` / `pose_positions`) and compute distance/size in render code
+    - hard rule for CV hand-distance render logic: for posenet hand arrays, do NOT use `z` or single-point proximity logic; select named points (prefer `left_wrist` and `right_wrist`) with confidence checks and compute distance from `x`/`y`
+    - phrase-specific hard rule: for requests like "hands closer together/apart", compute inter-hand separation only; do NOT substitute `maxY`, `avg_y`, "closest hand", or camera-depth heuristics
+    - pre-createState self-check: generated hand-distance code must include left/right wrist selection, missing-landmark fallback, and XY distance math (`dx`, `dy`, `sqrt`) before mapping brightness
+    - phrase-specific hard rule for single-hand proximity: for prompts like "hand bigger" or "hand closer to screen/camera", compute hand size from in-plane landmark spread (for example bounding-box area from `x`/`y`) and map larger size to brighter output
+    - for single-hand proximity intent, do NOT use `avgY`, `maxY`, or any `z`-depth assumption as the primary distance metric
     - placement policy: state-level watcher for continuous adaptation; rule-level watcher for discrete transitions. Either can feed render via mapped data (`set_data_key` + `set_data_field`) when watcher mode allows data (`data_only` or `both`)
     - for generated `createState` code states, prefer inline code comments (`# vision.*` or `// vision.*`) as canonical style; only use top-level `vision_reactive` if user asks for legacy format
     - watcher modes: event_only (default for rules), data_only, both
@@ -387,6 +397,11 @@ Users speak voice commands to configure their smart lamp. You interpret what the
 9. **Use wildcards "*"** for rules that should apply from any state
 
 10. **Use priority** for important rules (safety rules should be priority 100)
+
+11. **For CV hand proximity requests, never use `hand.z` fallback logic**
+    - posenet hand arrays are treated as coordinate arrays (`x`, `y`, `confidence`, `name`, `index`)
+    - distance/proximity must use two named landmarks (prefer `left_wrist` and `right_wrist`) and XY Euclidean distance
+    - if landmarks are missing/low confidence, return a stable fallback color rather than fake distance
 
 {quick_examples}
 

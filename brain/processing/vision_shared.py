@@ -41,11 +41,11 @@ def looks_cv_friendly(prompt: str) -> bool:
 def cv_supported_fields(detector: str) -> set:
     detector_name = str(detector or '').strip().lower()
     if detector_name in ('hog', 'opencv_hog', 'person'):
-        return {'person_count'}
+        return {'person_boxes', 'person_count'}
     if detector_name in ('face', 'opencv_face'):
-        return {'face_count'}
+        return {'face_boxes', 'face_count'}
     if detector_name in ('motion', 'opencv_motion'):
-        return {'motion_score'}
+        return {'motion_regions', 'motion_pixels'}
     if detector_name in ('posenet', 'pose'):
         return {
             'pose_landmarks',

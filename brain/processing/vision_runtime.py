@@ -80,7 +80,6 @@ class VisionRuntime:
                 'received_frames': 0,
                 'replaced_frames': 0,
                 'prev_gray_small': None,
-                'cv_signal_cache': {},
             }
         return {'session_id': session_id, 'active': True}
 
@@ -400,6 +399,12 @@ class VisionRuntime:
                         data_field = 'hand_positions'
                     elif 'pose_positions' in fields:
                         data_field = 'pose_positions'
+                    elif 'person_boxes' in fields:
+                        data_field = 'person_boxes'
+                    elif 'face_boxes' in fields:
+                        data_field = 'face_boxes'
+                    elif 'motion_regions' in fields:
+                        data_field = 'motion_regions'
                 if not data_key and data_field:
                     if data_field in ('hand_pose', 'hand_positions'):
                         data_key = 'hand_pose'
@@ -419,9 +424,9 @@ class VisionRuntime:
                             'hand_pose',
                             'hand_positions',
                             'pose_positions',
-                            'person_count',
-                            'face_count',
-                            'motion_score',
+                            'person_boxes',
+                            'face_boxes',
+                            'motion_regions',
                             'pose_landmarks',
                         ]
                         for candidate in preferred_fields:
@@ -634,39 +639,6 @@ class VisionRuntime:
         if not asset.is_absolute():
             asset = PROJECT_ROOT / asset
         return asset
-
-    def _smooth_session_signal(self, session_id: str, signal_key: str, raw_value: float, alpha: float = 0.35) -> float:
-        """EMA smoothing for continuous CV signals stored per session."""
-        try:
-            raw_value = float(raw_value)
-        except Exception:
-            return raw_value
-
-        alpha = max(0.05, min(1.0, float(alpha)))
-        with self._lock:
-            session = self._sessions.get(session_id)
-            if session is None:
-                return raw_value
-            signal_cache = session.setdefault('cv_signal_cache', {})
-            prev_value = signal_cache.get(signal_key)
-            if prev_value is None:
-                smoothed = raw_value
-            else:
-                try:
-                    prev_value = float(prev_value)
-                    smoothed = (alpha * raw_value) + ((1.0 - alpha) * prev_value)
-                except Exception:
-                    smoothed = raw_value
-            signal_cache[signal_key] = smoothed
-            return smoothed
-
-    def _get_session_signal(self, session_id: str, signal_key: str, default_value=None):
-        with self._lock:
-            session = self._sessions.get(session_id)
-            if session is None:
-                return default_value
-            signal_cache = session.get('cv_signal_cache', {})
-            return signal_cache.get(signal_key, default_value)
 
     def _resolve_engine(self, watcher: dict) -> str:
         requested = self._normalize_engine(watcher.get('engine', 'auto'))
@@ -994,15 +966,28 @@ class VisionRuntime:
             hog = cv2.HOGDescriptor()
             hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
             boxes, weights = hog.detectMultiScale(frame, winStride=(8, 8), padding=(8, 8), scale=1.05)
-            count = len(boxes)
-            max_weight = max([float(w) for w in weights], default=0.0)
-            confidence = min(1.0, max(0.0, max_weight / 2.5)) if count > 0 else 0.0
+            person_boxes = []
+            for index, box in enumerate(boxes):
+                x, y, w, h = [int(value) for value in box]
+                score = float(weights[index]) if index < len(weights) else 0.0
+                person_boxes.append({
+                    'x': x,
+                    'y': y,
+                    'w': w,
+                    'h': h,
+                    'confidence': score,
+                })
+            count = len(person_boxes)
             return {
                 'detected': count > 0,
-                'confidence': confidence,
+                'confidence': 1.0 if count > 0 else 0.0,
                 'event': expected_event or 'vision_detected',
-                'fields': {'person_count': count, 'detector': 'opencv_hog'},
-                'reason': f"opencv_hog detected {count} person-like regions",
+                'fields': {
+                    'person_boxes': person_boxes,
+                    'person_count': count,
+                    'detector': 'opencv_hog',
+                },
+                'reason': f"opencv_hog detected {count} person regions",
                 'transport': 'cv_opencv_hog',
             }
         except Exception as e:
@@ -1016,13 +1001,25 @@ class VisionRuntime:
             cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
             face_cascade = cv2.CascadeClassifier(cascade_path)
             faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(40, 40))
-            count = len(faces)
-            confidence = min(1.0, 0.5 + 0.15 * count) if count > 0 else 0.0
+            face_boxes = []
+            for box in faces:
+                x, y, w, h = [int(value) for value in box]
+                face_boxes.append({
+                    'x': x,
+                    'y': y,
+                    'w': w,
+                    'h': h,
+                })
+            count = len(face_boxes)
             return {
                 'detected': count > 0,
-                'confidence': confidence,
+                'confidence': 1.0 if count > 0 else 0.0,
                 'event': expected_event or 'vision_detected',
-                'fields': {'face_count': count, 'detector': 'opencv_face'},
+                'fields': {
+                    'face_boxes': face_boxes,
+                    'face_count': count,
+                    'detector': 'opencv_face',
+                },
                 'reason': f"opencv_face detected {count} face(s)",
                 'transport': 'cv_opencv_face',
             }
@@ -1047,7 +1044,11 @@ class VisionRuntime:
                     'detected': False,
                     'confidence': 0.0,
                     'event': expected_event or 'vision_detected',
-                    'fields': {'motion_score': 0.0, 'detector': 'opencv_motion'},
+                    'fields': {
+                        'motion_regions': [],
+                        'motion_pixels': 0,
+                        'detector': 'opencv_motion',
+                    },
                     'reason': 'opencv_motion warming up previous frame reference',
                     'transport': 'cv_opencv_motion',
                 }
@@ -1055,17 +1056,30 @@ class VisionRuntime:
             diff = cv2.absdiff(prev, small)
             _, thresh = cv2.threshold(diff, 20, 255, cv2.THRESH_BINARY)
             motion_pixels = float(cv2.countNonZero(thresh))
-            total_pixels = float(thresh.shape[0] * thresh.shape[1])
-            motion_score = (motion_pixels / total_pixels) if total_pixels > 0 else 0.0
-            detected = motion_score > 0.02
-            confidence = min(1.0, motion_score * 8.0)
+            contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            motion_regions = []
+            for contour in contours:
+                x, y, w, h = cv2.boundingRect(contour)
+                area = int(w * h)
+                motion_regions.append({
+                    'x': int(x),
+                    'y': int(y),
+                    'w': int(w),
+                    'h': int(h),
+                    'area': area,
+                })
+            detected = len(motion_regions) > 0
 
             return {
                 'detected': detected,
-                'confidence': confidence,
+                'confidence': 1.0 if detected else 0.0,
                 'event': expected_event or 'vision_detected',
-                'fields': {'motion_score': round(motion_score, 4), 'detector': 'opencv_motion'},
-                'reason': f"opencv_motion score={motion_score:.4f}",
+                'fields': {
+                    'motion_regions': motion_regions,
+                    'motion_pixels': int(motion_pixels),
+                    'detector': 'opencv_motion',
+                },
+                'reason': f"opencv_motion regions={len(motion_regions)} pixels={int(motion_pixels)}",
                 'transport': 'cv_opencv_motion',
             }
         except Exception as e:
