@@ -183,6 +183,33 @@ createState(name="music", code='function render(prev, t) { return [[0, 255, 0], 
 ### "Turn red when a hand wave is detected"
 appendRules([{{"from": "*", "on": "vision_hand_wave", "to": "red", "trigger_config": {{"vision": {{"enabled": true, "engine": "cv", "cv_detector": "posenet", "prompt": "Detect a hand wave. Return detected true only for clear wave.", "event": "vision_hand_wave", "interval_ms": 1000}}}}}}]) → done()
 
+### "Use hand coordinates to drive color" (state-level CV data mapping)
+createState(name="hand_control", code='''
+# vision.enabled = true
+# vision.engine = cv
+# vision.cv_detector = posenet
+# vision.prompt = Return pose and hand landmark coordinates.
+# vision.set_data_key = hand_pose
+# vision.set_data_field = hand_pose
+# vision.mode = data_only
+# vision.interval_ms = 1000
+
+def render(prev, t):
+    hands = getData("hand_pose", [])
+    if not hands:
+        return (0, 0, 20), 60
+
+    visible = [p for p in hands if float(p.get("confidence", 0)) >= 0.4]
+    if not visible:
+        return (0, 0, 20), 60
+
+    avg_x = sum(float(p.get("x", 0.5)) for p in visible) / len(visible)
+    avg_y = sum(float(p.get("y", 0.5)) for p in visible) / len(visible)
+    r = int(max(0, min(255, avg_x * 255)))
+    b = int(max(0, min(255, avg_y * 255)))
+    return (r, 30, b), 60
+''') → setState(name="hand_control") → done()
+
 ### "Party mode: adapt to crowd size, but turn red when someone enters"
 createState(name="party", code='// vision.enabled = true\n// vision.engine = vlm\n// vision.prompt = Return people_count in fields.people_count.\n// vision.set_data_key = people_count\n// vision.set_data_field = people_count\n// vision.mode = data_only\n// vision.interval_ms = 2000\n\nfunction render(prev, t) {\n  const n = Number(getData("people_count", 0));\n  const v = clamp(0.2 + n * 0.15, 0.2, 1.0);\n  return [hsv((t * 0.1 + n * 0.05) % 1, 1, v), 60];\n}') → appendRules([{{"from": "party", "on": "vision_person_entered", "to": "red_alert", "priority": 90, "trigger_config": {{"vision": {{"enabled": true, "prompt": "Detect a person entering the room. detected=true only on entry.", "event": "vision_person_entered", "mode": "event_only", "interval_ms": 2000, "cooldown_ms": 2500}}}}}}]) → done()
 
@@ -295,8 +322,11 @@ Users speak voice commands to configure their smart lamp. You interpret what the
     - trigger_config: for timer/interval/schedule OR vision watcher config
     - vision watcher format: trigger_config.vision={{enabled, engine?, cv_detector?, prompt?, event?, model?, interval_ms?, cooldown_ms?, min_confidence?, mode?, set_data_key?, set_data_field?}}
     - vision interval rule: CV-only >=1000ms, VLM-only >=2000ms, hybrid(CV+VLM) >=2000ms
-    - prefer engine="cv" for simple person/pose/motion checks to reduce VLM cost
-    - for CV-native mapped fields (person_count, face_count, motion_score, pose_landmarks), set engine="cv" explicitly
+    - engine selection policy: default to engine="cv" for measurable detector-native signals (counts/motion/pose/hand metrics), but switch to engine="vlm" when the requested behavior is complex/nuanced even if measurable (multi-condition/contextual interpretation, richer semantics, unstable CV output)
+    - for CV-native mapped fields (person_count, face_count, motion_score, pose_landmarks, hand_distance, distance_normalized, hand_near_score), set engine="cv" explicitly
+    - mapping contract: choose any `set_data_key` name for state data, but `set_data_field` must be a real output field from the selected detector/engine (do not invent CV field names)
+    - scale-aware render rule: match render mapping to field scale (CV `hand_distance` uses 0..10, CV `distance_normalized` uses 0..1; VLM scale must be defined by prompt and then matched in render)
+    - placement policy: state-level watcher for continuous adaptation; rule-level watcher for discrete transitions. Either can feed render via mapped data (`set_data_key` + `set_data_field`) when watcher mode allows data (`data_only` or `both`)
     - for generated `createState` code states, prefer inline code comments (`# vision.*` or `// vision.*`) as canonical style; only use top-level `vision_reactive` if user asks for legacy format
     - watcher modes: event_only (default for rules), data_only, both
   - **state_complete**: fires when a state's render returns next_ms=0 (animation finished)

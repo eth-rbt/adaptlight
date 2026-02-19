@@ -53,3 +53,6 @@ vision:
     enabled: true             # Enable CV package path (OpenCV / pose detector)
     interval_ms: 1000         # Default CV interval (>=1s)
     detector: opencv_hog      # opencv_hog | opencv_face | opencv_motion | posenet
+    pose_model_asset: data/models/pose_landmarker_lite.task  # Required when using posenet via MediaPipe Tasks API
+    # Optional higher-quality preset:
+    # pose_model_asset: data/models/pose_landmarker_full.task

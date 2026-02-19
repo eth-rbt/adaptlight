@@ -186,8 +186,11 @@ ALWAYS add exit rules! If you create a state, add a way to exit it:
 - "set up a toggle" → YES add rules (user said "set up")
 - **DO NOT add vision watchers unless camera/vision intent is explicit** (camera, watch, detect, see, people count, hand wave, entering room)
 - **Use interval policy for vision watchers:** CV-only `interval_ms >= 1000`, VLM-only `interval_ms >= 2000`, hybrid(CV+VLM) `interval_ms >= 2000`
-- **Prefer CV (`engine: "cv"`) for simple presence/pose/motion checks; use VLM for semantic understanding**
-- **When generating state-level data mapping, set `engine: "cv"` explicitly for CV-native fields (`person_count`, `face_count`, `motion_score`, `pose_landmarks`)**
+- **Engine selection policy:** default to CV (`engine: "cv"`) for measurable detector-native signals (counts, motion, pose/hand metrics), **but choose VLM when the task is complex/nuanced even if signal is measurable** (multi-condition interpretation, contextual judgment, richer semantic reasoning, or unstable CV behavior). Use VLM for open-ended semantic understanding or fields not available from CV outputs.
+- **When generating state-level data mapping, set `engine: "cv"` explicitly for CV-native fields (`person_count`, `face_count`, `motion_score`, `pose_landmarks`, `pose_positions`, `hand_positions`, `hand_pose`)**
+- **Mapping contract:** `set_data_key` can be any variable name the user/task needs, but `set_data_field` must match an actual detector output field for the chosen engine (for CV use detector-native fields like `person_count`, `face_count`, `motion_score`, `pose_landmarks`, `pose_positions`, `hand_positions`, `hand_pose`; do not invent CV fields)**
+- **Coordinate-first CV rule:** for pose/hand interactions, map `hand_pose` (preferred) or `hand_positions` / `pose_positions`, then generate render/condition code that computes proximity/gesture logic from `[x, y, confidence]` points. For CV output, render code must parse arrays itself.
+- **Watcher placement policy:** use state-level watcher for continuous adaptation (render consumes mapped values over time); use rule-level watcher for discrete transitions/triggers. Both watcher types can map data to `getData(...)` when configured with `set_data_key` + `set_data_field` and appropriate mode (`data_only`/`both`)
 - **Canonical style for code states:** put vision config inside `code` comments (`# vision.*` for Python, `// vision.*` for JS). Avoid emitting top-level `vision_reactive` unless user explicitly requests legacy object style.
 - Use **state-level watcher** for continuous camera-driven behavior; use **rule-level watcher** for event transitions
 - Keep it minimal - do exactly what is asked, nothing more

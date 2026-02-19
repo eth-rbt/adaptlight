@@ -1590,7 +1590,12 @@
                 if (step.step_type === 'thinking' && step.content) {
                     content = escapeHtml(step.content);
                 } else if (step.step_type === 'tool_call') {
-                    content = `<span class="step-tool-name">${escapeHtml(step.tool_name)}</span>\n${escapeHtml(JSON.stringify(step.tool_input, null, 2))}`;
+                    const toolInputJson = escapeHtml(JSON.stringify(step.tool_input, null, 2));
+                    const watcherSnippets = collectWatcherSnippets(step);
+                    const watcherText = watcherSnippets.length > 0
+                        ? `\n\n[watcher code]\n${escapeHtml(watcherSnippets.join('\n\n'))}`
+                        : '';
+                    content = `<span class="step-tool-name">${escapeHtml(step.tool_name)}</span>\n${toolInputJson}${watcherText}`;
                 } else if (step.step_type === 'tool_result') {
                     content = `<span class="step-tool-name">${escapeHtml(step.tool_name)}</span>\n${escapeHtml(JSON.stringify(step.tool_result, null, 2))}`;
                 } else if (step.step_type === 'api_timing' && step.content) {
@@ -1611,6 +1616,55 @@
                     </div>
                 `;
             }).join('');
+        }
+
+        function collectWatcherSnippets(step) {
+            const snippets = [];
+            if (!step || step.step_type !== 'tool_call') return snippets;
+
+            const toolName = String(step.tool_name || '').trim().toLowerCase();
+            const toolInput = step.tool_input || {};
+
+            if (toolName === 'createstate') {
+                const code = typeof toolInput.code === 'string' ? toolInput.code : '';
+                const directives = extractVisionDirectivesFromCode(code);
+                if (directives.length > 0) {
+                    snippets.push(`state watcher (vision.* directives)\n${directives.join('\n')}`);
+                }
+            }
+
+            if (toolName === 'appendrules') {
+                const rules = Array.isArray(toolInput.rules)
+                    ? toolInput.rules
+                    : (Array.isArray(toolInput) ? toolInput : []);
+
+                rules.forEach((rule, index) => {
+                    const visionCfg = rule?.trigger_config?.vision;
+                    if (!visionCfg || typeof visionCfg !== 'object') return;
+                    const fromState = String(rule?.from ?? '*');
+                    const eventName = String(rule?.on ?? 'event');
+                    const toState = String(rule?.to ?? '?');
+                    snippets.push(
+                        `rule watcher #${index + 1} (${fromState} --[${eventName}]--> ${toState})\n${JSON.stringify(visionCfg, null, 2)}`
+                    );
+                });
+            }
+
+            return snippets;
+        }
+
+        function extractVisionDirectivesFromCode(code) {
+            if (typeof code !== 'string' || code.length === 0) return [];
+            const directives = [];
+            const lines = code.split(/\r?\n/);
+            const pattern = /^\s*(?:#|\/\/)\s*(vision\.[A-Za-z0-9_\.]+)\s*=\s*(.+?)\s*$/;
+
+            for (const line of lines) {
+                const match = line.match(pattern);
+                if (!match) continue;
+                directives.push(`${match[1]} = ${match[2]}`);
+            }
+            return directives;
         }
 
         function escapeHtml(text) {

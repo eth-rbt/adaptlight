@@ -104,14 +104,14 @@ createState(
 # vision.enabled = true
 # vision.engine = vlm
 # vision.model = gpt-4o-mini
-# vision.prompt = Estimate closest hand distance on a 0-100 scale; return numeric value in fields.hand_distance.
+# vision.prompt = Estimate closest hand distance on a 0-10 scale; return numeric value in fields.hand_distance.
 # vision.set_data_field = hand_distance
 # vision.set_data_key = hand_distance
 # vision.interval_ms = 2000
 
 def render(prev, t):
-    d = Number(getData('hand_distance', 100))
-    b = clamp(map_range(d, 0, 100, 1.0, 0.2), 0.2, 1.0)
+  d = Number(getData('hand_distance', 10))
+  b = clamp(map_range(d, 0, 10, 1.0, 0.2), 0.2, 1.0)
     return [[int(255*b), int(255*b), int(255*b)], 30]
 """
 )
@@ -141,13 +141,15 @@ def render(prev, t):
 Notes:
 - Canonical style: put vision config inline in the state `code` block (`# vision.*` for Python, `// vision.*` for JS).
 - Top-level `vision_reactive` is legacy compatibility only and should be used only when explicitly requested.
-- Use `engine=vlm` for semantic fields like `hand_distance`.
-- Use `engine=cv` with a compatible `cv_detector` for CV-native fields like `person_count`, `face_count`, `motion_score`, `pose_landmarks`.
+- Engine selection policy: default to `engine=cv` for measurable detector-native fields (e.g., counts/motion/pose/hand metrics exposed by the selected detector), but prefer `engine=vlm` when behavior is complex/nuanced even if measurable (multi-condition/contextual interpretation, richer semantic reasoning, or unstable CV output).
+- `set_data_key` is user/task-defined and can be any variable name; `set_data_field` must match an output field produced by the selected engine/detector.
+- Scale-aware render rule: map render math to field scale (CV `hand_distance` is `0..10`, CV `distance_normalized` is `0..1`; VLM scale should be explicitly defined in prompt and matched in render).
 - UI debug line shows `engine=...` so runtime path is visible.
 
 When to use which watcher type:
 - **State-level watcher (inline `vision.*` in state `code`)**: continuous adaptation while state is active (e.g., people count controls brightness/color)
 - **Rule-level watcher (`trigger_config.vision`)**: discrete event transitions (e.g., person enters room -> transition to alert state)
+- **Both can feed render data**: if watcher config includes `set_data_key` + `set_data_field` and mode allows data (`data_only` or `both`), mapped values are available via `getData(...)`.
 
 ---
 
