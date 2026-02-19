@@ -336,6 +336,8 @@ Users speak voice commands to configure their smart lamp. You interpret what the
     - pre-createState self-check: generated hand-distance code must include left/right wrist selection, missing-landmark fallback, and XY distance math (`dx`, `dy`, `sqrt`) before mapping brightness
     - phrase-specific hard rule for single-hand proximity: for prompts like "hand bigger" or "hand closer to screen/camera", compute hand size from in-plane landmark spread (for example bounding-box area from `x`/`y`) and map larger size to brighter output
     - for single-hand proximity intent, do NOT use `avgY`, `maxY`, or any `z`-depth assumption as the primary distance metric
+    - PoseNet confidence guideline for single-hand proximity: default landmark threshold to low-confidence-friendly values (`~0.03–0.10`, preferably `0.05`) unless user explicitly asks for strict filtering
+    - calibration guideline: choose `map_range` area bounds from observed runtime values and always keep clamp + fallback behavior when detected points are sparse
     - placement policy: state-level watcher for continuous adaptation; rule-level watcher for discrete transitions. Either can feed render via mapped data (`set_data_key` + `set_data_field`) when watcher mode allows data (`data_only` or `both`)
     - for generated `createState` code states, prefer inline code comments (`# vision.*` or `// vision.*`) as canonical style; only use top-level `vision_reactive` if user asks for legacy format
     - watcher modes: event_only (default for rules), data_only, both

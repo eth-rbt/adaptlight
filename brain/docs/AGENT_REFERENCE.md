@@ -160,6 +160,8 @@ Notes:
 - `set_data_key` is user/task-defined and can be any variable name; `set_data_field` must match an output field produced by the selected engine/detector.
 - CV raw-data rule: CV watchers return raw arrays/regions (for example `hand_pose`, `pose_positions`, `person_boxes`, `face_boxes`, `motion_regions`). Render code must parse these arrays directly via `getData(...)`.
 - Single-hand proximity rule: for "hand bigger/closer" behaviors, compute size from hand landmark spread (for example bounding-box area from `x`/`y`); do not use `avgY`, `maxY`, or inferred `z` depth as the primary metric.
+- PoseNet confidence guideline (single-hand proximity): use low hand landmark thresholds by default (`~0.03–0.10`, typically `0.05`) unless strict filtering is explicitly required.
+- Calibration guideline: tune hand-size `map_range` input bounds using observed runtime area values for your camera setup; keep clamp + fallback dim behavior when landmarks are sparse.
 - UI debug line shows `engine=...` so runtime path is visible.
 
 When to use which watcher type:
