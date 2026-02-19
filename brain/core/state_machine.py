@@ -46,8 +46,18 @@ class StateMachine:
         self.representation_version = representation_version
         self.state_executor = StateExecutor(representation_version)
         self.state_executor.set_on_state_complete(self._on_state_complete)
+        # Wire up getData/setData so render code can access shared state_data
+        self.state_executor.set_data_accessors(
+            get_fn=lambda key, default=None: self.state_data.get(key, default),
+            set_fn=self._set_data_from_renderer
+        )
         self.render_timer = None  # Timer for next render call
         self._on_render_callback = None  # Callback for RGB updates
+
+    def _set_data_from_renderer(self, key, value):
+        """Set data from renderer code - returns value for chaining."""
+        self.state_data[key] = value
+        return value
 
         # Add default rules
         if default_rules:

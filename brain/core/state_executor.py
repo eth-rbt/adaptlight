@@ -35,6 +35,19 @@ class StateExecutor:
         self.prev_rgb = (0, 0, 0)
         self.on_state_complete = None  # Callback when next_ms=0
         self.on_rgb_update = None  # Callback when RGB changes
+        self._get_data_fn = None  # Function to get data from state machine
+        self._set_data_fn = None  # Function to set data in state machine
+
+    def set_data_accessors(self, get_fn, set_fn):
+        """
+        Set the data accessor functions for getData/setData in render code.
+
+        Args:
+            get_fn: Function(key, default=None) -> value
+            set_fn: Function(key, value) -> value
+        """
+        self._get_data_fn = get_fn
+        self._set_data_fn = set_fn
 
     def set_on_state_complete(self, callback):
         """
@@ -71,10 +84,18 @@ class StateExecutor:
             if state.code is not None:
                 # Code-based state (pure_python or stdlib)
                 if self.version == "pure_python":
-                    self.current_renderer = PurePythonRenderer(state.code)
+                    self.current_renderer = PurePythonRenderer(
+                        state.code,
+                        get_data_fn=self._get_data_fn,
+                        set_data_fn=self._set_data_fn
+                    )
                 else:
                     # Default to stdlib for code-based states
-                    self.current_renderer = StdlibRenderer(state.code)
+                    self.current_renderer = StdlibRenderer(
+                        state.code,
+                        get_data_fn=self._get_data_fn,
+                        set_data_fn=self._set_data_fn
+                    )
             else:
                 # Original r/g/b expression state
                 self.current_renderer = OriginalRenderer(

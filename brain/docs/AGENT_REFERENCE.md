@@ -59,97 +59,106 @@ createState(
 4. **Voice-Reactive**: voice_reactive.enabled=true
 5. **Vision-Reactive**: inline `vision.enabled=true` in state code comments (or legacy `vision_reactive.enabled=true`)
 
-### Vision-Reactive Mode
+### Vision-Reactive Mode (Simplified)
 
-Use watcher engines to detect events from camera frames. Prefer CV for simple detection and VLM for semantic understanding.
+All vision output writes to `getData('vision')`. Render code reads what it needs.
 
-```json
-createState(
-  name="wave_watch",
-  r=255, g=255, b=255,
-  code='''
-# vision.enabled = true
-# vision.engine = cv
-# vision.cv_detector = posenet
-# vision.prompt = Detect hand wave. Return detected=true only for clear wave
-# vision.event = vision_hand_wave
-# vision.interval_ms = 1000
-# vision.cooldown_ms = 1500
+**CV (fast, data only):**
+- Interval: 100ms+ (real-time capable)
+- Outputs raw JSON: `{person_count, face_count, motion_score, pose_positions, hand_positions, _detector}`
+- CV does NOT emit events - use for continuous data in render code
 
-def render(prev, t):
-    return (255, 255, 255), None
-'''
-)
-```
+**VLM (slow, can emit events):**
+- Interval: 2000ms+ (API latency)
+- Outputs raw JSON with optional `_event` field
+- VLM emits `vision_{_event}` to trigger rule transitions
 
-Watcher interval policy:
-- CV-only: `interval_ms >= 1000`
-- VLM-only: `interval_ms >= 2000`
-- Hybrid (CV + VLM in one watcher): `interval_ms >= 2000`
-
-Optional continuous mapping keys:
-- `set_data_key`: state_data key to write
-- `set_data_field`: field from VLM JSON `fields` object
-
-#### Inline Vision Config Inside `code` (supported)
-
-For code-based states, you can place vision config directly in the `code` block using comment headers.
-This keeps render logic + watcher config in one place.
+#### Example: Hand Tracking with CV (fast)
 
 ```python
 createState(
-  name="hand_proximity",
-  description="Brighter when hand is closer",
+  name="hand_control",
+  description="Color follows hand position",
   code="""
 # vision.enabled = true
-# vision.engine = vlm
-# vision.model = gpt-4o-mini
-# vision.prompt = Estimate closest hand distance on a 0-10 scale; return numeric value in fields.hand_distance.
-# vision.set_data_field = hand_distance
-# vision.set_data_key = hand_distance
-# vision.interval_ms = 2000
+# vision.engine = cv
+# vision.cv_detector = posenet
+# vision.interval_ms = 200
 
 def render(prev, t):
-  d = Number(getData('hand_distance', 10))
-  b = clamp(map_range(d, 0, 10, 1.0, 0.2), 0.2, 1.0)
-    return [[int(255*b), int(255*b), int(255*b)], 30]
+    vision = getData('vision') or {}
+    hands = vision.get('hand_positions', [])
+    if not hands:
+        return (0, 0, 20), 50
+
+    # Use first visible hand
+    visible = [p for p in hands if p.get('confidence', 0) >= 0.4]
+    if not visible:
+        return (0, 0, 20), 50
+
+    x = visible[0].get('x', 0.5)
+    y = visible[0].get('y', 0.5)
+    r = int(x * 255)
+    b = int(y * 255)
+    return (r, 30, b), 50
 """
 )
 ```
 
+#### Example: Person Count with CV
+
 ```python
 createState(
-  name="crowd_brightness_cv",
-  description="Brighter when more people are visible (CV-only)",
+  name="crowd_brightness",
+  description="Brighter when more people visible",
   code="""
 # vision.enabled = true
 # vision.engine = cv
 # vision.cv_detector = opencv_hog
-# vision.prompt = Detect person presence and count visible people.
-# vision.set_data_field = person_count
-# vision.set_data_key = person_count
-# vision.interval_ms = 1000
+# vision.interval_ms = 200
 
 def render(prev, t):
-    n = Number(getData('person_count', 0))
-    b = clamp(map_range(n, 0, 4, 0.2, 1.0), 0.2, 1.0)
-    return [[int(255*b), int(255*b), int(255*b)], 30]
+    vision = getData('vision') or {}
+    n = vision.get('person_count', 0)
+    brightness = clamp(0.2 + n * 0.2, 0.2, 1.0)
+    return (int(255 * brightness), int(255 * brightness), int(255 * brightness)), 50
 """
 )
 ```
 
-Notes:
-- Canonical style: put vision config inline in the state `code` block (`# vision.*` for Python, `// vision.*` for JS).
-- Top-level `vision_reactive` is legacy compatibility only and should be used only when explicitly requested.
-- Engine selection policy: default to `engine=cv` for measurable detector-native fields (e.g., counts/motion/pose/hand metrics exposed by the selected detector), but prefer `engine=vlm` when behavior is complex/nuanced even if measurable (multi-condition/contextual interpretation, richer semantic reasoning, or unstable CV output).
-- `set_data_key` is user/task-defined and can be any variable name; `set_data_field` must match an output field produced by the selected engine/detector.
-- Scale-aware render rule: map render math to field scale (CV `hand_distance` is `0..10`, CV `distance_normalized` is `0..1`; VLM scale should be explicitly defined in prompt and matched in render).
-- UI debug line shows `engine=...` so runtime path is visible.
+#### Example: Semantic Detection with VLM
 
-When to use which watcher type:
-- **State-level watcher (inline `vision.*` in state `code`)**: continuous adaptation while state is active (e.g., people count controls brightness/color)
-- **Rule-level watcher (`trigger_config.vision`)**: discrete event transitions (e.g., person enters room -> transition to alert state)
-- **Both can feed render data**: if watcher config includes `set_data_key` + `set_data_field` and mode allows data (`data_only` or `both`), mapped values are available via `getData(...)`.
+```python
+createState(
+  name="mood_light",
+  description="Color based on detected mood",
+  code="""
+# vision.enabled = true
+# vision.engine = vlm
+# vision.model = gpt-4o-mini
+# vision.prompt = Describe the mood of the scene. Return JSON with mood field (happy/calm/energetic).
+# vision.interval_ms = 3000
+
+def render(prev, t):
+    vision = getData('vision') or {}
+    mood = vision.get('mood', 'calm')
+    if mood == 'happy':
+        return (255, 200, 0), 100
+    elif mood == 'energetic':
+        return (255, 0, 100), 100
+    else:
+        return (100, 100, 255), 100
+"""
+)
+```
+
+**Engine selection:**
+- Use CV (`engine: "cv"`) for: person_count, face_count, motion_score, pose_positions, hand_positions
+- Use VLM (`engine: "vlm"`) for: semantic/contextual detection, event emission
+
+**Watcher placement:**
+- **State-level watcher**: continuous adaptation (render reads getData('vision'))
+- **Rule-level watcher**: discrete event transitions (VLM emits _event)
 
 ---
 
@@ -405,7 +414,7 @@ Conditions use `getData()`, actions use `setData()`:
 
 ### Rule-level Vision Watchers
 
-Attach watcher settings to a rule using `trigger_config.vision`:
+Attach watcher settings to a rule using `trigger_config.vision`. Only VLM can emit events via `_event`.
 
 ```json
 {
@@ -415,24 +424,21 @@ Attach watcher settings to a rule using `trigger_config.vision`:
   "trigger_config": {
     "vision": {
       "enabled": true,
-      "engine": "hybrid",
-      "cv_detector": "opencv_hog",
-      "prompt": "Detect person entering room. detected=true only when crossing into frame",
-      "event": "vision_person_entered",
+      "engine": "vlm",
+      "prompt": "Detect person entering room. If detected, include _event: person_entered",
+      "event": "person_entered",
       "model": "gpt-4o-mini",
       "interval_ms": 2000,
-      "cooldown_ms": 2000,
-      "min_confidence": 0.6,
-      "mode": "event_only"
+      "cooldown_ms": 2000
     }
   }
 }
 ```
 
-`mode` values:
-- `event_only` (default for rules): emit event only
-- `data_only`: write mapped data only
-- `both`: write data and emit event
+**Key points:**
+- VLM includes `_event` in JSON response to trigger transitions
+- Event name is prefixed with `vision_` automatically (e.g., `_event: "person_entered"` → triggers `vision_person_entered`)
+- CV cannot emit events - use CV for continuous data in state-level watchers only
 
 ### Priority
 
@@ -1077,8 +1083,8 @@ These examples show how to handle common voice commands.
 ### Email-Style Request Template (Dual Watchers)
 
 Use this when you want both:
-1) continuous camera-driven adaptation in a state, and
-2) a discrete vision-triggered transition rule.
+1) continuous camera-driven adaptation in a state (CV for fast updates), and
+2) a discrete vision-triggered transition rule (VLM for events).
 
 ```text
 Subject: Set up party mode with camera-based behavior
@@ -1089,46 +1095,43 @@ Please configure party mode using camera input in two ways:
 
 1) While state is `party`, continuously adjust brightness/color based on crowd size.
   - Use inline `vision.*` comments inside `party` state code.
-  - Prompt should estimate `people_count` and write it to state_data key `people_count`.
-  - Do data mapping only (no event) for this watcher.
+  - Use CV engine with opencv_hog detector for fast person_count updates.
+  - State code reads `getData('vision').get('person_count', 0)`.
 
 2) While in `party`, if someone enters the room, transition to `red_alert`.
   - Use a rule-level watcher in `trigger_config.vision`.
+  - Use VLM engine with prompt that returns `_event: "person_entered"` when detected.
   - Rule should be from `party` on `vision_person_entered` to `red_alert`.
-  - Watcher should be event-only with cooldown and confidence threshold.
 
 Requirements:
-- No hardcoded backend behavior for color mapping.
-- State code must read `getData('people_count')` and compute visuals.
+- CV outputs raw JSON to `getData('vision')` - render code reads it.
+- VLM outputs raw JSON with optional `_event` field for transitions.
 - Keep existing non-camera behavior unchanged.
 
 Thanks!
 ```
 
 Expected model behavior:
-- Creates/updates `party` state code that reads `getData('people_count')`.
-- Adds inline state-level vision config (`vision.set_data_key=people_count`, `vision.set_data_field=people_count`).
-- Adds rule with `trigger_config.vision` for `vision_person_entered`.
+- Creates/updates `party` state code that reads `getData('vision')`.
+- Adds inline state-level CV vision config for continuous person count.
+- Adds rule with `trigger_config.vision` using VLM for `vision_person_entered`.
 - Does not add unrelated rules/watchers.
 
-### Ready-to-Use Vision Test Commands (1s/2s cadence)
+### Ready-to-Use Vision Test Commands
 
-Paste these directly into the UI input box to validate cadence behavior:
+Paste these directly into the UI input box to test vision features:
 
-#### CV-only (1s)
+#### CV State-Level (100ms - continuous data)
 ```text
-Set up CV-only person detection at 1 second. Create state "cv_watch" and switch to it. Add rule from cv_watch on vision_cv_person to red. Use trigger_config.vision with enabled true, engine cv, cv_detector opencv_hog, prompt "Detect person presence", event vision_cv_person, interval_ms 1000, cooldown_ms 1000, mode event_only.
+Create a state "hand_track" that uses CV camera for hand tracking. Use posenet detector at 100ms interval. The render code should read getData('vision').get('hand_positions', []) and map the first hand's x position to red brightness.
 ```
 
-#### VLM-only (2s)
+#### VLM Rule-Level (2s - event trigger)
 ```text
-Set up VLM-only person detection at 2 seconds. Create state "vlm_watch" and switch to it. Add rule from vlm_watch on vision_vlm_person to blue. Use trigger_config.vision with enabled true, engine vlm, model gpt-4o-mini, prompt "Detect if at least one person is visible. Return detected true only when clearly visible.", event vision_vlm_person, interval_ms 2000, cooldown_ms 1500, mode event_only.
+Set up VLM person detection. Create state "vlm_watch" and switch to it. Add rule from vlm_watch on vision_person_detected to blue. Use trigger_config.vision with enabled true, engine vlm, model gpt-4o-mini, prompt "Detect if a person is visible. If yes include _event: person_detected", event person_detected, interval_ms 2000, cooldown_ms 1500.
 ```
 
-#### Hybrid CV+VLM (2s)
-```text
-Set up hybrid detection at 2 seconds. Create state "hybrid_watch" and switch to it. Add rule from hybrid_watch on vision_hybrid_person to green. Use trigger_config.vision with enabled true, engine hybrid, cv_detector posenet, model gpt-4o-mini, prompt "Detect person entering room with pose/body evidence.", event vision_hybrid_person, interval_ms 2000, cooldown_ms 2000, mode event_only.
-```
+**Note:** CV is for continuous data (state-level watchers), VLM is for event triggers (rule-level watchers). CV cannot emit events.
 
 ### Basic Commands (NO rules needed)
 

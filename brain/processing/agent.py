@@ -108,6 +108,7 @@ Variables: {json.dumps(variables, indent=2)}"""
     def _build_system_prompt(self) -> str:
         """Build the full system prompt with current state."""
         system_state = self._get_system_state()
+        print(f"[AgentExecutor] representation_version={self.representation_version}, prompt_variant={self.prompt_variant}")
         if self.prompt_variant == "examples":
             prompt = get_agent_system_prompt_with_examples(system_state, self.representation_version)
         else:

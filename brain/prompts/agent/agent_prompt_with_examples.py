@@ -180,38 +180,52 @@ function render(prev, t) {
 ### "React to music"
 createState(name="music", code='function render(prev, t) { return [[0, 255, 0], null]; }', voice_reactive={{"enabled": true}}) → setState → done()
 
-### "Turn red when a hand wave is detected"
-appendRules([{{"from": "*", "on": "vision_hand_wave", "to": "red", "trigger_config": {{"vision": {{"enabled": true, "engine": "cv", "cv_detector": "posenet", "prompt": "Detect a hand wave. Return detected true only for clear wave.", "event": "vision_hand_wave", "interval_ms": 1000}}}}}}]) → done()
+### "Turn red when a hand wave is detected" (VLM emits event)
+appendRules([{{"from": "*", "on": "vision_hand_wave", "to": "red", "trigger_config": {{"vision": {{"enabled": true, "engine": "vlm", "prompt": "Detect a hand wave. If waving, return _event: hand_wave", "event": "vision_hand_wave", "interval_ms": 2000, "cooldown_ms": 1500}}}}}}]) → done()
 
-### "Use hand coordinates to drive color" (state-level CV data mapping)
-createState(name="hand_control", code='''
-# vision.enabled = true
-# vision.engine = cv
-# vision.cv_detector = posenet
-# vision.prompt = Return pose and hand landmark coordinates.
-# vision.set_data_key = hand_pose
-# vision.set_data_field = hand_pose
-# vision.mode = data_only
-# vision.interval_ms = 1000
+### "Use hand coordinates to drive color" (state-level CV, fast tracking)
+createState(name="hand_control", code=`
+// vision.enabled = true
+// vision.engine = cv
+// vision.cv_detector = posenet
+// vision.interval_ms = 200
 
-def render(prev, t):
-    hands = getData("hand_pose", [])
-    if not hands:
-        return (0, 0, 20), 60
+function render(prev, t) {
+    const vision = getData("vision") || {{}};
+    const hands = vision.hand_positions || [];
+    if (hands.length === 0) {
+        return [[0, 0, 20], 50];
+    }
 
-    visible = [p for p in hands if float(p.get("confidence", 0)) >= 0.4]
-    if not visible:
-        return (0, 0, 20), 60
+    const visible = hands.filter(p => (p.confidence || 0) >= 0.4);
+    if (visible.length === 0) {
+        return [[0, 0, 20], 50];
+    }
 
-    avg_x = sum(float(p.get("x", 0.5)) for p in visible) / len(visible)
-    avg_y = sum(float(p.get("y", 0.5)) for p in visible) / len(visible)
-    r = int(max(0, min(255, avg_x * 255)))
-    b = int(max(0, min(255, avg_y * 255)))
-    return (r, 30, b), 60
-''') → setState(name="hand_control") → done()
+    let sumX = 0, sumY = 0;
+    for (const p of visible) {{ sumX += p.x || 0.5; sumY += p.y || 0.5; }}
+    const avgX = sumX / visible.length;
+    const avgY = sumY / visible.length;
+    const r = int(clamp(avgX * 255, 0, 255));
+    const b = int(clamp(avgY * 255, 0, 255));
+    return [[r, 30, b], 50];
+}}
+`) → setState(name="hand_control") → done()
 
-### "Party mode: adapt to crowd size, but turn red when someone enters"
-createState(name="party", code='// vision.enabled = true\n// vision.engine = vlm\n// vision.prompt = Return people_count in fields.people_count.\n// vision.set_data_key = people_count\n// vision.set_data_field = people_count\n// vision.mode = data_only\n// vision.interval_ms = 2000\n\nfunction render(prev, t) {\n  const n = Number(getData("people_count", 0));\n  const v = clamp(0.2 + n * 0.15, 0.2, 1.0);\n  return [hsv((t * 0.1 + n * 0.05) % 1, 1, v), 60];\n}') → appendRules([{{"from": "party", "on": "vision_person_entered", "to": "red_alert", "priority": 90, "trigger_config": {{"vision": {{"enabled": true, "prompt": "Detect a person entering the room. detected=true only on entry.", "event": "vision_person_entered", "mode": "event_only", "interval_ms": 2000, "cooldown_ms": 2500}}}}}}]) → done()
+### "Party mode + alert when someone enters" (CV data + VLM event)
+createState(name="party", code=`
+// vision.enabled = true
+// vision.engine = cv
+// vision.cv_detector = opencv_hog
+// vision.interval_ms = 200
+
+function render(prev, t) {
+    const vision = getData("vision") || {{}};
+    const n = vision.person_count || 0;
+    const v = clamp(0.2 + n * 0.15, 0.2, 1.0);
+    return [hsv((t * 0.1 + n * 0.05) % 1, 1, v), 50];
+}}
+`) → appendRules([{{"from": "party", "on": "vision_person_entered", "to": "red_alert", "priority": 90, "trigger_config": {{"vision": {{"enabled": true, "engine": "vlm", "prompt": "Detect person entering. If entering, return _event: person_entered", "event": "vision_person_entered", "interval_ms": 2000, "cooldown_ms": 2500}}}}}}]) → done()
 
 For more examples, use: getDocs("examples")"""
     else:
@@ -241,35 +255,35 @@ def render(prev, t):
 ### "React to music"
 createState(name="music", code='def render(prev, t): return (0, 255, 0), None', voice_reactive={{"enabled": true}}) → setState → done()
 
-### "Get warmer as person gets closer" (state-level vision)
+### "Get warmer as person gets closer" (VLM for semantic understanding)
 createState(name="proximity_warm", code='''
 # vision.enabled = true
 # vision.engine = vlm
 # vision.model = gpt-4o-mini
-# vision.prompt = Estimate person distance in meters in field distance_m. detected=true if person exists.
-# vision.set_data_key = person_distance_m
-# vision.set_data_field = distance_m
+# vision.prompt = Estimate person distance in meters. Return JSON with distance_m field.
 # vision.interval_ms = 2000
 
 def render(prev, t):
-    return prev, 100
+    vision = getData("vision") or {{}}
+    distance = vision.get("distance_m", 5.0)
+    # Closer = warmer (more red)
+    warmth = max(0, min(255, int(255 * (1 - distance / 5))))
+    return (warmth, 50, 50), 100
 ''') → setState(name="proximity_warm") → done()
 
-### "Party mode + person enters alert" (state + rule watchers)
+### "Party mode + alert when someone enters" (CV data + VLM event)
 createState(name="party", code='''
 # vision.enabled = true
-# vision.engine = vlm
-# vision.prompt = Return people_count in fields.people_count.
-# vision.set_data_key = people_count
-# vision.set_data_field = people_count
-# vision.mode = data_only
-# vision.interval_ms = 2000
+# vision.engine = cv
+# vision.cv_detector = opencv_hog
+# vision.interval_ms = 200
 
 def render(prev, t):
-    n = float(getData("people_count", 0) or 0)
+    vision = getData("vision") or {{}}
+    n = vision.get("person_count", 0)
     v = clamp(0.2 + n * 0.15, 0.2, 1.0)
-    return hsv((t * 0.1 + n * 0.05) % 1, 1, v), 60
-''') → appendRules([{{"from": "party", "on": "vision_person_entered", "to": "red_alert", "priority": 90, "trigger_config": {{"vision": {{"enabled": true, "prompt": "Detect person entering the room. detected=true only on entry.", "event": "vision_person_entered", "mode": "event_only", "interval_ms": 2000, "cooldown_ms": 2500}}}}}}]) → done()
+    return hsv((t * 0.1 + n * 0.05) % 1, 1, v), 50
+''') → appendRules([{{"from": "party", "on": "vision_person_entered", "to": "red_alert", "priority": 90, "trigger_config": {{"vision": {{"enabled": true, "engine": "vlm", "prompt": "Detect person entering. If entering, return _event: person_entered", "event": "vision_person_entered", "interval_ms": 2000, "cooldown_ms": 2500}}}}}}]) → done()
 
 For more examples, use: getDocs("examples")"""
 
@@ -320,15 +334,31 @@ Users speak voice commands to configure their smart lamp. You interpret what the
   - priority: higher = checked first
   - pipeline: pipeline name to execute
     - trigger_config: for timer/interval/schedule OR vision watcher config
-    - vision watcher format: trigger_config.vision={{enabled, engine?, cv_detector?, prompt?, event?, model?, interval_ms?, cooldown_ms?, min_confidence?, mode?, set_data_key?, set_data_field?}}
-    - vision interval rule: CV-only >=1000ms, VLM-only >=2000ms, hybrid(CV+VLM) >=2000ms
-    - engine selection policy: default to engine="cv" for measurable detector-native signals (counts/motion/pose/hand metrics), but switch to engine="vlm" when the requested behavior is complex/nuanced even if measurable (multi-condition/contextual interpretation, richer semantics, unstable CV output)
-    - for CV-native mapped fields (person_count, face_count, motion_score, pose_landmarks, hand_distance, distance_normalized, hand_near_score), set engine="cv" explicitly
-    - mapping contract: choose any `set_data_key` name for state data, but `set_data_field` must be a real output field from the selected detector/engine (do not invent CV field names)
-    - scale-aware render rule: match render mapping to field scale (CV `hand_distance` uses 0..10, CV `distance_normalized` uses 0..1; VLM scale must be defined by prompt and then matched in render)
-    - placement policy: state-level watcher for continuous adaptation; rule-level watcher for discrete transitions. Either can feed render via mapped data (`set_data_key` + `set_data_field`) when watcher mode allows data (`data_only` or `both`)
-    - for generated `createState` code states, prefer inline code comments (`# vision.*` or `// vision.*`) as canonical style; only use top-level `vision_reactive` if user asks for legacy format
-    - watcher modes: event_only (default for rules), data_only, both
+
+### Vision System (Simplified)
+All vision output writes to `getData('vision')`. Render code reads what it needs.
+
+**Vision watcher format:** trigger_config.vision={{enabled, engine, cv_detector?, prompt?, event?, model?, interval_ms?, cooldown_ms?}}
+
+**CV (fast, data only):**
+- engine="cv", interval_ms >=100ms
+- Outputs: {{person_count, face_count, motion_score, pose_positions, hand_positions, _detector}}
+- CV does NOT emit events - use for continuous data in render code
+
+**VLM (slow, can emit events):**
+- engine="vlm", interval_ms >=2000ms
+- Outputs: raw JSON with optional _event field
+- VLM emits vision_{{_event}} to trigger rule transitions
+
+**Render code reads from getData('vision'):**
+```python
+def render(prev, t):
+    vision = getData("vision") or {{}}
+    hands = vision.get("hand_positions", [])
+    count = vision.get("person_count", 0)
+    ...
+```
+
   - **state_complete**: fires when a state's render returns next_ms=0 (animation finished)
 - **deleteRules(indices?, transition?, from_state?, to_state?, all?)** - Delete rules
 

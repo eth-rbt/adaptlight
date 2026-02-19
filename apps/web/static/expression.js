@@ -594,17 +594,21 @@ class StdlibJSEvaluator {
     setDataStore(dataStore) {
         if (dataStore && typeof dataStore === 'object') {
             this.dataStore = dataStore;
+            console.log('[StdlibJSEvaluator] setDataStore called, keys:', Object.keys(dataStore));
         }
     }
 
     _getData(key, defaultValue = null) {
         if (!this.dataStore || typeof this.dataStore !== 'object') {
+            console.log(`[JS getData] key="${key}" -> no dataStore`);
             return defaultValue;
         }
         if (Object.prototype.hasOwnProperty.call(this.dataStore, key)) {
             const value = this.dataStore[key];
+            console.log(`[JS getData] key="${key}" ->`, value);
             return value === undefined ? defaultValue : value;
         }
+        console.log(`[JS getData] key="${key}" -> not found in`, Object.keys(this.dataStore));
         return defaultValue;
     }
 
@@ -633,15 +637,19 @@ class StdlibJSEvaluator {
             return this.renderFn;
         }
 
+        // Strip vision config comments (# vision.* lines) before JS compilation
+        const cleanedCode = code.split('\n')
+            .filter(line => !line.trim().startsWith('# vision.'))
+            .join('\n');
+
         try {
-            console.log('Compiling JS code directly');
             // Create function with stdlib in scope - code is already JavaScript
             const fn = new Function(
                 'hsv', 'rgb', 'lerp', 'lerp_color', 'clamp', 'map_range',
                 'ease_in', 'ease_out', 'ease_in_out',
                 'sin', 'cos', 'tan', 'abs', 'floor', 'ceil', 'sqrt', 'pow',
                 'min', 'max', 'round', 'random', 'randint', 'PI', 'E', 'int', 'float', 'len', 'range', 'getData', 'setData',
-                `${code}\nreturn render;`
+                `${cleanedCode}\nreturn render;`
             );
 
             this.renderFn = fn(
@@ -671,7 +679,7 @@ class StdlibJSEvaluator {
             return this.renderFn;
         } catch (e) {
             console.error('JS Compilation error:', e);
-            console.error('Code:', code);
+            console.error('Code:', cleanedCode);
             this.renderFn = (prev, t) => [prev, null];
             return this.renderFn;
         }

@@ -132,13 +132,28 @@ def render(prev, t):
     # Only basic Python allowed - no imports except math/random
     ALLOWED_IMPORTS = {'math', 'random'}
 
-    def __init__(self, code: str):
+    def __init__(self, code: str, get_data_fn=None, set_data_fn=None):
         self.code = code
         self.render_fn = None
+        self._get_data_fn = get_data_fn
+        self._set_data_fn = set_data_fn
         self._compile()
 
     def _compile(self):
         """Compile the code and extract the render function."""
+        # Default getData/setData use local dict if no external functions provided
+        local_data = {}
+
+        def default_get_data(key, default=None):
+            return local_data.get(key, default)
+
+        def default_set_data(key, value):
+            local_data[key] = value
+            return value
+
+        get_data = self._get_data_fn if self._get_data_fn else default_get_data
+        set_data = self._set_data_fn if self._set_data_fn else default_set_data
+
         # Restricted globals - only safe builtins
         restricted_builtins = {
             'abs': abs,
@@ -162,6 +177,8 @@ def render(prev, t):
             '__builtins__': restricted_builtins,
             'math': math,
             'random': random_module,
+            'getData': get_data,
+            'setData': set_data,
         }
 
         try:
@@ -212,6 +229,10 @@ class StdlibRenderer:
         random() -> 0.0-1.0
         randint(lo, hi) -> int
 
+    Data (shared across states):
+        getData(key, default=None) -> value   # read from state_data
+        setData(key, value) -> value          # write to state_data
+
     Constants:
         PI, E
 
@@ -231,6 +252,19 @@ def render(prev, t):
     # Use prev, increase brightness
     r, g, b = prev
     return rgb(r * 1.3, g * 1.3, b * 1.3), None
+'''
+        }
+
+    Or for counting/stateful animations:
+        {
+            "code": '''
+def render(prev, t):
+    count = getData('blink_count', 0)
+    if count < 3:
+        setData('blink_count', count + 1)
+        on = int(t * 2) % 2 == 0
+        return (255, 0, 0) if on else (0, 0, 0), 500
+    return prev, 0  # state_complete
 '''
         }
     """
@@ -306,13 +340,28 @@ def render(prev, t):
         else:
             return 1 - pow(-2 * t + 2, 2) / 2
 
-    def __init__(self, code: str):
+    def __init__(self, code: str, get_data_fn=None, set_data_fn=None):
         self.code = code
         self.render_fn = None
+        self._get_data_fn = get_data_fn
+        self._set_data_fn = set_data_fn
         self._compile()
 
     def _compile(self):
         """Compile the code with stdlib available."""
+        # Default getData/setData use local dict if no external functions provided
+        local_data = {}
+
+        def default_get_data(key, default=None):
+            return local_data.get(key, default)
+
+        def default_set_data(key, value):
+            local_data[key] = value
+            return value
+
+        get_data = self._get_data_fn if self._get_data_fn else default_get_data
+        set_data = self._set_data_fn if self._set_data_fn else default_set_data
+
         # The stdlib - ONLY these functions are available
         stdlib = {
             # Color
@@ -348,6 +397,10 @@ def render(prev, t):
             # Constants
             'PI': math.pi,
             'E': math.e,
+
+            # Data access (shared state)
+            'getData': get_data,
+            'setData': set_data,
 
             # Basic Python (no imports!)
             'int': int,

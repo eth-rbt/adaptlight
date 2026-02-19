@@ -110,8 +110,7 @@ class ToolRegistry:
         inline = {}
         allowed = {
             'enabled', 'prompt', 'model', 'engine', 'cv_detector', 'interval_ms',
-            'event', 'min_confidence', 'cooldown_ms', 'set_data_key', 'set_data_field',
-            'mode'
+            'event', 'cooldown_ms'
         }
 
         for line in code.splitlines():
@@ -203,7 +202,10 @@ class ToolRegistry:
    - next_ms = 0: state complete (triggers state_complete transition)
 
 Use voice_reactive for mic-reactive brightness.
-Use vision_reactive for camera-reactive behavior (CV, VLM, or hybrid).""",
+Use vision_reactive for camera-reactive behavior:
+   - All vision output writes to getData('vision')
+   - CV: fast (100ms+), outputs raw data (person_count, hand_positions, etc.)
+   - VLM: slow (2000ms+), can emit events via _event field""",
             input_schema={
                 "type": "object",
                 "properties": {
@@ -227,19 +229,16 @@ Use vision_reactive for camera-reactive behavior (CV, VLM, or hybrid).""",
                     },
                     "vision_reactive": {
                         "type": ["object", "null"],
-                        "description": "Enable camera-reactive behavior. Runtime chooses CV packages or VLM based on engine config.",
+                        "description": "Enable camera-reactive behavior. Output writes to getData('vision'). CV outputs raw data, VLM can emit events.",
                         "properties": {
                             "enabled": {"type": "boolean", "description": "Enable vision-reactive mode"},
-                            "prompt": {"type": "string", "description": "Detection prompt/instructions (required for VLM, optional for CV)"},
+                            "prompt": {"type": "string", "description": "What to observe (required for VLM, optional for CV)"},
                             "model": {"type": "string", "description": "OpenAI vision model (default gpt-4o-mini)"},
-                            "engine": {"type": "string", "description": "auto | cv | vlm | hybrid (hybrid runs both CV+VLM)"},
+                            "engine": {"type": "string", "description": "cv | vlm | hybrid. CV is fast (100ms+), VLM is slow (2000ms+)"},
                             "cv_detector": {"type": "string", "description": "opencv_hog | opencv_face | opencv_motion | posenet"},
-                            "interval_ms": {"type": "number", "description": "Analyze interval in milliseconds: CV >=1000, VLM >=2000, hybrid >=2000"},
-                            "event": {"type": "string", "description": "Event name to emit when detection is positive"},
-                            "min_confidence": {"type": "number", "description": "Optional confidence threshold from VLM output"},
-                            "cooldown_ms": {"type": "number", "description": "Minimum time between identical emitted events"},
-                            "set_data_key": {"type": "string", "description": "Optional state_data key for continuous numeric output"},
-                            "set_data_field": {"type": "string", "description": "Field name from VLM JSON to write into state_data"}
+                            "interval_ms": {"type": "number", "description": "Analyze interval: CV >=100ms, VLM >=2000ms"},
+                            "event": {"type": "string", "description": "Event name for VLM to emit (VLM only, CV doesn't emit events)"},
+                            "cooldown_ms": {"type": "number", "description": "Minimum time between event emissions"}
                         }
                     }
                 },
@@ -306,20 +305,16 @@ Use vision_reactive for camera-reactive behavior (CV, VLM, or hybrid).""",
                                         "repeat_daily": {"type": "boolean", "description": "Repeat daily (for schedule)"},
                                         "vision": {
                                             "type": "object",
-                                            "description": "Rule-level watcher config (CV, VLM, or hybrid; active when rule's from-state matches current state)",
+                                            "description": "Rule-level vision watcher. Output writes to getData('vision'). VLM can emit events to trigger this rule.",
                                             "properties": {
                                                 "enabled": {"type": "boolean", "description": "Enable this watcher"},
-                                                "prompt": {"type": "string", "description": "Detection prompt/instructions (required for VLM, optional for CV)"},
-                                                "event": {"type": "string", "description": "Event to emit (should start with vision_)"},
+                                                "prompt": {"type": "string", "description": "What to observe (required for VLM)"},
+                                                "event": {"type": "string", "description": "Event to emit (VLM only, should start with vision_)"},
                                                 "model": {"type": "string", "description": "OpenAI vision model"},
-                                                "engine": {"type": "string", "description": "auto | cv | vlm | hybrid"},
+                                                "engine": {"type": "string", "description": "cv | vlm | hybrid"},
                                                 "cv_detector": {"type": "string", "description": "opencv_hog | opencv_face | opencv_motion | posenet"},
-                                                "interval_ms": {"type": "number", "description": "Analyze interval in ms: CV >=1000, VLM >=2000, hybrid >=2000"},
-                                                "cooldown_ms": {"type": "number", "description": "Cooldown for repeated events"},
-                                                "min_confidence": {"type": "number", "description": "Minimum confidence to emit event"},
-                                                "mode": {"type": "string", "description": "event_only, data_only, or both"},
-                                                "set_data_key": {"type": "string", "description": "Optional state_data key for mapped output"},
-                                                "set_data_field": {"type": "string", "description": "Field name from VLM JSON fields object"}
+                                                "interval_ms": {"type": "number", "description": "Analyze interval: CV >=100ms, VLM >=2000ms"},
+                                                "cooldown_ms": {"type": "number", "description": "Cooldown for repeated events"}
                                             }
                                         }
                                     }

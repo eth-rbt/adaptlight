@@ -921,7 +921,7 @@
         let lastVlmDataText = 'Data: -';
         let lastVlmTimingText = 'Timing: -';
         const sharedStateData = {};
-        const VISION_SEND_MAX_WIDTH = 640;
+        const VISION_SEND_MAX_WIDTH = 320;  // Smaller = faster CV processing
         ExpressionEvaluator.setDataStore(sharedStateData);
 
         function setVisionDebug({ state = 'Vision State: idle', engine = 'Engine: -', countdown = null, description = 'Description: -', data = 'Data: -', timing = 'Timing: -' } = {}) {
@@ -1882,7 +1882,7 @@
 
                 const ctx = visionCanvas.getContext('2d');
                 ctx.drawImage(visionVideo, 0, 0, visionCanvas.width, visionCanvas.height);
-                const imageDataUrl = visionCanvas.toDataURL('image/jpeg', 0.9);
+                const imageDataUrl = visionCanvas.toDataURL('image/jpeg', 0.6);  // Lower quality = faster transfer
 
                 const res = await fetch('/api/vision/frame', {
                     method: 'POST',
@@ -1895,6 +1895,19 @@
 
                 const data = await res.json();
                 const clientRoundTripMs = Math.round(performance.now() - clientStartMs);
+
+                // Debug: log the full response
+                console.log('[vision] frame response:', data);
+
+                // New simplified vision: write raw vision output to 'vision' key
+                if (data.vision && typeof data.vision === 'object') {
+                    sharedStateData['vision'] = data.vision;
+                    console.log('[vision] wrote to sharedStateData.vision:', data.vision);
+                } else {
+                    console.log('[vision] no data.vision in response');
+                }
+
+                // Legacy support for mapped_data (can be removed later)
                 const mappedData = Array.isArray(data?.vision_debug?.mapped_data) ? data.vision_debug.mapped_data : [];
                 applyMappedDataToStore(mappedData);
                 if (data.success && data.state) {

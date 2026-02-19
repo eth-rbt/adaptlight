@@ -48,8 +48,7 @@ def get_agent_system_prompt(system_state: str = "") -> str:
   - r, g, b: 0-255 or expression string like "random()" or "sin(frame * 0.1) * 255"
   - speed: null for static, milliseconds for animation (e.g., 50)
   - voice_reactive: object to enable mic-reactive brightness (see below)
-  - vision_reactive: legacy compatibility object for camera-reactive behavior (CV, VLM, or hybrid)
-    - Canonical output style for generated code states is inline `vision.*` comments in `code`
+  - vision_reactive: enable camera-reactive behavior. All vision output writes to getData('vision')
   - Example: createState("red", 255, 0, 0, null)
   - Example animation: createState("pulse", "sin(frame*0.1)*255", 0, 0, 50)
   - Example timed: createState("alert", 255, 0, 0, null, 5000, "off") - red for 5 seconds then off
@@ -83,10 +82,9 @@ Use for: "react to music", "sound reactive", "party mode", "listen to audio"
     - timer: {{"delay_ms": 5000, "auto_cleanup": true}}
     - interval: {{"delay_ms": 1000, "repeat": true}}
     - schedule: {{"hour": 8, "minute": 0, "repeat_daily": true}}
-    - vision: {{"enabled": true, "engine": "cv", "cv_detector": "opencv_hog", "prompt": "Detect a person", "event": "vision_person", "interval_ms": 1000, "cooldown_ms": 1000, "min_confidence": 0.6, "mode": "event_only"}}
-    - vision: {{"enabled": true, "engine": "vlm", "prompt": "Detect hand wave", "event": "vision_hand_wave", "model": "gpt-4o-mini", "interval_ms": 2000, "cooldown_ms": 1500, "min_confidence": 0.6, "mode": "event_only"}}
-    - vision: {{"enabled": true, "engine": "hybrid", "cv_detector": "posenet", "prompt": "Detect person entering room", "event": "vision_person_enter", "model": "gpt-4o-mini", "interval_ms": 2000, "mode": "event_only"}}
-  - Rule-level vision watcher is for discrete transitions (e.g., person enters -> go red)
+    - vision (VLM for events): {{"enabled": true, "engine": "vlm", "prompt": "Detect hand wave", "event": "vision_hand_wave", "model": "gpt-4o-mini", "interval_ms": 2000, "cooldown_ms": 1500}}
+  - Rule-level vision uses VLM to emit events for state transitions
+  - CV does NOT emit events - use CV for continuous data in state-level watchers
 
 - **deleteRules(criteria)** - Remove rules
   Options: {{indices: [0,1]}}, {{transition: "button_click"}}, {{all: true}}
@@ -185,14 +183,38 @@ ALWAYS add exit rules! If you create a state, add a way to exit it:
 - "go to party mode" → createState + setState only, NO rules
 - "set up a toggle" → YES add rules (user said "set up")
 - **DO NOT add vision watchers unless camera/vision intent is explicit** (camera, watch, detect, see, people count, hand wave, entering room)
-- **Use interval policy for vision watchers:** CV-only `interval_ms >= 1000`, VLM-only `interval_ms >= 2000`, hybrid(CV+VLM) `interval_ms >= 2000`
-- **Engine selection policy:** default to CV (`engine: "cv"`) for measurable detector-native signals (counts, motion, pose/hand metrics), **but choose VLM when the task is complex/nuanced even if signal is measurable** (multi-condition interpretation, contextual judgment, richer semantic reasoning, or unstable CV behavior). Use VLM for open-ended semantic understanding or fields not available from CV outputs.
-- **When generating state-level data mapping, set `engine: "cv"` explicitly for CV-native fields (`person_count`, `face_count`, `motion_score`, `pose_landmarks`, `pose_positions`, `hand_positions`, `hand_pose`)**
-- **Mapping contract:** `set_data_key` can be any variable name the user/task needs, but `set_data_field` must match an actual detector output field for the chosen engine (for CV use detector-native fields like `person_count`, `face_count`, `motion_score`, `pose_landmarks`, `pose_positions`, `hand_positions`, `hand_pose`; do not invent CV fields)**
-- **Coordinate-first CV rule:** for pose/hand interactions, map `hand_pose` (preferred) or `hand_positions` / `pose_positions`, then generate render/condition code that computes proximity/gesture logic from `[x, y, confidence]` points. For CV output, render code must parse arrays itself.
-- **Watcher placement policy:** use state-level watcher for continuous adaptation (render consumes mapped values over time); use rule-level watcher for discrete transitions/triggers. Both watcher types can map data to `getData(...)` when configured with `set_data_key` + `set_data_field` and appropriate mode (`data_only`/`both`)
-- **Canonical style for code states:** put vision config inside `code` comments (`# vision.*` for Python, `// vision.*` for JS). Avoid emitting top-level `vision_reactive` unless user explicitly requests legacy object style.
-- Use **state-level watcher** for continuous camera-driven behavior; use **rule-level watcher** for event transitions
+
+### Vision System (Simplified)
+All vision output writes to `getData('vision')`. Render code reads what it needs.
+
+**CV (fast, data only):**
+- Interval: 200ms+ recommended (100ms minimum)
+- Output: raw JSON e.g. `{{person_count: 2, hand_positions: [...], _detector: 'posenet'}}`
+- Use for: real-time tracking (posenet hands/body), counting, motion detection
+- **CV does NOT emit events** - only writes data
+
+**VLM (slow, can emit events):**
+- Interval: 2000ms+ (API latency)
+- Output: raw JSON with optional `_event` field e.g. `{{mood: 'happy', _event: 'person_entered', _detector: 'vlm'}}`
+- Use for: semantic understanding, event triggers
+- VLM emits `vision_{{_event}}` to trigger rule transitions
+
+**Engine selection:**
+- Use CV (`engine: "cv"`) for: person_count, face_count, motion_score, pose_positions, hand_positions
+- Use VLM (`engine: "vlm"`) for: semantic/contextual detection, event emission
+- Use hybrid (`engine: "hybrid"`) for: CV data + VLM events combined
+
+**Render code example:**
+```python
+def render(prev, t):
+    vision = getData('vision') or {{}}
+    hands = vision.get('hand_positions', [])
+    if hands:
+        x = hands[0].get('x', 0.5)
+        return (int(x * 255), 0, 0), 100
+    return prev, 100
+```
+
 - Keep it minimal - do exactly what is asked, nothing more
 - Call multiple tools in one turn if they don't depend on each other
 - Use getPattern() before implementing common patterns
