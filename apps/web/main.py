@@ -27,6 +27,8 @@ import supabase_client
 
 from brain.processing.vision_runtime import VisionRuntime
 from brain.processing.api_runtime import APIRuntime
+from brain.processing.audio_runtime import AudioRuntime
+from brain.processing.volume_runtime import VolumeRuntime
 from brain.apis.api_executor import APIExecutor
 
 def load_config(config_path: str = None) -> dict:
@@ -116,12 +118,23 @@ def create_app(config_path: str = None) -> Flask:
         api_executor=api_executor,
         config=config.get('api', {})
     )
+    audio_runtime = AudioRuntime(
+        smgen=smgen,
+        config=config.get('audio', {}),
+        openai_api_key=config.get('openai', {}).get('api_key')
+    )
+    volume_runtime = VolumeRuntime(
+        smgen=smgen,
+        config=config.get('volume', {})
+    )
 
     # Create Flask app
     app = Flask(__name__, static_folder='static')
     app.config['smgen'] = smgen
     app.config['vision_runtime'] = vision_runtime
     app.config['api_runtime'] = api_runtime
+    app.config['audio_runtime'] = audio_runtime
+    app.config['volume_runtime'] = volume_runtime
 
     # ─────────────────────────────────────────────────────────────
     # Routes
@@ -396,6 +409,8 @@ def create_app(config_path: str = None) -> Flask:
             vision_mode = 'polling'
 
         api_cfg = config.get('api', {})
+        audio_cfg = config.get('audio', {})
+        volume_cfg = config.get('volume', {})
 
         return jsonify({
             'success': True,
@@ -405,13 +420,30 @@ def create_app(config_path: str = None) -> Flask:
                 'mode': vision_mode,
                 'latest_frame_only': bool(vision_cfg.get('latest_frame_only', True)),
                 'interval_ms': max(1000, int(vision_cfg.get('interval_ms', 2000))),
-                'min_confidence': float(vision_cfg.get('min_confidence', 0.55)),
                 'max_image_chars': int(vision_cfg.get('max_image_chars', 2_500_000)),
                 'cv': {
-                    'enabled': bool((vision_cfg.get('cv') or {}).get('enabled', True)),
+                    'enabled': bool((vision_cfg.get('cv') or {}).get('enabled', False)),
                     'interval_ms': max(1000, int((vision_cfg.get('cv') or {}).get('interval_ms', 1000))),
                     'detector': str((vision_cfg.get('cv') or {}).get('detector', 'opencv_hog')).lower(),
                 },
+                'vlm': {
+                    'enabled': bool((vision_cfg.get('vlm') or {}).get('enabled', False)),
+                    'model': str((vision_cfg.get('vlm') or {}).get('model', 'gpt-4o-mini')),
+                    'min_confidence': float((vision_cfg.get('vlm') or {}).get('min_confidence', 0.55)),
+                },
+            },
+            'audio': {
+                'enabled': bool(audio_cfg.get('enabled', True)),
+                'model': str(audio_cfg.get('model', 'gpt-4o-mini')),
+                'interval_ms': max(1000, int(audio_cfg.get('interval_ms', 3000))),
+                'cooldown_ms': max(0, int(audio_cfg.get('cooldown_ms', 1500))),
+            },
+            'volume': {
+                'enabled': bool(volume_cfg.get('enabled', True)),
+                'interval_ms': max(30, int(volume_cfg.get('interval_ms', 80))),
+                'smoothing_alpha': float(volume_cfg.get('smoothing_alpha', 0.35)),
+                'floor': float(volume_cfg.get('floor', 0.0)),
+                'ceiling': float(volume_cfg.get('ceiling', 1.0)),
             },
             'api': {
                 'enabled': bool(api_cfg.get('enabled', True)),
@@ -483,6 +515,110 @@ def create_app(config_path: str = None) -> Flask:
         return jsonify(result)
 
     # ─────────────────────────────────────────────────────────────
+    @app.route('/api/audio/session/start', methods=['POST'])
+    def audio_start_session():
+        data = request.get_json(silent=True) or {}
+        user_id = data.get('user_id', 'anonymous')
+        runtime: AudioRuntime = app.config['audio_runtime']
+        if not runtime.enabled:
+            return jsonify({'success': False, 'error': 'audio runtime disabled'}), 400
+        session = runtime.start_session(user_id=user_id)
+        return jsonify({'success': True, **session})
+
+    @app.route('/api/audio/session/stop', methods=['POST'])
+    def audio_stop_session():
+        data = request.get_json(silent=True) or {}
+        session_id = data.get('session_id')
+        if not session_id:
+            return jsonify({'success': False, 'error': 'session_id required'}), 400
+        runtime: AudioRuntime = app.config['audio_runtime']
+        result = runtime.stop_session(session_id)
+        if not result.get('success'):
+            return jsonify(result), 404
+        return jsonify(result)
+
+    @app.route('/api/audio/status', methods=['GET'])
+    def audio_status():
+        session_id = request.args.get('session_id', '')
+        if not session_id:
+            return jsonify({'success': False, 'error': 'session_id required'}), 400
+        runtime: AudioRuntime = app.config['audio_runtime']
+        result = runtime.get_status(session_id)
+        if not result.get('success'):
+            return jsonify(result), 404
+        return jsonify(result)
+
+    @app.route('/api/audio/chunk', methods=['POST'])
+    def audio_chunk():
+        data = request.get_json(silent=True) or {}
+        session_id = data.get('session_id')
+        transcript = data.get('transcript')
+        chunk_meta = data.get('chunk_meta') or {}
+        if not session_id:
+            return jsonify({'success': False, 'error': 'session_id required'}), 400
+        if not transcript:
+            return jsonify({'success': False, 'error': 'transcript required'}), 400
+        runtime: AudioRuntime = app.config['audio_runtime']
+        result = runtime.process_chunk(session_id=session_id, transcript=transcript, chunk_meta=chunk_meta)
+        if not result.get('success'):
+            if result.get('error') in ('session not found',):
+                return jsonify(result), 404
+            return jsonify(result), 400
+        return jsonify(result)
+
+    @app.route('/api/volume/session/start', methods=['POST'])
+    def volume_start_session():
+        data = request.get_json(silent=True) or {}
+        user_id = data.get('user_id', 'anonymous')
+        runtime: VolumeRuntime = app.config['volume_runtime']
+        if not runtime.enabled:
+            return jsonify({'success': False, 'error': 'volume runtime disabled'}), 400
+        session = runtime.start_session(user_id=user_id)
+        return jsonify({'success': True, **session})
+
+    @app.route('/api/volume/session/stop', methods=['POST'])
+    def volume_stop_session():
+        data = request.get_json(silent=True) or {}
+        session_id = data.get('session_id')
+        if not session_id:
+            return jsonify({'success': False, 'error': 'session_id required'}), 400
+        runtime: VolumeRuntime = app.config['volume_runtime']
+        result = runtime.stop_session(session_id)
+        if not result.get('success'):
+            return jsonify(result), 404
+        return jsonify(result)
+
+    @app.route('/api/volume/status', methods=['GET'])
+    def volume_status():
+        session_id = request.args.get('session_id', '')
+        if not session_id:
+            return jsonify({'success': False, 'error': 'session_id required'}), 400
+        runtime: VolumeRuntime = app.config['volume_runtime']
+        result = runtime.get_status(session_id)
+        if not result.get('success'):
+            return jsonify(result), 404
+        return jsonify(result)
+
+    @app.route('/api/volume/frame', methods=['POST'])
+    def volume_frame():
+        data = request.get_json(silent=True) or {}
+        session_id = data.get('session_id')
+        if not session_id:
+            return jsonify({'success': False, 'error': 'session_id required'}), 400
+        runtime: VolumeRuntime = app.config['volume_runtime']
+        result = runtime.ingest_frame(
+            session_id=session_id,
+            level=data.get('level'),
+            rms=data.get('rms'),
+            peak=data.get('peak'),
+            speaking=data.get('speaking'),
+        )
+        if not result.get('success'):
+            if result.get('error') in ('session not found',):
+                return jsonify(result), 404
+            return jsonify(result), 400
+        return jsonify(result)
+
     # API Reactive Routes
     # ─────────────────────────────────────────────────────────────
 

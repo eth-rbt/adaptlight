@@ -907,8 +907,27 @@
         let currentState = null;
         let currentColor = { r: 0, g: 0, b: 0 };
         let visionConfig = { enabled: false, mode: 'polling', interval_ms: 2000 };
+        let audioConfig = { enabled: true, model: 'gpt-4o-mini', interval_ms: 3000 };
+        let volumeConfig = { enabled: true, interval_ms: 80, smoothing_alpha: 0.35, floor: 0.0, ceiling: 1.0 };
         let visionSessionId = null;
         let visionStream = null;
+        let micStream = null;
+        let micAudioContext = null;
+        let micAnalyser = null;
+        let micDataArray = null;
+        let micSourceNode = null;
+        let micRecognition = null;
+        let audioSessionId = null;
+        let volumeSessionId = null;
+        let audioListenerRunning = false;
+        let volumeListenerRunning = false;
+        let audioChunkParts = [];
+        let audioChunkStartedAtMs = 0;
+        let audioLastSentAtMs = 0;
+        let audioSpeechActive = false;
+        let volumeLoopId = null;
+        let audioLoopId = null;
+        let latestMicLevel = 0;
         let visionLoopId = null;
         let visionFrameInFlight = false;
         let visionDroppedFrames = 0;
@@ -1228,6 +1247,12 @@
                         visionStatus.textContent = `Vision ready (${visionConfig.mode || 'polling'})`;
                     }
                 }
+                if (data.success && data.audio) {
+                    audioConfig = data.audio;
+                }
+                if (data.success && data.volume) {
+                    volumeConfig = data.volume;
+                }
             } catch (e) {
                 console.error('Failed to fetch config:', e);
             }
@@ -1249,10 +1274,19 @@
             stateNameEl.textContent = state.name || state.state_name || 'unknown';
 
             const wantsVision = Boolean(state.vision_reactive && state.vision_reactive.enabled);
+            const wantsAudio = Boolean(state.audio_reactive && state.audio_reactive.enabled);
+            const wantsVolume = Boolean(state.volume_reactive && state.volume_reactive.enabled);
             if (visionConfig.enabled && wantsVision && !visionSessionId) {
                 visionStatus.textContent = 'State has vision watcher (camera not started)';
             } else if (visionSessionId && !wantsVision) {
                 visionStatus.textContent = 'Camera running (no active state watcher)';
+            }
+
+            // Keep mic listeners available for both state-level and rule-level watchers.
+            if (audioConfig.enabled || volumeConfig.enabled) {
+                ensureMicListeners();
+            } else {
+                stopMicListeners();
             }
 
             // Check if this is an animated state
@@ -1728,6 +1762,269 @@
             }
         }
 
+        function currentStateWantsAudio() {
+            return Boolean(currentState?.audio_reactive?.enabled);
+        }
+
+        function currentStateWantsVolume() {
+            return Boolean(currentState?.volume_reactive?.enabled);
+        }
+
+        function computeMicMetrics() {
+            if (!micAnalyser || !micDataArray) {
+                return { rms: 0, peak: 0, level: 0 };
+            }
+            micAnalyser.getByteTimeDomainData(micDataArray);
+            let sumSq = 0;
+            let peak = 0;
+            for (let i = 0; i < micDataArray.length; i++) {
+                const centered = (micDataArray[i] - 128) / 128;
+                const abs = Math.abs(centered);
+                sumSq += centered * centered;
+                if (abs > peak) peak = abs;
+            }
+            const rms = Math.sqrt(sumSq / micDataArray.length);
+            const level = Math.max(rms, peak);
+            return { rms, peak, level };
+        }
+
+        async function ensureMicListeners() {
+            if (audioListenerRunning || volumeListenerRunning) {
+                return;
+            }
+            audioListenerRunning = true;
+            volumeListenerRunning = true;
+            try {
+                if (!micStream) {
+                    micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+                }
+
+                if (!micAudioContext) {
+                    micAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                if (!micSourceNode) {
+                    micSourceNode = micAudioContext.createMediaStreamSource(micStream);
+                }
+                if (!micAnalyser) {
+                    micAnalyser = micAudioContext.createAnalyser();
+                    micAnalyser.fftSize = 2048;
+                    micSourceNode.connect(micAnalyser);
+                    micDataArray = new Uint8Array(micAnalyser.fftSize);
+                }
+
+                if (!audioSessionId && audioConfig.enabled) {
+                    const res = await fetch('/api/audio/session/start', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ user_id: currentUserId || 'anonymous' }),
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        audioSessionId = data.session_id;
+                    }
+                }
+                if (!volumeSessionId && volumeConfig.enabled) {
+                    const res = await fetch('/api/volume/session/start', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ user_id: currentUserId || 'anonymous' }),
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        volumeSessionId = data.session_id;
+                    }
+                }
+
+                startVolumeLoop();
+                startAudioLoop();
+            } catch (e) {
+                console.error('Failed to start mic listeners:', e);
+                audioListenerRunning = false;
+                volumeListenerRunning = false;
+            }
+        }
+
+        async function stopMicListeners() {
+            audioListenerRunning = false;
+            volumeListenerRunning = false;
+
+            if (audioLoopId) {
+                clearInterval(audioLoopId);
+                audioLoopId = null;
+            }
+            if (volumeLoopId) {
+                clearInterval(volumeLoopId);
+                volumeLoopId = null;
+            }
+
+            if (audioSessionId) {
+                try {
+                    await fetch('/api/audio/session/stop', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ session_id: audioSessionId }),
+                    });
+                } catch (e) {
+                    console.error('Failed to stop audio session:', e);
+                }
+            }
+            if (volumeSessionId) {
+                try {
+                    await fetch('/api/volume/session/stop', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ session_id: volumeSessionId }),
+                    });
+                } catch (e) {
+                    console.error('Failed to stop volume session:', e);
+                }
+            }
+
+            audioSessionId = null;
+            volumeSessionId = null;
+            audioChunkParts = [];
+            audioSpeechActive = false;
+            audioChunkStartedAtMs = 0;
+
+            if (micRecognition) {
+                try { micRecognition.onend = null; } catch (e) {}
+                try { micRecognition.stop(); } catch (e) {}
+            }
+            micRecognition = null;
+
+            if (micSourceNode) {
+                try { micSourceNode.disconnect(); } catch (e) {}
+            }
+            micSourceNode = null;
+            micAnalyser = null;
+            micDataArray = null;
+
+            if (micAudioContext) {
+                try { await micAudioContext.close(); } catch (e) {}
+            }
+            micAudioContext = null;
+            if (micStream) {
+                micStream.getTracks().forEach(track => track.stop());
+            }
+            micStream = null;
+        }
+
+        function startVolumeLoop() {
+            if (volumeLoopId) return;
+            const intervalMs = Math.max(30, Number(volumeConfig.interval_ms || 80));
+            volumeLoopId = setInterval(async () => {
+                if (!volumeListenerRunning || !volumeSessionId || !currentStateWantsVolume()) return;
+                const metrics = computeMicMetrics();
+                latestMicLevel = metrics.level;
+                try {
+                    const res = await fetch('/api/volume/frame', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            session_id: volumeSessionId,
+                            level: metrics.level,
+                            rms: metrics.rms,
+                            peak: metrics.peak,
+                            speaking: metrics.level > 0.02,
+                        }),
+                    });
+                    const data = await res.json();
+                    if (data.success && data.volume) {
+                        sharedStateData['volume'] = data.volume;
+                    }
+                    if (data.success && data.state) {
+                        updateLight(data.state);
+                    }
+                } catch (e) {
+                    console.error('volume loop error:', e);
+                }
+            }, intervalMs);
+        }
+
+        function startAudioLoop() {
+            if (audioLoopId) return;
+
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            let recognition = null;
+            if (SpeechRecognition) {
+                recognition = new SpeechRecognition();
+                recognition.continuous = true;
+                recognition.interimResults = true;
+                recognition.lang = 'en-US';
+
+                recognition.onresult = (event) => {
+                    if (!currentStateWantsAudio()) return;
+                    let transcript = '';
+                    for (let i = event.resultIndex; i < event.results.length; i++) {
+                        transcript += event.results[i][0].transcript || '';
+                    }
+                    transcript = transcript.trim();
+                    if (!transcript) return;
+                    if (!audioSpeechActive) {
+                        audioSpeechActive = true;
+                        audioChunkStartedAtMs = Date.now();
+                    }
+                    audioChunkParts.push(transcript);
+                };
+                recognition.onerror = (event) => {
+                    console.error('Speech recognition error:', event.error);
+                };
+                recognition.onend = () => {
+                    if (audioListenerRunning && currentStateWantsAudio()) {
+                        try { recognition.start(); } catch (e) {}
+                    }
+                };
+                try { recognition.start(); } catch (e) {}
+            }
+            micRecognition = recognition;
+
+            audioLoopId = setInterval(async () => {
+                if (!audioListenerRunning || !audioSessionId || !currentStateWantsAudio()) return;
+                const now = Date.now();
+                const elapsed = audioSpeechActive ? (now - audioChunkStartedAtMs) : 0;
+                const shouldSendChunk = audioChunkParts.length > 0 && elapsed >= 3000;
+                const shouldSendFallback = audioChunkParts.length === 0 && latestMicLevel > 0.03 && (now - audioLastSentAtMs) >= Math.max(1000, Number(audioConfig.interval_ms || 3000));
+                if (!shouldSendChunk && !shouldSendFallback) return;
+
+                let transcript = '';
+                if (shouldSendChunk) {
+                    transcript = audioChunkParts.join(' ').trim();
+                    audioChunkParts = [];
+                    audioSpeechActive = false;
+                    audioChunkStartedAtMs = 0;
+                } else {
+                    transcript = 'ambient audio detected';
+                }
+                if (!transcript) return;
+
+                audioLastSentAtMs = now;
+                try {
+                    const res = await fetch('/api/audio/chunk', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            session_id: audioSessionId,
+                            transcript,
+                            chunk_meta: {
+                                level: latestMicLevel,
+                                chunk_ms: shouldSendChunk ? 3000 : 0,
+                                source: shouldSendChunk ? 'speech_recognition' : 'fallback_meter',
+                            },
+                        }),
+                    });
+                    const data = await res.json();
+                    if (data.success && data.audio) {
+                        sharedStateData['audio'] = data.audio;
+                    }
+                    if (data.success && data.state) {
+                        updateLight(data.state);
+                    }
+                } catch (e) {
+                    console.error('audio loop error:', e);
+                }
+            }, 250);
+        }
+
         async function startCameraVision() {
             if (!visionConfig.enabled) {
                 visionStatus.textContent = 'Vision disabled in server config';
@@ -2007,6 +2304,7 @@
             if (visionStream) {
                 visionStream.getTracks().forEach(track => track.stop());
             }
+            stopMicListeners();
         });
     </script>
 </body>

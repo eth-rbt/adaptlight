@@ -11,7 +11,7 @@ def get_state_docs(representation_version: str = "stdlib") -> str:
 
     if representation_version == "original":
         return """### States (Original Mode)
-    - **createState(name, r, g, b, speed?, description?, voice_reactive?, vision_reactive?)** - Create a light state (`vision_reactive` is legacy compatibility; prefer inline `vision.*` in code states)
+    - **createState(name, r, g, b, speed?, description?, audio_reactive?, volume_reactive?, vision_reactive?)** - Create a light state (`vision_reactive` is legacy compatibility; prefer inline `vision.*` in code states)
   - r, g, b: 0-255 for static, or expression string for animation
   - speed: null=static, or milliseconds for animation frame rate
   - Available functions: sin, cos, abs, min, max, floor, ceil, random, PI
@@ -19,7 +19,7 @@ def get_state_docs(representation_version: str = "stdlib") -> str:
 """
     elif representation_version == "pure_python":
         return """### States (Pure Python Mode)
-    - **createState(name, code, description?, voice_reactive?, vision_reactive?)** - Create a light state (`vision_reactive` is legacy compatibility; prefer inline `# vision.*`)
+    - **createState(name, code, description?, audio_reactive?, volume_reactive?, vision_reactive?)** - Create a light state (`vision_reactive` is legacy compatibility; prefer inline `# vision.*`)
   - code: Python function that returns ((r,g,b), next_ms)
   - next_ms > 0: animation continues, call again in next_ms milliseconds
   - next_ms = None: static state, no more updates needed
@@ -48,7 +48,7 @@ def render(prev, t):
 """
     elif representation_version == "stdlib_js":
         return """### States (Stdlib JS Mode)
-    - **createState(name, code, description?, voice_reactive?, vision_reactive?)** - Create a light state (`vision_reactive` is legacy compatibility; prefer inline `// vision.*`)
+    - **createState(name, code, description?, audio_reactive?, volume_reactive?, vision_reactive?)** - Create a light state (`vision_reactive` is legacy compatibility; prefer inline `// vision.*`)
   - code: JavaScript function using stdlib helpers
 
   Available functions:
@@ -110,7 +110,7 @@ function render(prev, t) {
 """
     else:  # stdlib (default)
         return """### States (Stdlib Mode)
-    - **createState(name, code, description?, voice_reactive?, vision_reactive?)** - Create a light state (`vision_reactive` is legacy compatibility; prefer inline `# vision.*`)
+    - **createState(name, code, description?, audio_reactive?, volume_reactive?, vision_reactive?)** - Create a light state (`vision_reactive` is legacy compatibility; prefer inline `# vision.*`)
   - code: Python function using stdlib helpers
 
   Available functions:
@@ -178,7 +178,7 @@ function render(prev, t) {
 `) → appendRules([{{"from": "blink_3x", "on": "state_complete", "to": "on"}}]) → setState(name="blink_3x") → done()
 
 ### "React to music"
-createState(name="music", code='function render(prev, t) { return [[0, 255, 0], null]; }', voice_reactive={{"enabled": true}}) → setState → done()
+createState(name="music", code='function render(prev, t) { return [[0, 255, 0], null]; }', audio_reactive={{"enabled": true, "prompt": "Analyze ambient audio"}}, volume_reactive={{"enabled": true}}) → setState → done()
 
 ### "Turn red when a hand wave is detected" (VLM emits event)
 appendRules([{{"from": "*", "on": "vision_hand_wave", "to": "red", "trigger_config": {{"vision": {{"enabled": true, "engine": "vlm", "prompt": "Detect a hand wave. If waving, return _event: hand_wave", "event": "vision_hand_wave", "interval_ms": 2000, "cooldown_ms": 1500}}}}}}]) → done()
@@ -240,7 +240,7 @@ def render(prev, t):
 ''') → appendRules([{{"from": "blink_3x", "on": "state_complete", "to": "on"}}]) → setState(name="blink_3x") → done()
 
 ### "React to music"
-createState(name="music", code='def render(prev, t): return (0, 255, 0), None', voice_reactive={{"enabled": true}}) → setState → done()
+createState(name="music", code='def render(prev, t): return (0, 255, 0), None', audio_reactive={{"enabled": true, "prompt": "Analyze ambient audio"}}, volume_reactive={{"enabled": true}}) → setState → done()
 
 ### "Get warmer as person gets closer" (VLM for semantic understanding)
 createState(name="proximity_warm", code='''
@@ -302,7 +302,7 @@ Users speak voice commands to configure their smart lamp. You interpret what the
 ## TOOLS
 
 ### Information
-- **getDocs(topic)** - Look up detailed documentation with examples. Topics: states, animations, voice_reactive, rules, timer, interval, schedule, pipelines, fetch, llm, apis, memory, variables, expressions, examples
+- **getDocs(topic)** - Look up detailed documentation with examples. Topics: states, animations, audio_reactive, volume_reactive, rules, timer, interval, schedule, pipelines, fetch, llm, apis, memory, variables, expressions, examples
 - **getPattern(name)** - Get a pattern template. Names: counter, toggle, cycle, hold_release, timer, schedule, timed, sunrise, api_reactive, pipeline
 - **getStates()** - List all states
 - **getRules()** - List all rules

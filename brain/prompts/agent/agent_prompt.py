@@ -36,7 +36,7 @@ def get_agent_system_prompt(system_state: str = "") -> str:
   USE THIS FIRST if request matches a pattern!
 
 - **getDocs(topic)** - Look up detailed documentation with examples
-  Topics: states, animations, voice_reactive, rules, timer, interval, schedule, pipelines, fetch, llm, apis, memory, variables, expressions, complete_examples
+  Topics: states, animations, audio_reactive, volume_reactive, rules, timer, interval, schedule, pipelines, fetch, llm, apis, memory, variables, expressions, complete_examples
   USE THIS when unsure about syntax or parameters!
 
 - **getStates()** - List all existing states
@@ -44,45 +44,47 @@ def get_agent_system_prompt(system_state: str = "") -> str:
 - **getVariables()** - List current variables
 
 ### State Management
-- **createState(name, r, g, b, speed?, description?, voice_reactive?, vision_reactive?)** - Create a named light state
+- **createState(name, r, g, b, speed?, description?, audio_reactive?, volume_reactive?, vision_reactive?)** - Create a named light state
   - r, g, b: 0-255 or expression string like "random()" or "sin(frame * 0.1) * 255"
   - speed: null for static, milliseconds for animation (e.g., 50)
-  - voice_reactive: object to enable mic-reactive brightness (see below)
+  - audio_reactive: object to enable LLM audio watcher output to getData('audio')
+  - volume_reactive: object to enable volume watcher output to getData('volume')
   - vision_reactive: enable camera-reactive behavior. All vision output writes to getData('vision')
   - Example: createState("red", 255, 0, 0, null)
   - Example animation: createState("pulse", "sin(frame*0.1)*255", 0, 0, 50)
   - Example timed: createState("alert", 255, 0, 0, null, 5000, "off") - red for 5 seconds then off
-  - Example voice-reactive: createState("party", 0, 255, 0, null, null, null, null, {{"enabled": true, "smoothing_alpha": 0.4}})
+  - Example audio watcher: createState("party", 0, 255, 0, null, null, {{"enabled": true, "prompt": "Detect claps"}})
 
 - **deleteState(name)** - Remove a state (cannot delete "on" or "off")
 - **setState(name)** - Change to a state immediately
 
-#### Voice-Reactive Mode
-Use `voice_reactive` to make brightness respond to audio input (music, sounds):
+#### Audio/Volume Watchers
+Use `audio_reactive` and `volume_reactive` to react to mic input:
 ```
-voice_reactive: {{"enabled": true, "smoothing_alpha": 0.4, "min_amplitude": 100, "max_amplitude": 5000}}
+audio_reactive: {{"enabled": true, "prompt": "Detect applause", "model": "gpt-4o-mini", "interval_ms": 3000}}
+volume_reactive: {{"enabled": true, "interval_ms": 80, "smoothing_alpha": 0.35}}
 ```
-- enabled: true to activate
-- smoothing_alpha: 0-1, lower = smoother/slower response (default 0.6)
-- min_amplitude: noise floor (default 100)
-- max_amplitude: full brightness threshold (default 5000)
-Use for: "react to music", "sound reactive", "party mode", "listen to audio"
+- `audio_reactive`: semantic watcher, writes JSON to getData('audio'), can emit audio_* events.
+- `volume_reactive`: continuous watcher, writes meter JSON to getData('volume').
+Use for: "react to music", "sound reactive", "party mode", "listen to audio".
 
 ### Rule Management
 - **appendRules(rules[])** - Add transition rules
   Each rule: {{from, on, to, condition?, action?, priority?, pipeline?, trigger_config?}}
   - from: state name, "*" for ANY state, or "prefix/*" for prefix match
-  - on: trigger (button_click, button_hold, button_release, button_double_click, timer, interval, schedule, vision_* custom events)
+  - on: trigger (button_click, button_hold, button_release, button_double_click, timer, interval, schedule, vision_* or audio_* custom events)
   - to: destination state
   - condition: expression like "getData('x') > 5"
   - action: expression like "setData('x', 0)"
   - priority: higher number = checked first (default: 0)
   - pipeline: pipeline name to execute when rule fires
-  - trigger_config: for time-based triggers OR vision watcher config:
+  - trigger_config: for time-based triggers OR watcher config:
     - timer: {{"delay_ms": 5000, "auto_cleanup": true}}
     - interval: {{"delay_ms": 1000, "repeat": true}}
     - schedule: {{"hour": 8, "minute": 0, "repeat_daily": true}}
     - vision (VLM for events): {{"enabled": true, "engine": "vlm", "prompt": "Detect hand wave", "event": "vision_hand_wave", "model": "gpt-4o-mini", "interval_ms": 2000, "cooldown_ms": 1500}}
+    - audio (LLM for events): {{"enabled": true, "prompt": "Detect clap", "event": "audio_clap", "model": "gpt-4o-mini", "interval_ms": 3000, "cooldown_ms": 1500}}
+    - volume (continuous data): {{"enabled": true, "interval_ms": 80, "smoothing_alpha": 0.35}}
   - Rule-level vision uses VLM to emit events for state transitions
   - CV does NOT emit events - use CV for continuous data in state-level watchers
 

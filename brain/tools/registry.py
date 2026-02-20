@@ -110,18 +110,13 @@ class ToolRegistry:
         return value
 
     @classmethod
-    def _extract_vision_reactive_from_code(cls, code: str) -> Optional[Dict[str, Any]]:
+    def _extract_inline_reactive_from_code(cls, code: str, prefix: str, allowed: set) -> Optional[Dict[str, Any]]:
         if not isinstance(code, str) or not code.strip():
             return None
 
         inline = {}
-        allowed = {
-            'enabled', 'prompt', 'model', 'engine', 'cv_detector', 'interval_ms',
-            'event', 'cooldown_ms'
-        }
-
         for line in code.splitlines():
-            match = re.match(r'^\s*(?:#|//)\s*vision\.(\w+)\s*[:=]\s*(.+?)\s*$', line)
+            match = re.match(rf'^\s*(?:#|//)\s*{re.escape(prefix)}\.(\w+)\s*[:=]\s*(.+?)\s*$', line)
             if not match:
                 continue
 
@@ -137,6 +132,24 @@ class ToolRegistry:
         inline.setdefault('enabled', True)
         return inline
 
+    @classmethod
+    def _extract_vision_reactive_from_code(cls, code: str) -> Optional[Dict[str, Any]]:
+        allowed = {
+            'enabled', 'prompt', 'model', 'engine', 'cv_detector', 'interval_ms',
+            'event', 'cooldown_ms'
+        }
+        return cls._extract_inline_reactive_from_code(code, prefix='vision', allowed=allowed)
+
+    @classmethod
+    def _extract_audio_reactive_from_code(cls, code: str) -> Optional[Dict[str, Any]]:
+        allowed = {'enabled', 'prompt', 'model', 'interval_ms', 'event', 'cooldown_ms'}
+        return cls._extract_inline_reactive_from_code(code, prefix='audio', allowed=allowed)
+
+    @classmethod
+    def _extract_volume_reactive_from_code(cls, code: str) -> Optional[Dict[str, Any]]:
+        allowed = {'enabled', 'interval_ms', 'smoothing_alpha', 'floor', 'ceiling'}
+        return cls._extract_inline_reactive_from_code(code, prefix='volume', allowed=allowed)
+
     def _build_create_state_tool(self) -> tuple:
         """Build createState tool description and schema based on vision capabilities."""
 
@@ -150,7 +163,8 @@ class ToolRegistry:
             "   - next_ms = None: static state",
             "   - next_ms = 0: state complete (triggers state_complete transition)",
             "",
-            "Use voice_reactive for mic-reactive brightness.",
+            "Use audio_reactive for LLM-based mic watcher output at getData('audio').",
+            "Use volume_reactive for continuous mic-level watcher output at getData('volume').",
         ]
 
         # Add vision_reactive description based on capabilities
@@ -220,15 +234,27 @@ class ToolRegistry:
                 "speed": {"type": ["number", "null"], "description": "Animation speed in ms (null for static, original format)"},
                 "code": {"type": ["string", "null"], "description": "Python code defining render(prev, t) function (code format)"},
                 "description": {"type": ["string", "null"], "description": "Human-readable description"},
-                "voice_reactive": {
+                "audio_reactive": {
                     "type": ["object", "null"],
-                    "description": "Enable mic-reactive brightness. LED brightness follows audio input volume.",
+                    "description": "Enable LLM-based microphone watcher. Writes raw JSON to getData('audio'). Can emit events.",
                     "properties": {
-                        "enabled": {"type": "boolean", "description": "Enable voice-reactive mode"},
-                        "color": {"type": "array", "items": {"type": "number"}, "description": "Optional [r,g,b] override color"},
-                        "smoothing_alpha": {"type": "number", "description": "Smoothing factor 0-1 (lower=smoother, default 0.6)"},
-                        "min_amplitude": {"type": "number", "description": "Noise floor threshold (default 100)"},
-                        "max_amplitude": {"type": "number", "description": "Full brightness threshold (default 5000)"}
+                        "enabled": {"type": "boolean", "description": "Enable audio-reactive mode"},
+                        "prompt": {"type": "string", "description": "What to detect from mic transcript/chunks"},
+                        "model": {"type": "string", "description": "OpenAI model (default gpt-4o-mini)"},
+                        "interval_ms": {"type": "number", "description": "Minimum interval between LLM analyses (>=1000ms)"},
+                        "event": {"type": "string", "description": "Event to emit (audio_* prefixed automatically)"},
+                        "cooldown_ms": {"type": "number", "description": "Minimum time between event emissions"}
+                    }
+                },
+                "volume_reactive": {
+                    "type": ["object", "null"],
+                    "description": "Enable continuous mic-level watcher. Writes raw JSON to getData('volume').",
+                    "properties": {
+                        "enabled": {"type": "boolean", "description": "Enable volume-reactive mode"},
+                        "interval_ms": {"type": "number", "description": "Ingest interval in ms (>=30ms)"},
+                        "smoothing_alpha": {"type": "number", "description": "EMA smoothing alpha 0-1"},
+                        "floor": {"type": "number", "description": "Minimum expected input level"},
+                        "ceiling": {"type": "number", "description": "Maximum expected input level"},
                     }
                 },
                 "api_reactive": {
@@ -302,13 +328,13 @@ class ToolRegistry:
 
         self.register_tool(
             name="getDocs",
-            description="Look up detailed documentation on a topic. Use when you need syntax details, examples, or parameter info. Topics: states, animations, voice_reactive, rules, timer, interval, schedule, pipelines, fetch, llm, apis, memory, variables, expressions, complete_examples",
+            description="Look up detailed documentation on a topic. Use when you need syntax details, examples, or parameter info. Topics: states, animations, audio_reactive, volume_reactive, rules, timer, interval, schedule, pipelines, fetch, llm, apis, memory, variables, expressions, complete_examples",
             input_schema={
                 "type": "object",
                 "properties": {
                     "topic": {
                         "type": "string",
-                        "enum": ["states", "animations", "voice_reactive", "rules", "timer", "interval", "schedule", "pipelines", "fetch", "llm", "apis", "memory", "variables", "expressions", "complete_examples"],
+                        "enum": ["states", "animations", "audio_reactive", "volume_reactive", "rules", "timer", "interval", "schedule", "pipelines", "fetch", "llm", "apis", "memory", "variables", "expressions", "complete_examples"],
                         "description": "Topic to look up"
                     }
                 },
@@ -355,7 +381,7 @@ class ToolRegistry:
         # Rule management tools
         self.register_tool(
             name="appendRules",
-            description="Add transition rules. Rules are evaluated by priority (highest first). Use '*' for wildcard state matching. Supports pipelines, time-based triggers, and vision watchers via trigger_config.vision. Use 'state_complete' trigger for auto-transitions when a state's animation finishes.",
+            description="Add transition rules. Rules are evaluated by priority (highest first). Use '*' for wildcard state matching. Supports pipelines, time-based triggers, and watchers via trigger_config.vision/audio/volume. Use 'state_complete' trigger for auto-transitions when a state's animation finishes.",
             input_schema={
                 "type": "object",
                 "properties": {
@@ -374,7 +400,7 @@ class ToolRegistry:
                                 "enabled": {"type": "boolean", "description": "Whether rule is active (default true)"},
                                 "trigger_config": {
                                     "type": ["object", "null"],
-                                    "description": "Config for time-based triggers (timer/interval/schedule) or vision watcher config",
+                                    "description": "Config for time-based triggers (timer/interval/schedule) or watcher configs",
                                     "properties": {
                                         "delay_ms": {"type": "number", "description": "Delay in ms (for timer/interval)"},
                                         "repeat": {"type": "boolean", "description": "Repeat interval (for interval)"},
@@ -394,6 +420,29 @@ class ToolRegistry:
                                                 "cv_detector": {"type": "string", "description": "opencv_hog | opencv_face | opencv_motion"},
                                                 "interval_ms": {"type": "number", "description": "Analyze interval: CV >=100ms, VLM >=2000ms"},
                                                 "cooldown_ms": {"type": "number", "description": "Cooldown for repeated events"}
+                                            }
+                                        },
+                                        "audio": {
+                                            "type": "object",
+                                            "description": "Rule-level audio LLM watcher. Writes to getData('audio'). Can emit audio_* events.",
+                                            "properties": {
+                                                "enabled": {"type": "boolean", "description": "Enable this watcher"},
+                                                "prompt": {"type": "string", "description": "What to detect from mic transcript/chunks"},
+                                                "event": {"type": "string", "description": "Event to emit (audio_* prefix added if missing)"},
+                                                "model": {"type": "string", "description": "OpenAI model"},
+                                                "interval_ms": {"type": "number", "description": "Analyze interval >=1000ms"},
+                                                "cooldown_ms": {"type": "number", "description": "Cooldown for repeated events"}
+                                            }
+                                        },
+                                        "volume": {
+                                            "type": "object",
+                                            "description": "Rule-level volume watcher. Writes to getData('volume').",
+                                            "properties": {
+                                                "enabled": {"type": "boolean", "description": "Enable this watcher"},
+                                                "interval_ms": {"type": "number", "description": "Ingest interval >=30ms"},
+                                                "smoothing_alpha": {"type": "number", "description": "EMA smoothing alpha"},
+                                                "floor": {"type": "number", "description": "Input floor"},
+                                                "ceiling": {"type": "number", "description": "Input ceiling"}
                                             }
                                         }
                                     }
@@ -792,9 +841,20 @@ class ToolRegistry:
         b = input.get("b")
         speed = input.get("speed")
         description = input.get("description", "")
-        voice_reactive = input.get("voice_reactive")
+        audio_reactive = input.get("audio_reactive")
+        volume_reactive = input.get("volume_reactive")
         vision_reactive = input.get("vision_reactive")
         api_reactive = input.get("api_reactive")
+
+        inline_audio_reactive = self._extract_audio_reactive_from_code(code) if code is not None else None
+        if inline_audio_reactive:
+            explicit_audio = audio_reactive if isinstance(audio_reactive, dict) else {}
+            audio_reactive = {**inline_audio_reactive, **explicit_audio}
+
+        inline_volume_reactive = self._extract_volume_reactive_from_code(code) if code is not None else None
+        if inline_volume_reactive:
+            explicit_volume = volume_reactive if isinstance(volume_reactive, dict) else {}
+            volume_reactive = {**inline_volume_reactive, **explicit_volume}
 
         inline_vision_reactive = self._extract_vision_reactive_from_code(code) if code is not None else None
         if inline_vision_reactive:
@@ -812,7 +872,8 @@ class ToolRegistry:
                 name=name,
                 code=code,
                 description=description,
-                voice_reactive=voice_reactive,
+                audio_reactive=audio_reactive,
+                volume_reactive=volume_reactive,
                 vision_reactive=vision_reactive,
                 api_reactive=api_reactive
             )
@@ -825,7 +886,8 @@ class ToolRegistry:
                 b=b,
                 speed=speed,
                 description=description,
-                voice_reactive=voice_reactive,
+                audio_reactive=audio_reactive,
+                volume_reactive=volume_reactive,
                 vision_reactive=vision_reactive,
                 api_reactive=api_reactive
             )

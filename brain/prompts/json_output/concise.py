@@ -57,7 +57,7 @@ Your output MUST conform to this exact JSON schema:
               "b": {"type": ["number", "string"]},
               "speed": {"type": ["number", "null"]},
               "description": {"type": ["string", "null"]},
-              "voice_reactive": {
+              "audio_reactive": {
                 "type": ["object", "null"],
                 "properties": {
                   "enabled": {"type": "boolean"},
@@ -235,13 +235,13 @@ Delete a custom state. Cannot delete "on" or "off".
 Create a custom named state that can be referenced in rules.
 **NOTE**: If state with this name already exists, it will be overwritten/replaced.
 
-To make a state mic-reactive, include the optional `voice_reactive` block:
+To make a state mic-reactive, include the optional `audio_reactive` block:
 ```json
 "createState": {
   "name": "music_reactive",
   "r": 0, "g": 200, "b": 255, "speed": null,
   "description": "Teal glow that follows mic volume",
-  "voice_reactive": {
+  "audio_reactive": {
     "enabled": true,
     "color": [0, 200, 255],
     "smoothing_alpha": 0.5,

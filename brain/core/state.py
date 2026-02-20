@@ -14,8 +14,8 @@ class State:
     """Represents a single state in the state machine."""
 
     def __init__(self, name: str, r=None, g=None, b=None, speed=None,
-                 code=None, description: str = '', voice_reactive=None, vision_reactive=None,
-                 api_reactive=None):
+                 code=None, description: str = '', audio_reactive=None, volume_reactive=None,
+                 vision_reactive=None, api_reactive=None):
         """
         Initialize a state with unified parameters.
 
@@ -31,9 +31,13 @@ class State:
                   - next_ms = None: static, no more updates
                   - next_ms = 0: state complete, triggers state_complete transition
             description: Human-readable description for AI parsing
-            voice_reactive: Optional dict to enable mic-reactive brightness. Example:
-                           {"enabled": true, "color": [0,255,0], "smoothing_alpha": 0.6,
-                            "min_amplitude": 100, "max_amplitude": 5000}
+            audio_reactive: Optional dict to enable mic-audio LLM watcher behavior.
+                           Example:
+                           {"enabled": true, "prompt": "Detect clapping", "model": "gpt-4o-mini",
+                            "interval_ms": 3000, "event": "audio_clap_detected"}
+            volume_reactive: Optional dict to enable mic-volume watcher behavior.
+                           Example:
+                           {"enabled": true, "interval_ms": 100, "smoothing_alpha": 0.35}
             vision_reactive: Optional dict to enable camera/VLM-reactive behavior.
                             Example:
                             {
@@ -62,7 +66,8 @@ class State:
         self.b = b
         self.speed = speed
         self.code = code
-        self.voice_reactive = voice_reactive or {}
+        self.audio_reactive = audio_reactive or {}
+        self.volume_reactive = volume_reactive or {}
         self.vision_reactive = vision_reactive or {}
         self.api_reactive = api_reactive or {}
         self.description = description or self._generate_description()
@@ -80,14 +85,31 @@ class State:
         else:
             base = f"Static color state with r={self.r}, g={self.g}, b={self.b}"
 
-        # Add voice-reactive hint for the AI
-        if self.voice_reactive.get('enabled'):
-            vr = self.voice_reactive
-            color = vr.get('color')
-            smoothing = vr.get('smoothing_alpha')
-            base += " | voice-reactive brightness enabled"
-            if color:
-                base += f" (base color {color})"
+        # Add audio-reactive hint for the AI
+        if self.audio_reactive.get('enabled'):
+            audio = self.audio_reactive
+            prompt = audio.get('prompt')
+            interval_ms = audio.get('interval_ms')
+            event = audio.get('event')
+            base += " | audio-reactive enabled"
+            if interval_ms is not None:
+                base += f", interval_ms={interval_ms}"
+            if event:
+                base += f", event={event}"
+            if prompt:
+                prompt_preview = str(prompt).strip().replace('\n', ' ')
+                if len(prompt_preview) > 80:
+                    prompt_preview = prompt_preview[:77] + "..."
+                base += f", prompt='{prompt_preview}'"
+
+        # Add volume-reactive hint for the AI
+        if self.volume_reactive.get('enabled'):
+            volume = self.volume_reactive
+            interval_ms = volume.get('interval_ms')
+            smoothing = volume.get('smoothing_alpha')
+            base += " | volume-reactive enabled"
+            if interval_ms is not None:
+                base += f", interval_ms={interval_ms}"
             if smoothing is not None:
                 base += f", smoothing_alpha={smoothing}"
 
@@ -138,7 +160,8 @@ class State:
             'b': self.b,
             'speed': self.speed,
             'code': self.code,
-            'voice_reactive': self.voice_reactive,
+            'audio_reactive': self.audio_reactive,
+            'volume_reactive': self.volume_reactive,
             'vision_reactive': self.vision_reactive,
             'api_reactive': self.api_reactive,
             'state_name': self.name
@@ -277,17 +300,29 @@ class States:
                 params = "code=<render function>"
             else:
                 params = f"r={s.r}, g={s.g}, b={s.b}, speed={s.speed}"
-            if s.voice_reactive.get('enabled'):
-                vr = s.voice_reactive
-                params += f", voice_reactive={{enabled: True"
-                if vr.get('color') is not None:
-                    params += f", color: {vr.get('color')}"
-                if vr.get('smoothing_alpha') is not None:
-                    params += f", smoothing_alpha: {vr.get('smoothing_alpha')}"
-                if vr.get('min_amplitude') is not None:
-                    params += f", min_amplitude: {vr.get('min_amplitude')}"
-                if vr.get('max_amplitude') is not None:
-                    params += f", max_amplitude: {vr.get('max_amplitude')}"
+            if s.audio_reactive.get('enabled'):
+                audio = s.audio_reactive
+                params += ", audio_reactive={enabled: True"
+                if audio.get('model') is not None:
+                    params += f", model: {audio.get('model')}"
+                if audio.get('interval_ms') is not None:
+                    params += f", interval_ms: {audio.get('interval_ms')}"
+                if audio.get('event') is not None:
+                    params += f", event: {audio.get('event')}"
+                if audio.get('prompt') is not None:
+                    prompt = str(audio.get('prompt')).strip().replace('\n', ' ')
+                    if len(prompt) > 60:
+                        prompt = prompt[:57] + "..."
+                    params += f", prompt: {prompt}"
+                params += "}"
+
+            if s.volume_reactive.get('enabled'):
+                volume = s.volume_reactive
+                params += ", volume_reactive={enabled: True"
+                if volume.get('interval_ms') is not None:
+                    params += f", interval_ms: {volume.get('interval_ms')}"
+                if volume.get('smoothing_alpha') is not None:
+                    params += f", smoothing_alpha: {volume.get('smoothing_alpha')}"
                 params += "}"
 
             if s.vision_reactive.get('enabled'):

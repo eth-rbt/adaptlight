@@ -6,7 +6,7 @@ This is the detailed reference for the smart light agent. Use `getDocs(topic)` t
 
 - `states` - All state configuration options
 - `animations` - Expression-based animations
-- `voice_reactive` - Audio-reactive brightness
+- `audio_reactive` - Audio-reactive brightness
 - `rules` - Rule configuration and triggers
 - `timer` - One-shot timer rules
 - `interval` - Repeating interval rules
@@ -48,7 +48,7 @@ createState(
 | `duration_ms` | number | NO | Auto-transition after this many ms |
 | `then` | string | NO | State to transition to (required if duration_ms set) |
 | `description` | string | NO | Human-readable description |
-| `voice_reactive` | object | NO | Enable mic-reactive brightness |
+| `audio_reactive` | object | NO | Enable mic-reactive brightness |
 | `vision_reactive` | object | NO | Legacy compatibility object for camera-reactive behavior (prefer inline `vision.*` in `code`) |
 
 ### State Modes
@@ -56,7 +56,7 @@ createState(
 1. **Static**: speed=null, r/g/b are numbers
 2. **Animation**: speed is set, r/g/b can be expressions
 3. **Timed**: duration_ms + then for auto-transition
-4. **Voice-Reactive**: voice_reactive.enabled=true
+4. **Audio-Reactive**: audio_reactive.enabled=true
 5. **Vision-Reactive**: inline `vision.enabled=true` in state code comments (or legacy `vision_reactive.enabled=true`)
 
 ### Vision-Reactive Mode (Simplified)
@@ -256,9 +256,9 @@ createState(
 
 ---
 
-# SECTION: voice_reactive
+# SECTION: audio_reactive
 
-## Voice-Reactive Mode
+## Audio-Reactive Mode
 
 Makes LED brightness follow audio input from the microphone. Great for music visualization.
 
@@ -268,7 +268,7 @@ Makes LED brightness follow audio input from the microphone. Great for music vis
 createState(
   name="party",
   r=0, g=255, b=100,
-  voice_reactive={
+  audio_reactive={
     "enabled": true,
     "color": [0, 255, 100],
     "smoothing_alpha": 0.4,
@@ -303,7 +303,7 @@ createState(
 createState(
   name="music",
   r=0, g=255, b=0,
-  voice_reactive={"enabled": true}
+  audio_reactive={"enabled": true}
 )
 ```
 
@@ -312,7 +312,7 @@ createState(
 createState(
   name="chill_reactive",
   r=150, g=0, b=255,
-  voice_reactive={
+  audio_reactive={
     "enabled": true,
     "smoothing_alpha": 0.2,
     "min_amplitude": 50
@@ -325,7 +325,7 @@ createState(
 createState(
   name="rave",
   r=255, g=0, b=100,
-  voice_reactive={
+  audio_reactive={
     "enabled": true,
     "smoothing_alpha": 0.7,
     "max_amplitude": 8000
@@ -1312,14 +1312,14 @@ Set up VLM person detection. Create state "vlm_watch" and switch to it. Add rule
 2. done(message="Scheduled! Light will turn on at 8:00 AM every day.")
 ```
 
-### Voice-Reactive (Music Mode)
+### Audio-Reactive (Music Mode)
 
 #### "React to music"
 ```
 1. createState(
      name="music_reactive",
      r=0, g=255, b=100,
-     voice_reactive={"enabled": true, "smoothing_alpha": 0.4}
+     audio_reactive={"enabled": true, "smoothing_alpha": 0.4}
    )
 2. appendRules(rules=[{"from": "music_reactive", "on": "button_click", "to": "off"}])
 3. setState(name="music_reactive")
@@ -1331,7 +1331,7 @@ Set up VLM person detection. Create state "vlm_watch" and switch to it. Add rule
 1. createState(
      name="purple_reactive",
      r=150, g=0, b=255,
-     voice_reactive={"enabled": true, "color": [150, 0, 255], "smoothing_alpha": 0.3}
+     audio_reactive={"enabled": true, "color": [150, 0, 255], "smoothing_alpha": 0.3}
    )
 2. appendRules(rules=[{"from": "purple_reactive", "on": "button_click", "to": "off"}])
 3. setState(name="purple_reactive")

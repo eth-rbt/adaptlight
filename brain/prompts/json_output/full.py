@@ -58,7 +58,7 @@ Your output MUST conform to this exact JSON schema:
             "b": {"type": ["number", "string"]},
             "speed": {"type": ["number", "null"]},
             "description": {"type": ["string", "null"]},
-            "voice_reactive": {
+            "audio_reactive": {
               "type": ["object", "null"],
               "properties": {
                 "enabled": {"type": "boolean"},
@@ -460,7 +460,7 @@ Examples:
 
 ### Voice-Reactive Option (per-state)
 Add this optional block to make the state's brightness follow microphone volume:
-- voice_reactive: {
+- audio_reactive: {
     enabled: true,
     color: [r, g, b],          # optional base color (defaults to state r/g/b)
     smoothing_alpha: 0.6,      # optional responsiveness (0-1)
@@ -478,7 +478,7 @@ Example: teal music-reactive state plus a rule to enter it
     "b": 255,
     "speed": null,
     "description": "Mic-reactive teal glow for music",
-    "voice_reactive": {
+    "audio_reactive": {
       "enabled": true,
       "color": [0, 200, 255],
       "smoothing_alpha": 0.5,
