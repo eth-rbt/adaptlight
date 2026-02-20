@@ -54,14 +54,14 @@ class StateMachine:
         self.render_timer = None  # Timer for next render call
         self._on_render_callback = None  # Callback for RGB updates
 
+        # Add default rules
+        if default_rules:
+            self._setup_default_rules()
+
     def _set_data_from_renderer(self, key, value):
         """Set data from renderer code - returns value for chaining."""
         self.state_data[key] = value
         return value
-
-        # Add default rules
-        if default_rules:
-            self._setup_default_rules()
 
     def _setup_default_rules(self):
         """Set up default state transition rules."""
