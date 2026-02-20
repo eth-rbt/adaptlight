@@ -6,6 +6,7 @@ state_data['audio'], and optionally emits audio_* events.
 """
 
 import json
+import os
 import threading
 import time
 import uuid
@@ -27,6 +28,9 @@ class AudioRuntime:
         self.default_interval_ms = max(1000, int(self.config.get("interval_ms", 3000)))
         self.default_cooldown_ms = max(0, int(self.config.get("cooldown_ms", 1500)))
         self.max_transcript_chars = int(self.config.get("max_transcript_chars", 20_000))
+        self.debug_llm_output = bool(self.config.get("debug_llm_output", False)) or os.getenv(
+            "ADAPTLIGHT_DEBUG_AUDIO_LLM", ""
+        ).strip().lower() in {"1", "true", "yes", "on"}
 
         self._openai_api_key = openai_api_key
         self._openai_client = None
@@ -128,6 +132,14 @@ class AudioRuntime:
                 expected_event=watcher.get("event"),
                 chunk_meta=chunk_meta or {},
             )
+
+            if self.debug_llm_output:
+                print(
+                    "[audio_llm] watcher="
+                    f"{watcher_key} expected_event={watcher.get('event')} "
+                    f"transcript={transcript[:120]!r} output={json.dumps(output, ensure_ascii=False)}"
+                )
+
             output["_timestamp"] = now_ms
             self.state_machine.set_data("audio", output)
             processed = True
@@ -140,8 +152,15 @@ class AudioRuntime:
                     last_event_ms = int(session.get("last_event_ms", {}).get(event_name, 0) or 0)
                     can_emit = (now_ms - last_event_ms) >= cooldown_ms
                 if can_emit:
-                    self.smgen.trigger(event_name)
+                    from_state = self.state_machine.get_state()
+                    next_state = self.smgen.trigger(event_name)
                     emitted_events.append(event_name)
+                    if self.debug_llm_output:
+                        print(
+                            "[audio_llm] emitted_event="
+                            f"{event_name} watcher={watcher_key} source={(chunk_meta or {}).get('source')} "
+                            f"from={from_state} to={next_state.get('name') if isinstance(next_state, dict) else None}"
+                        )
                     with self._lock:
                         session.setdefault("last_event_ms", {})[event_name] = now_ms
 
@@ -248,10 +267,16 @@ class AudioRuntime:
             )
             text = getattr(response, "output_text", "") or ""
             parsed = self._parse_json_object(text)
+
+            if self.debug_llm_output:
+                print(f"[audio_llm] raw_output={text!r}")
+
             if not parsed:
                 return {"_error": "unable to parse audio LLM JSON output", "_detector": "audio_llm"}
             if "_detector" not in parsed:
                 parsed["_detector"] = "audio_llm"
+            if self.debug_llm_output:
+                parsed["_raw_output"] = text
             return parsed
         except Exception as e:
             return {"_error": str(e), "_detector": "audio_llm"}

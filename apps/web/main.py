@@ -437,6 +437,7 @@ def create_app(config_path: str = None) -> Flask:
                 'model': str(audio_cfg.get('model', 'gpt-4o-mini')),
                 'interval_ms': max(1000, int(audio_cfg.get('interval_ms', 3000))),
                 'cooldown_ms': max(0, int(audio_cfg.get('cooldown_ms', 1500))),
+                'allow_fallback_transcript': bool(audio_cfg.get('allow_fallback_transcript', False)),
             },
             'volume': {
                 'enabled': bool(volume_cfg.get('enabled', True)),
@@ -554,12 +555,24 @@ def create_app(config_path: str = None) -> Flask:
         session_id = data.get('session_id')
         transcript = data.get('transcript')
         chunk_meta = data.get('chunk_meta') or {}
+        debug_audio_llm = str(os.environ.get('ADAPTLIGHT_DEBUG_AUDIO_LLM', '')).strip().lower() in {'1', 'true', 'yes', 'on'}
         if not session_id:
             return jsonify({'success': False, 'error': 'session_id required'}), 400
         if not transcript:
             return jsonify({'success': False, 'error': 'transcript required'}), 400
+
+        if debug_audio_llm:
+            print(f"[audio_chunk] session={session_id} transcript={str(transcript)[:160]!r} chunk_meta={chunk_meta}")
+
         runtime: AudioRuntime = app.config['audio_runtime']
         result = runtime.process_chunk(session_id=session_id, transcript=transcript, chunk_meta=chunk_meta)
+
+        if debug_audio_llm:
+            print(
+                f"[audio_chunk] success={result.get('success')} processed={result.get('processed')} "
+                f"emitted={result.get('emitted_events')} audio={result.get('audio')}"
+            )
+
         if not result.get('success'):
             if result.get('error') in ('session not found',):
                 return jsonify(result), 404

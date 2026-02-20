@@ -907,7 +907,7 @@
         let currentState = null;
         let currentColor = { r: 0, g: 0, b: 0 };
         let visionConfig = { enabled: false, mode: 'polling', interval_ms: 2000 };
-        let audioConfig = { enabled: true, model: 'gpt-4o-mini', interval_ms: 3000 };
+        let audioConfig = { enabled: true, model: 'gpt-4o-mini', interval_ms: 3000, allow_fallback_transcript: false };
         let volumeConfig = { enabled: true, interval_ms: 80, smoothing_alpha: 0.35, floor: 0.0, ceiling: 1.0 };
         let visionSessionId = null;
         let visionStream = null;
@@ -1578,6 +1578,13 @@
                 if (r.condition) extra.push(`if: ${r.condition}`);
                 if (r.action) extra.push(`do: ${r.action}`);
                 if (r.pipeline) extra.push(`pipeline: ${r.pipeline}`);
+                const audioTrigger = r?.trigger_config?.audio;
+                if (audioTrigger && audioTrigger.enabled) {
+                    const audioEvent = audioTrigger.event || r.on || 'audio_event';
+                    const interval = Number(audioTrigger.interval_ms || audioConfig.interval_ms || 3000);
+                    const cooldown = Number(audioTrigger.cooldown_ms || audioConfig.cooldown_ms || 1500);
+                    extra.push(`audio watcher: ${audioEvent} · ${interval}ms/${cooldown}ms`);
+                }
 
                 return `
                     <div class="rule-item">
@@ -1763,7 +1770,9 @@
         }
 
         function currentStateWantsAudio() {
-            return Boolean(currentState?.audio_reactive?.enabled);
+            // Audio rule watchers can be active even when the current state does not
+            // define audio_reactive, so keep audio processing available when globally enabled.
+            return Boolean(audioConfig?.enabled);
         }
 
         function currentStateWantsVolume() {
@@ -1813,15 +1822,7 @@
                 }
 
                 if (!audioSessionId && audioConfig.enabled) {
-                    const res = await fetch('/api/audio/session/start', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ user_id: currentUserId || 'anonymous' }),
-                    });
-                    const data = await res.json();
-                    if (data.success) {
-                        audioSessionId = data.session_id;
-                    }
+                    await startAudioSession();
                 }
                 if (!volumeSessionId && volumeConfig.enabled) {
                     const res = await fetch('/api/volume/session/start', {
@@ -1842,6 +1843,20 @@
                 audioListenerRunning = false;
                 volumeListenerRunning = false;
             }
+        }
+
+        async function startAudioSession() {
+            const res = await fetch('/api/audio/session/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_id: currentUserId || 'anonymous' }),
+            });
+            const data = await res.json();
+            if (data.success) {
+                audioSessionId = data.session_id;
+                return true;
+            }
+            return false;
         }
 
         async function stopMicListeners() {
@@ -1983,7 +1998,8 @@
                 const now = Date.now();
                 const elapsed = audioSpeechActive ? (now - audioChunkStartedAtMs) : 0;
                 const shouldSendChunk = audioChunkParts.length > 0 && elapsed >= 3000;
-                const shouldSendFallback = audioChunkParts.length === 0 && latestMicLevel > 0.03 && (now - audioLastSentAtMs) >= Math.max(1000, Number(audioConfig.interval_ms || 3000));
+                const allowFallback = Boolean(audioConfig.allow_fallback_transcript);
+                const shouldSendFallback = allowFallback && audioChunkParts.length === 0 && latestMicLevel > 0.03 && (now - audioLastSentAtMs) >= Math.max(1000, Number(audioConfig.interval_ms || 3000));
                 if (!shouldSendChunk && !shouldSendFallback) return;
 
                 let transcript = '';
@@ -1999,6 +2015,13 @@
 
                 audioLastSentAtMs = now;
                 try {
+                    console.log('[audio transcript]', {
+                        session_id: audioSessionId,
+                        transcript,
+                        source: shouldSendChunk ? 'speech_recognition' : 'fallback_meter',
+                        level: latestMicLevel,
+                    });
+
                     const res = await fetch('/api/audio/chunk', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -2012,6 +2035,13 @@
                             },
                         }),
                     });
+
+                    if (res.status === 404) {
+                        audioSessionId = null;
+                        await startAudioSession();
+                        return;
+                    }
+
                     const data = await res.json();
                     if (data.success && data.audio) {
                         sharedStateData['audio'] = data.audio;
