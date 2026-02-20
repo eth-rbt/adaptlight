@@ -113,3 +113,35 @@ state_machine:
 # Storage
 storage:
   dir: data/storage              # Directory for memory and pipelines
+
+# Vision runtime (camera + CV/VLM processing)
+# Requires: Pi Camera Module (ribbon cable) or USB webcam
+vision:
+  enabled: false                 # Set true to enable vision features
+  camera_index: 0                # Camera device index (0 = Pi Camera via ribbon)
+  camera_width: 320              # Capture width (lower = faster CV on Pi)
+  camera_height: 240             # Capture height (320x240 recommended for CV)
+  mode: polling                  # polling | realtime
+  latest_frame_only: true        # Keep only newest frame while processing
+  model: gpt-4o-mini             # OpenAI vision model for VLM engine
+  interval_ms: 2000              # Default VLM interval (>=2s, slower but semantic)
+  cooldown_ms: 1500              # Minimum time between emitting same event
+  min_confidence: 0.55           # Confidence threshold for VLM events
+  max_image_chars: 2500000       # Max base64 data URL size
+  cv:
+    enabled: true                # Allow CV detectors
+    interval_ms: 200             # Default CV interval (fast, local processing)
+    # Detector is chosen per-state via vision_reactive.cv_detector
+    # Available detectors:
+    #   - opencv_hog: person/body detection (recommended)
+    #   - opencv_face: face detection
+    #   - opencv_motion: motion score 0-1
+
+# API runtime (api-reactive polling)
+api:
+  enabled: true                  # Enable API reactive features
+  tick_interval_ms: 1000         # How often main loop checks for due fetches
+  default_interval_ms: 30000     # Default API poll interval if state doesn't specify
+  min_interval_ms: 1000          # Minimum allowed interval (rate limit protection)
+  timeout: 15.0                  # HTTP request timeout in seconds
+  cooldown_ms: 1000              # Minimum time between emitting same event

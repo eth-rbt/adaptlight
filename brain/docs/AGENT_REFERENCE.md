@@ -73,34 +73,24 @@ All vision output writes to `getData('vision')`. Render code reads what it needs
 - Outputs raw JSON with optional `_event` field
 - VLM emits `vision_{_event}` to trigger rule transitions
 
-#### Example: Hand Tracking with CV (fast)
+#### Example: Motion-Reactive Brightness with CV (fast)
 
 ```python
 createState(
-  name="hand_control",
-  description="Color follows hand position",
+  name="motion_reactive",
+  description="Brightness follows motion level",
   code="""
 # vision.enabled = true
 # vision.engine = cv
-# vision.cv_detector = posenet
+# vision.cv_detector = opencv_motion
 # vision.interval_ms = 200
 
 def render(prev, t):
     vision = getData('vision') or {}
-    hands = vision.get('hand_positions', [])
-    if not hands:
-        return (0, 0, 20), 50
-
-    # Use first visible hand
-    visible = [p for p in hands if p.get('confidence', 0) >= 0.4]
-    if not visible:
-        return (0, 0, 20), 50
-
-    x = visible[0].get('x', 0.5)
-    y = visible[0].get('y', 0.5)
-    r = int(x * 255)
-    b = int(y * 255)
-    return (r, 30, b), 50
+    motion = vision.get('motion_score', 0)
+    # More motion = brighter
+    brightness = clamp(0.2 + motion * 0.8, 0.2, 1.0)
+    return hsv(0.6, 0.8, brightness), 50
 """
 )
 ```
@@ -1121,9 +1111,9 @@ Expected model behavior:
 
 Paste these directly into the UI input box to test vision features:
 
-#### CV State-Level (100ms - continuous data)
+#### CV State-Level (200ms - continuous data)
 ```text
-Create a state "hand_track" that uses CV camera for hand tracking. Use posenet detector at 100ms interval. The render code should read getData('vision').get('hand_positions', []) and map the first hand's x position to red brightness.
+Create a state "crowd_brightness" that uses CV camera for person counting. Use opencv_hog detector at 200ms interval. The render code should read getData('vision').get('person_count', 0) and increase brightness as more people are detected.
 ```
 
 #### VLM Rule-Level (2s - event trigger)

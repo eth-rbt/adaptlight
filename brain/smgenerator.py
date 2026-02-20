@@ -371,6 +371,7 @@ class SMgenerator:
                 'code': state_obj.code,
                 'voice_reactive': state_obj.voice_reactive,
                 'vision_reactive': state_obj.vision_reactive,
+                'api_reactive': state_obj.api_reactive,
                 'current_rgb': current_rgb,
             }
         else:
@@ -384,6 +385,7 @@ class SMgenerator:
                 'code': None,
                 'voice_reactive': {},
                 'vision_reactive': {},
+                'api_reactive': {},
                 'current_rgb': current_rgb,
             }
 
@@ -438,6 +440,7 @@ class SMgenerator:
                 'code': state.code,
                 'voice_reactive': state.voice_reactive,
                 'vision_reactive': state.vision_reactive,
+                'api_reactive': state.api_reactive,
                 'description': state.description,
             })
 

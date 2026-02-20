@@ -476,7 +476,7 @@ PATTERNS = {
 
     "api_reactive": {
         "name": "api_reactive",
-        "description": "Fetch data from APIs and set light colors based on the data",
+        "description": "Continuously poll APIs and react to data in render code. Use api_reactive on state for automatic polling.",
         "when_to_use": [
             "weather",
             "temperature",
@@ -484,42 +484,93 @@ PATTERNS = {
             "bitcoin",
             "crypto",
             "air quality",
-            "sunset",
-            "sunrise time",
-            "market",
-            "price"
+            "continuously update",
+            "live data",
+            "polling",
+            "market"
         ],
         "template": {
             "notes": [
-                "1. Call listAPIs() to see available APIs",
-                "2. Call fetchAPI(api, params) to get raw data",
-                "3. Create states with colors YOU choose based on the data",
-                "4. Set the appropriate state based on current values",
-                "5. For button-triggered checks, use the 'pipeline' pattern"
+                "Use api_reactive config on createState for automatic polling:",
+                "- api: preset API name (weather, stock, crypto, etc.)",
+                "- url: custom URL (alternative to preset api)",
+                "- params: API parameters",
+                "- interval_ms: polling interval (min 1000ms)",
+                "- key: writes to getData(key)",
+                "- event: optional event for rule transitions",
+                "Render code reads data via getData(key)"
             ]
         },
         "example": {
-            "user_request": "Make the light reflect the weather",
-            "steps": [
-                "1. fetchAPI('weather', {location: 'NYC'}) -> {temp_f: 45, condition: 'cloudy'}",
-                "2. createState('cold', r=0, g=100, b=255)",
-                "3. createState('warm', r=255, g=200, b=100)",
-                "4. // temp_f is 45, that's cold!",
-                "5. setState('cold')",
-                "6. done('It's 45°F - showing blue for cold!')"
-            ]
+            "user_request": "Show temperature as color - continuously updated",
+            "output": {
+                "createState": {
+                    "name": "weather_reactive",
+                    "api_reactive": {
+                        "enabled": True,
+                        "api": "weather",
+                        "params": {"location": "San Francisco"},
+                        "interval_ms": 60000,
+                        "key": "weather"
+                    },
+                    "code": """def render(prev, t):
+    weather = getData('weather', {})
+    temp = weather.get('temp_f', 70)
+    # Cold (32F) = blue, Hot (100F) = red
+    ratio = clamp((temp - 32) / 68, 0, 1)
+    return lerp_color([0, 100, 255], [255, 50, 0], ratio), 1000""",
+                    "description": "Color changes with temperature"
+                },
+                "setState": "weather_reactive"
+            }
         },
         "more_examples": [
             {
-                "user_request": "Check Bitcoin",
-                "steps": [
-                    "fetchAPI('crypto', {coin: 'bitcoin'}) -> {price_usd: 43250, change_24h: 2.5}",
-                    "createState('up', r=0, g=255, b=100)",
-                    "createState('down', r=255, g=100, b=100)",
-                    "// change_24h is positive!",
-                    "setState('up')",
-                    "done('Bitcoin up 2.5% - showing green!')"
-                ]
+                "user_request": "Crypto price indicator with event on big change",
+                "output": {
+                    "createState": {
+                        "name": "crypto_watch",
+                        "api_reactive": {
+                            "enabled": True,
+                            "api": "crypto",
+                            "params": {"coin": "bitcoin"},
+                            "interval_ms": 30000,
+                            "key": "btc",
+                            "event": "crypto_update"
+                        },
+                        "code": """def render(prev, t):
+    btc = getData('btc', {})
+    change = btc.get('change_24h', 0)
+    if change > 0:
+        return rgb(0, 255, 100), 500  # Green for up
+    else:
+        return rgb(255, 100, 100), 500  # Red for down"""
+                    },
+                    "appendRules": [
+                        {"from": "crypto_watch", "on": "api_crypto_update", "to": "crypto_alert", "condition": "abs(getData('btc', {}).get('change_24h', 0)) > 5"}
+                    ]
+                }
+            },
+            {
+                "user_request": "Custom API endpoint",
+                "output": {
+                    "createState": {
+                        "name": "custom_api",
+                        "api_reactive": {
+                            "enabled": True,
+                            "url": "https://api.example.com/sensor",
+                            "method": "GET",
+                            "headers": {"Authorization": "Bearer xxx"},
+                            "interval_ms": 5000,
+                            "key": "sensor"
+                        },
+                        "code": """def render(prev, t):
+    data = getData('sensor', {})
+    value = data.get('reading', 0)
+    brightness = clamp(value / 100, 0, 1)
+    return rgb(255 * brightness, 255 * brightness, 255 * brightness), 100"""
+                    }
+                }
             }
         ]
     },

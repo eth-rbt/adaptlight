@@ -26,6 +26,8 @@ import supabase_client
 
 
 from brain.processing.vision_runtime import VisionRuntime
+from brain.processing.api_runtime import APIRuntime
+from brain.apis.api_executor import APIExecutor
 
 def load_config(config_path: str = None) -> dict:
     """Load configuration from YAML file."""
@@ -106,10 +108,19 @@ def create_app(config_path: str = None) -> Flask:
         openai_api_key=config.get('openai', {}).get('api_key')
     )
 
+    # Initialize API executor and runtime
+    api_executor = APIExecutor(timeout=15.0)
+    api_runtime = APIRuntime(
+        smgen=smgen,
+        api_executor=api_executor,
+        config=config.get('api', {})
+    )
+
     # Create Flask app
     app = Flask(__name__, static_folder='static')
     app.config['smgen'] = smgen
     app.config['vision_runtime'] = vision_runtime
+    app.config['api_runtime'] = api_runtime
 
     # ─────────────────────────────────────────────────────────────
     # Routes
@@ -383,6 +394,8 @@ def create_app(config_path: str = None) -> Flask:
         if vision_mode not in ('polling', 'realtime'):
             vision_mode = 'polling'
 
+        api_cfg = config.get('api', {})
+
         return jsonify({
             'success': True,
             'representation_version': representation_version,
@@ -398,6 +411,11 @@ def create_app(config_path: str = None) -> Flask:
                     'interval_ms': max(1000, int((vision_cfg.get('cv') or {}).get('interval_ms', 1000))),
                     'detector': str((vision_cfg.get('cv') or {}).get('detector', 'opencv_hog')).lower(),
                 },
+            },
+            'api': {
+                'enabled': bool(api_cfg.get('enabled', True)),
+                'default_interval_ms': max(1000, int(api_cfg.get('default_interval_ms', 30000))),
+                'min_interval_ms': max(1000, int(api_cfg.get('min_interval_ms', 1000))),
             },
         })
 
@@ -462,6 +480,49 @@ def create_app(config_path: str = None) -> Flask:
             return jsonify(result), 400
 
         return jsonify(result)
+
+    # ─────────────────────────────────────────────────────────────
+    # API Reactive Routes
+    # ─────────────────────────────────────────────────────────────
+
+    @app.route('/api/api/tick', methods=['POST'])
+    def api_tick():
+        """Tick the API runtime to check for due fetches."""
+        runtime: APIRuntime = app.config['api_runtime']
+
+        if not runtime.enabled:
+            return jsonify({'success': False, 'error': 'api runtime disabled'}), 400
+
+        result = runtime.tick()
+        return jsonify(result)
+
+    @app.route('/api/api/force', methods=['POST'])
+    def api_force_fetch():
+        """Force an immediate fetch for a specific key."""
+        data = request.get_json(silent=True) or {}
+        key = data.get('key')
+
+        if not key:
+            return jsonify({'success': False, 'error': 'key required'}), 400
+
+        runtime: APIRuntime = app.config['api_runtime']
+
+        if not runtime.enabled:
+            return jsonify({'success': False, 'error': 'api runtime disabled'}), 400
+
+        result = runtime.force_fetch(key)
+        return jsonify(result)
+
+    @app.route('/api/api/clear-cache', methods=['POST'])
+    def api_clear_cache():
+        """Clear API cache for a specific key or all keys."""
+        data = request.get_json(silent=True) or {}
+        key = data.get('key')  # Optional, clears all if not provided
+
+        runtime: APIRuntime = app.config['api_runtime']
+        runtime.clear_cache(key)
+
+        return jsonify({'success': True, 'cleared': key or 'all'})
 
     return app
 

@@ -21,6 +21,9 @@ from dotenv import load_dotenv
 load_dotenv(ROOT_DIR / '.env')
 
 from brain import SMgenerator
+from brain.processing.vision_runtime import VisionRuntime
+from brain.processing.api_runtime import APIRuntime
+from brain.apis.api_executor import APIExecutor
 
 # Import supabase client for logging
 from . import supabase_client
@@ -91,6 +94,27 @@ class AdaptLightRaspi:
         }
         self.smgen = SMgenerator(brain_config)
 
+        # Initialize Vision Runtime (for camera-reactive features)
+        vision_config = self.config.get('vision', {})
+        self.vision_runtime = VisionRuntime(
+            smgen=self.smgen,
+            config=vision_config,
+            openai_api_key=self.config['openai']['api_key']
+        ) if vision_config.get('enabled') else None
+
+        # Initialize API Runtime (for api-reactive features)
+        api_config = self.config.get('api', {})
+        self.api_executor = APIExecutor(timeout=15.0) if api_config.get('enabled') else None
+        self.api_runtime = APIRuntime(
+            smgen=self.smgen,
+            api_executor=self.api_executor,
+            config=api_config
+        ) if api_config.get('enabled') else None
+
+        # Track API tick timing
+        self._last_api_tick_ms = 0
+        self._api_tick_interval_ms = api_config.get('tick_interval_ms', 1000)
+
         # Register hooks for RASPi-specific feedback
         self.smgen.on('processing_start', self._on_processing_start)
         self.smgen.on('processing_end', self._on_processing_end)
@@ -111,6 +135,7 @@ class AdaptLightRaspi:
 
         self._init_hardware()
         self._init_voice()
+        self._init_camera()
 
         # Set up signal handlers
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -225,6 +250,100 @@ class AdaptLightRaspi:
         except Exception as e:
             print(f"Hardware initialization failed: {e}")
             print("Running in simulation mode")
+
+    def _init_camera(self):
+        """Initialize camera for vision processing."""
+        self.camera = None
+        self.camera_thread = None
+        self._camera_running = False
+        self._vision_session_id = None
+
+        vision_config = self.config.get('vision', {})
+        if not vision_config.get('enabled') or not self.vision_runtime:
+            return
+
+        try:
+            import cv2
+            import base64
+            import threading
+
+            # Try to open camera (0 = default camera)
+            camera_index = vision_config.get('camera_index', 0)
+            self.camera = cv2.VideoCapture(camera_index)
+
+            if not self.camera.isOpened():
+                print(f"Camera {camera_index} not available, vision disabled")
+                self.camera = None
+                return
+
+            # Set camera resolution (lower for Pi performance)
+            width = vision_config.get('camera_width', 640)
+            height = vision_config.get('camera_height', 480)
+            self.camera.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+            self.camera.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+
+            print(f"Camera initialized: {width}x{height}")
+
+            # Start vision session
+            session = self.vision_runtime.start_session(user_id=self.device_id)
+            self._vision_session_id = session.get('session_id')
+            print(f"Vision session started: {self._vision_session_id}")
+
+            # Start camera capture thread
+            self._camera_running = True
+            self.camera_thread = threading.Thread(target=self._camera_loop, daemon=True)
+            self.camera_thread.start()
+
+        except ImportError:
+            print("OpenCV not installed, vision disabled")
+        except Exception as e:
+            print(f"Camera initialization failed: {e}")
+
+    def _camera_loop(self):
+        """Background thread for camera capture and vision processing."""
+        import cv2
+        import base64
+        import time
+
+        vision_config = self.config.get('vision', {})
+        interval_ms = vision_config.get('interval_ms', 2000)
+        cv_interval_ms = vision_config.get('cv', {}).get('interval_ms', 200)
+
+        # Use CV interval if CV is the primary engine
+        capture_interval_ms = min(interval_ms, cv_interval_ms) if vision_config.get('cv', {}).get('enabled') else interval_ms
+
+        while self._camera_running and self.camera and self.camera.isOpened():
+            try:
+                ret, frame = self.camera.read()
+                if not ret:
+                    time.sleep(0.1)
+                    continue
+
+                # Encode frame as JPEG base64 data URL
+                _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                base64_data = base64.b64encode(buffer).decode('utf-8')
+                image_data_url = f"data:image/jpeg;base64,{base64_data}"
+
+                # Process frame through vision runtime
+                if self._vision_session_id:
+                    result = self.vision_runtime.process_frame(
+                        session_id=self._vision_session_id,
+                        image_data_url=image_data_url
+                    )
+
+                    if result.get('processed') and result.get('emitted_events'):
+                        if self.verbose:
+                            print(f"[Vision] Events: {result.get('emitted_events')}")
+                        # Update LED if vision triggered a state change
+                        self._execute_state(self.smgen.get_state())
+
+                # Sleep for capture interval
+                time.sleep(capture_interval_ms / 1000.0)
+
+            except Exception as e:
+                if self.verbose:
+                    print(f"[Vision] Frame processing error: {e}")
+                time.sleep(0.5)
 
     def _init_voice(self):
         """Initialize voice input and TTS output."""
@@ -489,6 +608,8 @@ class AdaptLightRaspi:
         print(f"Mode: {self.config['brain']['mode']}")
         print(f"Model: {self.config['brain']['model']}")
         print(f"LED type: {self.config['hardware']['led_type']}")
+        print(f"Vision: {'enabled' if self.vision_runtime and self.camera else 'disabled'}")
+        print(f"API Reactive: {'enabled' if self.api_runtime else 'disabled'}")
         print("=" * 60)
 
         # Show initial state
@@ -499,15 +620,52 @@ class AdaptLightRaspi:
 
         try:
             while self.running:
+                # Tick API runtime if enabled
+                self._tick_api_runtime()
                 time.sleep(0.1)
         except KeyboardInterrupt:
             pass
         finally:
             self.cleanup()
 
+    def _tick_api_runtime(self):
+        """Tick the API runtime to check for due fetches."""
+        if not self.api_runtime:
+            return
+
+        now_ms = int(time.time() * 1000)
+        if (now_ms - self._last_api_tick_ms) < self._api_tick_interval_ms:
+            return
+
+        self._last_api_tick_ms = now_ms
+
+        try:
+            result = self.api_runtime.tick()
+            if result.get('processed'):
+                if self.verbose:
+                    print(f"[API] Fetched: {result.get('fetched', [])}")
+                # If state changed, update LED
+                if result.get('emitted_events'):
+                    self._execute_state(self.smgen.get_state())
+        except Exception as e:
+            if self.verbose:
+                print(f"[API] Tick error: {e}")
+
     def cleanup(self):
         """Clean up resources."""
         print("Cleaning up...")
+
+        # Stop camera capture
+        self._camera_running = False
+        if self.camera_thread and self.camera_thread.is_alive():
+            self.camera_thread.join(timeout=2)
+        if self.camera:
+            self.camera.release()
+            print("Camera released")
+
+        # Stop vision session
+        if self._vision_session_id and self.vision_runtime:
+            self.vision_runtime.stop_session(self._vision_session_id)
 
         if self.voice and self.is_recording:
             self.voice.stop_recording()

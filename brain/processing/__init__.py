@@ -7,6 +7,7 @@ Contains agent executor and command parser for processing user input.
 from .agent import AgentExecutor
 from .parser import CommandParser
 from .vision_runtime import VisionRuntime
+from .api_runtime import APIRuntime
 from .vision_shared import (
     normalize_engine,
     looks_cv_friendly,
@@ -17,6 +18,7 @@ __all__ = [
     'AgentExecutor',
     'CommandParser',
     'VisionRuntime',
+    'APIRuntime',
     'normalize_engine',
     'looks_cv_friendly',
     'cv_supported_fields',

@@ -50,9 +50,6 @@ vision:
   min_confidence: 0.55        # Default confidence threshold for emitting events
   max_image_chars: 2500000    # Guardrail on data URL payload size
   cv:
-    enabled: true             # Enable CV package path (OpenCV / pose detector)
+    enabled: true             # Enable CV detectors (OpenCV)
     interval_ms: 1000         # Default CV interval (>=1s)
-    detector: opencv_hog      # opencv_hog | opencv_face | opencv_motion | posenet
-    pose_model_asset: data/models/pose_landmarker_lite.task  # Required when using posenet via MediaPipe Tasks API
-    # Optional higher-quality preset:
-    # pose_model_asset: data/models/pose_landmarker_full.task
+    detector: opencv_hog      # opencv_hog | opencv_face | opencv_motion

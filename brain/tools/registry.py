@@ -205,7 +205,11 @@ Use voice_reactive for mic-reactive brightness.
 Use vision_reactive for camera-reactive behavior:
    - All vision output writes to getData('vision')
    - CV: fast (100ms+), outputs raw data (person_count, hand_positions, etc.)
-   - VLM: slow (2000ms+), can emit events via _event field""",
+   - VLM: slow (2000ms+), can emit events via _event field
+Use api_reactive for API-reactive behavior:
+   - Polls preset APIs or custom URLs at interval_ms
+   - Writes results to getData(key)
+   - Can emit events for rule transitions""",
             input_schema={
                 "type": "object",
                 "properties": {
@@ -235,9 +239,25 @@ Use vision_reactive for camera-reactive behavior:
                             "prompt": {"type": "string", "description": "What to observe (required for VLM, optional for CV)"},
                             "model": {"type": "string", "description": "OpenAI vision model (default gpt-4o-mini)"},
                             "engine": {"type": "string", "description": "cv | vlm | hybrid. CV is fast (100ms+), VLM is slow (2000ms+)"},
-                            "cv_detector": {"type": "string", "description": "opencv_hog | opencv_face | opencv_motion | posenet"},
+                            "cv_detector": {"type": "string", "description": "opencv_hog | opencv_face | opencv_motion"},
                             "interval_ms": {"type": "number", "description": "Analyze interval: CV >=100ms, VLM >=2000ms"},
                             "event": {"type": "string", "description": "Event name for VLM to emit (VLM only, CV doesn't emit events)"},
+                            "cooldown_ms": {"type": "number", "description": "Minimum time between event emissions"}
+                        }
+                    },
+                    "api_reactive": {
+                        "type": ["object", "null"],
+                        "description": "Enable API-reactive behavior. Polls APIs and writes results to getData(key). Can emit events for rule transitions.",
+                        "properties": {
+                            "enabled": {"type": "boolean", "description": "Enable API-reactive mode"},
+                            "api": {"type": "string", "description": "Preset API name (weather, stock, crypto, etc.)"},
+                            "url": {"type": "string", "description": "Custom URL (overrides api if provided)"},
+                            "method": {"type": "string", "description": "HTTP method for custom URL (GET, POST, etc.)"},
+                            "headers": {"type": "object", "description": "Custom headers for URL requests"},
+                            "params": {"type": "object", "description": "API parameters or request body"},
+                            "interval_ms": {"type": "number", "description": "Polling interval in ms (min 1000ms)"},
+                            "key": {"type": "string", "description": "Key to write results to in state_data"},
+                            "event": {"type": "string", "description": "Event to emit when data updates (for rule transitions)"},
                             "cooldown_ms": {"type": "number", "description": "Minimum time between event emissions"}
                         }
                     }
@@ -312,7 +332,7 @@ Use vision_reactive for camera-reactive behavior:
                                                 "event": {"type": "string", "description": "Event to emit (VLM only, should start with vision_)"},
                                                 "model": {"type": "string", "description": "OpenAI vision model"},
                                                 "engine": {"type": "string", "description": "cv | vlm | hybrid"},
-                                                "cv_detector": {"type": "string", "description": "opencv_hog | opencv_face | opencv_motion | posenet"},
+                                                "cv_detector": {"type": "string", "description": "opencv_hog | opencv_face | opencv_motion"},
                                                 "interval_ms": {"type": "number", "description": "Analyze interval: CV >=100ms, VLM >=2000ms"},
                                                 "cooldown_ms": {"type": "number", "description": "Cooldown for repeated events"}
                                             }
@@ -715,6 +735,7 @@ Use vision_reactive for camera-reactive behavior:
         description = input.get("description", "")
         voice_reactive = input.get("voice_reactive")
         vision_reactive = input.get("vision_reactive")
+        api_reactive = input.get("api_reactive")
 
         inline_vision_reactive = self._extract_vision_reactive_from_code(code) if code is not None else None
         if inline_vision_reactive:
@@ -733,7 +754,8 @@ Use vision_reactive for camera-reactive behavior:
                 code=code,
                 description=description,
                 voice_reactive=voice_reactive,
-                vision_reactive=vision_reactive
+                vision_reactive=vision_reactive,
+                api_reactive=api_reactive
             )
         else:
             # Original r/g/b mode
@@ -745,7 +767,8 @@ Use vision_reactive for camera-reactive behavior:
                 speed=speed,
                 description=description,
                 voice_reactive=voice_reactive,
-                vision_reactive=vision_reactive
+                vision_reactive=vision_reactive,
+                api_reactive=api_reactive
             )
 
         # Add to state machine's state collection

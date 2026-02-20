@@ -189,8 +189,9 @@ All vision output writes to `getData('vision')`. Render code reads what it needs
 
 **CV (fast, data only):**
 - Interval: 200ms+ recommended (100ms minimum)
-- Output: raw JSON e.g. `{{person_count: 2, hand_positions: [...], _detector: 'posenet'}}`
-- Use for: real-time tracking (posenet hands/body), counting, motion detection
+- Detectors: opencv_hog (person_count), opencv_face (face_count), opencv_motion (motion_score)
+- Output: raw JSON e.g. `{{person_count: 2, _detector: 'opencv_hog'}}`
+- Use for: counting people/faces, motion detection
 - **CV does NOT emit events** - only writes data
 
 **VLM (slow, can emit events):**

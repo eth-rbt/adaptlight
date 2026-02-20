@@ -14,7 +14,8 @@ class State:
     """Represents a single state in the state machine."""
 
     def __init__(self, name: str, r=None, g=None, b=None, speed=None,
-                 code=None, description: str = '', voice_reactive=None, vision_reactive=None):
+                 code=None, description: str = '', voice_reactive=None, vision_reactive=None,
+                 api_reactive=None):
         """
         Initialize a state with unified parameters.
 
@@ -33,15 +34,27 @@ class State:
             voice_reactive: Optional dict to enable mic-reactive brightness. Example:
                            {"enabled": true, "color": [0,255,0], "smoothing_alpha": 0.6,
                             "min_amplitude": 100, "max_amplitude": 5000}
-                        vision_reactive: Optional dict to enable camera/VLM-reactive behavior.
-                                                        Example:
-                                                        {
-                                                            "enabled": true,
-                                                            "prompt": "Detect hand wave. Reply JSON only.",
-                                                            "model": "gpt-4o-mini",
-                                                            "interval_ms": 700,
-                                                            "event": "vision_hand_wave"
-                                                        }
+            vision_reactive: Optional dict to enable camera/VLM-reactive behavior.
+                            Example:
+                            {
+                                "enabled": true,
+                                "prompt": "Detect hand wave. Reply JSON only.",
+                                "model": "gpt-4o-mini",
+                                "interval_ms": 700,
+                                "event": "vision_hand_wave"
+                            }
+            api_reactive: Optional dict to enable API-reactive behavior. Example:
+                         {
+                             "enabled": true,
+                             "api": "weather",           # Preset API name
+                             "url": "https://...",       # OR custom URL (overrides api)
+                             "method": "GET",            # HTTP method for custom URL
+                             "headers": {},              # Custom headers
+                             "params": {"location": "SF"},
+                             "interval_ms": 60000,
+                             "key": "weather",           # Writes to state_data[key]
+                             "event": "weather_updated"  # Optional event for rules
+                         }
         """
         self.name = name
         self.r = r
@@ -51,6 +64,7 @@ class State:
         self.code = code
         self.voice_reactive = voice_reactive or {}
         self.vision_reactive = vision_reactive or {}
+        self.api_reactive = api_reactive or {}
         self.description = description or self._generate_description()
 
         # Callback for state entry - set by the app
@@ -94,6 +108,26 @@ class State:
                     prompt_preview = prompt_preview[:77] + "..."
                 base += f", prompt='{prompt_preview}'"
 
+        # Add api-reactive hint for the AI
+        if self.api_reactive.get('enabled'):
+            api = self.api_reactive
+            api_name = api.get('api')
+            url = api.get('url')
+            interval_ms = api.get('interval_ms')
+            key = api.get('key')
+            event = api.get('event')
+            base += " | api-reactive enabled"
+            if api_name:
+                base += f", api={api_name}"
+            if url:
+                base += f", url={url[:50]}..." if len(url) > 50 else f", url={url}"
+            if interval_ms is not None:
+                base += f", interval_ms={interval_ms}"
+            if key:
+                base += f", key={key}"
+            if event:
+                base += f", event={event}"
+
         return base
 
     def get_params(self):
@@ -106,6 +140,7 @@ class State:
             'code': self.code,
             'voice_reactive': self.voice_reactive,
             'vision_reactive': self.vision_reactive,
+            'api_reactive': self.api_reactive,
             'state_name': self.name
         }
 
@@ -270,6 +305,23 @@ class States:
                         prompt = prompt[:57] + "..."
                     params += f", prompt: {prompt}"
                 params += "}"
+
+            if s.api_reactive.get('enabled'):
+                api = s.api_reactive
+                params += ", api_reactive={enabled: True"
+                if api.get('api') is not None:
+                    params += f", api: {api.get('api')}"
+                if api.get('url') is not None:
+                    url = api.get('url')
+                    params += f", url: {url[:40]}..." if len(url) > 40 else f", url: {url}"
+                if api.get('interval_ms') is not None:
+                    params += f", interval_ms: {api.get('interval_ms')}"
+                if api.get('key') is not None:
+                    params += f", key: {api.get('key')}"
+                if api.get('event') is not None:
+                    params += f", event: {api.get('event')}"
+                params += "}"
+
             desc = s.description if s.description else "No description"
             lines.append(f"- {s.name}: {params} | {desc}")
 

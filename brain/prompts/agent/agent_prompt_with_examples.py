@@ -183,34 +183,21 @@ createState(name="music", code='function render(prev, t) { return [[0, 255, 0], 
 ### "Turn red when a hand wave is detected" (VLM emits event)
 appendRules([{{"from": "*", "on": "vision_hand_wave", "to": "red", "trigger_config": {{"vision": {{"enabled": true, "engine": "vlm", "prompt": "Detect a hand wave. If waving, return _event: hand_wave", "event": "vision_hand_wave", "interval_ms": 2000, "cooldown_ms": 1500}}}}}}]) → done()
 
-### "Use hand coordinates to drive color" (state-level CV, fast tracking)
-createState(name="hand_control", code=`
+### "Brightness based on people count" (state-level CV, fast tracking)
+createState(name="crowd_reactive", code=`
 // vision.enabled = true
 // vision.engine = cv
-// vision.cv_detector = posenet
+// vision.cv_detector = opencv_hog
 // vision.interval_ms = 200
 
 function render(prev, t) {
     const vision = getData("vision") || {{}};
-    const hands = vision.hand_positions || [];
-    if (hands.length === 0) {
-        return [[0, 0, 20], 50];
-    }
-
-    const visible = hands.filter(p => (p.confidence || 0) >= 0.4);
-    if (visible.length === 0) {
-        return [[0, 0, 20], 50];
-    }
-
-    let sumX = 0, sumY = 0;
-    for (const p of visible) {{ sumX += p.x || 0.5; sumY += p.y || 0.5; }}
-    const avgX = sumX / visible.length;
-    const avgY = sumY / visible.length;
-    const r = int(clamp(avgX * 255, 0, 255));
-    const b = int(clamp(avgY * 255, 0, 255));
-    return [[r, 30, b], 50];
+    const count = vision.person_count || 0;
+    // More people = brighter
+    const brightness = clamp(0.2 + count * 0.2, 0.2, 1.0);
+    return [hsv(0.1, 0.8, brightness), 50];
 }}
-`) → setState(name="hand_control") → done()
+`) → setState(name="crowd_reactive") → done()
 
 ### "Party mode + alert when someone enters" (CV data + VLM event)
 createState(name="party", code=`

@@ -12,7 +12,7 @@ def normalize_engine(value: str) -> str:
     v = str(value or 'auto').strip().lower()
     if v in ('vlm', 'openai', 'llm'):
         return 'vlm'
-    if v in ('cv', 'opencv', 'posenet'):
+    if v in ('cv', 'opencv'):
         return 'cv'
     if v in ('hybrid', 'both'):
         return 'hybrid'
@@ -46,13 +46,4 @@ def cv_supported_fields(detector: str) -> set:
         return {'face_count'}
     if detector_name in ('motion', 'opencv_motion'):
         return {'motion_score'}
-    if detector_name in ('posenet', 'pose'):
-        return {
-            'pose_landmarks',
-            'person_count',
-            'pose_positions',
-            'hand_positions',
-            'hand_pose',
-            'pose_detected',
-        }
     return set()

@@ -38,13 +38,11 @@ class VisionRuntime:
         self.cv_enabled = bool(self.cv_config.get('enabled', True))
         self.cv_default_interval_ms = max(100, int(self.cv_config.get('interval_ms', 200)))  # CV can be fast (100-200ms)
         self.cv_default_detector = str(self.cv_config.get('detector', 'opencv_hog')).lower()
-        self.cv_pose_model_asset = str(self.cv_config.get('pose_model_asset', 'data/models/pose_landmarker_lite.task'))
         self.default_cooldown_ms = int(self.config.get('cooldown_ms', 1500))
         self.max_image_chars = int(self.config.get('max_image_chars', 2_500_000))
 
         self._openai_api_key = openai_api_key
         self._openai_client = None
-        self._pose_runtime = None
         self._lock = threading.Lock()
         self._sessions = {}
 
@@ -377,27 +375,7 @@ class VisionRuntime:
         detector_name = str(detector or '').strip().lower()
         if detector_name in ('hog', 'opencv_hog', 'person', 'face', 'opencv_face', 'motion', 'opencv_motion'):
             return True
-        if detector_name in ('posenet', 'pose'):
-            try:
-                import mediapipe as mp
-                tasks = getattr(mp, 'tasks', None)
-                vision_ns = getattr(tasks, 'vision', None) if tasks is not None else None
-                pose_ctor = getattr(vision_ns, 'PoseLandmarker', None) if vision_ns is not None else None
-                if callable(pose_ctor):
-                    return True
-                solutions = getattr(mp, 'solutions', None)
-                pose_ns = getattr(solutions, 'pose', None) if solutions is not None else None
-                legacy_ctor = getattr(pose_ns, 'Pose', None) if pose_ns is not None else None
-                return callable(legacy_ctor)
-            except Exception:
-                return False
         return False
-
-    def _resolve_pose_model_asset_path(self) -> Path:
-        asset = Path(self.cv_pose_model_asset)
-        if not asset.is_absolute():
-            asset = PROJECT_ROOT / asset
-        return asset
 
     def _smooth_session_signal(self, session_id: str, signal_key: str, raw_value: float, alpha: float = 0.35) -> float:
         """EMA smoothing for continuous CV signals stored per session."""
@@ -447,7 +425,7 @@ class VisionRuntime:
         detector = str(watcher.get('cv_detector') or self.cv_default_detector).lower()
         prompt = watcher.get('prompt', '')
 
-        if detector in ('opencv_hog', 'opencv_face', 'opencv_motion', 'posenet') and self._looks_cv_friendly(prompt):
+        if detector in ('opencv_hog', 'opencv_face', 'opencv_motion') and self._looks_cv_friendly(prompt):
             return 'cv'
         return 'vlm'
 
@@ -669,8 +647,6 @@ class VisionRuntime:
             return self._cv_opencv_face(frame)
         elif detector_name in ('motion', 'opencv_motion'):
             return self._cv_opencv_motion(session_id, frame)
-        elif detector_name in ('posenet', 'pose'):
-            return self._cv_posenet(session_id, frame)
         else:
             result = self._cv_opencv_hog(frame)
             result['_fallback'] = f"unknown detector '{detector_name}', used opencv_hog"
@@ -741,114 +717,6 @@ class VisionRuntime:
             }
         except Exception as e:
             return {'_error': str(e), '_detector': 'opencv_motion'}
-
-    def _cv_posenet(self, session_id: str, frame) -> dict:
-        """Raw JSON output: pose_positions, hand_positions, person_count."""
-        try:
-            import cv2
-            import mediapipe as mp
-
-            if self._pose_runtime is None:
-                tasks = getattr(mp, 'tasks', None)
-                vision_ns = getattr(tasks, 'vision', None) if tasks is not None else None
-                if tasks is not None and vision_ns is not None:
-                    model_path = self._resolve_pose_model_asset_path()
-                    if not model_path.exists():
-                        return {
-                            '_error': f'missing MediaPipe model at {model_path}',
-                            '_detector': 'posenet',
-                        }
-
-                    base_options = mp.tasks.BaseOptions(model_asset_path=str(model_path))
-                    options = vision_ns.PoseLandmarkerOptions(
-                        base_options=base_options,
-                        running_mode=vision_ns.RunningMode.IMAGE,
-                        num_poses=1,
-                        min_pose_detection_confidence=0.5,
-                        min_pose_presence_confidence=0.5,
-                        min_tracking_confidence=0.5,
-                    )
-                    self._pose_runtime = vision_ns.PoseLandmarker.create_from_options(options)
-                else:
-                    solutions = getattr(mp, 'solutions', None)
-                    pose_ns = getattr(solutions, 'pose', None) if solutions is not None else None
-                    pose_ctor = getattr(pose_ns, 'Pose', None) if pose_ns is not None else None
-                    if pose_ctor is None:
-                        return {
-                            '_error': 'MediaPipe runtime missing',
-                            '_detector': 'posenet',
-                        }
-                    self._pose_runtime = pose_ctor(
-                        static_image_mode=False,
-                        model_complexity=0,
-                        min_detection_confidence=0.5,
-                        min_tracking_confidence=0.5,
-                    )
-
-            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-
-            pose_landmarks = None
-
-            if hasattr(self._pose_runtime, 'detect'):
-                mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-                result = self._pose_runtime.detect(mp_image)
-                pose_list = getattr(result, 'pose_landmarks', None) or []
-                pose_landmarks = pose_list[0] if len(pose_list) > 0 else None
-            else:
-                result = self._pose_runtime.process(rgb)
-                landmarks_obj = getattr(result, 'pose_landmarks', None)
-                pose_landmarks = landmarks_obj.landmark if landmarks_obj is not None else None
-
-            detected = pose_landmarks is not None
-
-            pose_positions = []
-            hand_positions = []
-            hand_landmark_indices = {
-                15: 'left_wrist',
-                17: 'left_pinky',
-                19: 'left_index',
-                21: 'left_thumb',
-                16: 'right_wrist',
-                18: 'right_pinky',
-                20: 'right_index',
-                22: 'right_thumb',
-            }
-
-            if pose_landmarks:
-                for index, landmark in enumerate(pose_landmarks):
-                    x = getattr(landmark, 'x', None)
-                    y = getattr(landmark, 'y', None)
-                    if x is None or y is None:
-                        continue
-                    confidence_value = getattr(landmark, 'visibility', None)
-                    if confidence_value is None:
-                        confidence_value = getattr(landmark, 'presence', 0.0)
-                    confidence_value = max(0.0, min(1.0, float(confidence_value or 0.0)))
-                    point = {
-                        'index': int(index),
-                        'x': round(float(x), 4),
-                        'y': round(float(y), 4),
-                        'confidence': round(confidence_value, 4),
-                    }
-                    pose_positions.append(point)
-                    hand_name = hand_landmark_indices.get(index)
-                    if hand_name is not None:
-                        hand_positions.append({
-                            **point,
-                            'name': hand_name,
-                        })
-
-            return {
-                'person_count': 1 if detected else 0,
-                'pose_positions': pose_positions,
-                'hand_positions': hand_positions,
-                '_detector': 'posenet',
-            }
-        except Exception as e:
-            import traceback
-            print(f"[posenet] Error: {e}")
-            traceback.print_exc()
-            return {'_error': str(e), '_detector': 'posenet'}
 
     def _analyze_with_realtime_stream(self, image_data_url: str, prompt: str, model: str, expected_event: str = None) -> dict:
         """

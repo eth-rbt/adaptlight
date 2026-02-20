@@ -7,13 +7,10 @@ openai>=1.0.0
 pyyaml>=6.0
 requests>=2.28.0
 python-dotenv>=1.0.0
+numpy>=1.24.0
 
 # Database
 supabase>=2.0.0
-
-gpiozero>=2.0
-
-numpy>=1.24.0
 
 # Optional: For Replicate STT
 replicate>=0.15.0
@@ -34,5 +31,10 @@ edge-tts>=6.1.0
 
 # Serial communication (for Arduino COB LED)
 pyserial>=3.5
+
+# Vision (CV support)
+# Note: opencv-python-headless avoids GUI dependencies
+# Provides: opencv_hog (person), opencv_face, opencv_motion detectors
+opencv-python-headless>=4.10.0.84
 
 
