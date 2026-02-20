@@ -77,7 +77,7 @@ voice:
 speaker:
   type: i2s                      # 'usb', 'i2s', or 'hdmi'
   device: plughw:3,0             # ALSA device (MAX98357A is card 3)
-  volume: 6.0                    # Volume multiplier (1.0 = normal, 2.0 = 2x louder)
+  volume: 4.0                    # Volume multiplier (1.0 = normal, 2.0 = 2x louder)
   # For MAX98357A I2S DAC: uses GPIO 18 (BCLK), GPIO 19 (LRCLK), GPIO 21 (DIN)
 
 # Text-to-speech output
@@ -117,25 +117,26 @@ storage:
 # Vision runtime (camera + CV/VLM processing)
 # Requires: Pi Camera Module (ribbon cable) or USB webcam
 vision:
-  enabled: false                 # Set true to enable vision features
+  enabled: true                  # Set true to enable vision features
   camera_index: 0                # Camera device index (0 = Pi Camera via ribbon)
   camera_width: 320              # Capture width (lower = faster CV on Pi)
   camera_height: 240             # Capture height (320x240 recommended for CV)
   mode: polling                  # polling | realtime
   latest_frame_only: true        # Keep only newest frame while processing
-  model: gpt-4o-mini             # OpenAI vision model for VLM engine
   interval_ms: 2000              # Default VLM interval (>=2s, slower but semantic)
   cooldown_ms: 1500              # Minimum time between emitting same event
-  min_confidence: 0.55           # Confidence threshold for VLM events
   max_image_chars: 2500000       # Max base64 data URL size
   cv:
-    enabled: true                # Allow CV detectors
+    enabled: false                # Enable CV detectors (local, fast, no API needed)
     interval_ms: 200             # Default CV interval (fast, local processing)
-    # Detector is chosen per-state via vision_reactive.cv_detector
     # Available detectors:
     #   - opencv_hog: person/body detection (recommended)
     #   - opencv_face: face detection
     #   - opencv_motion: motion score 0-1
+  vlm:
+    enabled: true               # Enable VLM engine (requires OpenAI API, slower)
+    model: gpt-4o-mini           # OpenAI vision model
+    min_confidence: 0.55         # Confidence threshold for VLM events
 
 # API runtime (api-reactive polling)
 api:

@@ -79,6 +79,7 @@ class AdaptLightRaspi:
         # Initialize Brain
         speech_config = self.config.get('speech', {})
         representation_config = self.config.get('representation', {})
+        vision_config = self.config.get('vision', {})
         brain_config = {
             'mode': self.config['brain']['mode'],
             'model': self.config['brain']['model'],
@@ -91,6 +92,7 @@ class AdaptLightRaspi:
             'speech_instructions': speech_config.get('instructions') if speech_config.get('enabled') else None,
             'representation_version': representation_config.get('version', 'stdlib'),
             'speech_mode': speech_config.get('mode', 'default'),
+            'vision_config': vision_config,  # Pass vision capabilities to agent
         }
         self.smgen = SMgenerator(brain_config)
 
@@ -99,7 +101,8 @@ class AdaptLightRaspi:
         self.vision_runtime = VisionRuntime(
             smgen=self.smgen,
             config=vision_config,
-            openai_api_key=self.config['openai']['api_key']
+            openai_api_key=self.config['openai']['api_key'],
+            verbose=verbose
         ) if vision_config.get('enabled') else None
 
         # Initialize API Runtime (for api-reactive features)
@@ -257,47 +260,108 @@ class AdaptLightRaspi:
         self.camera_thread = None
         self._camera_running = False
         self._vision_session_id = None
+        self._use_picamera = False
 
         vision_config = self.config.get('vision', {})
         if not vision_config.get('enabled') or not self.vision_runtime:
             return
 
+        width = vision_config.get('camera_width', 320)
+        height = vision_config.get('camera_height', 240)
+
+        # Try picamera2 first (for Pi Camera ribbon cable)
         try:
-            import cv2
-            import base64
+            from picamera2 import Picamera2
             import threading
 
-            # Try to open camera (0 = default camera)
-            camera_index = vision_config.get('camera_index', 0)
-            self.camera = cv2.VideoCapture(camera_index)
+            print(f"📷 Initializing Pi Camera (picamera2)...")
+            self.camera = Picamera2()
 
-            if not self.camera.isOpened():
-                print(f"Camera {camera_index} not available, vision disabled")
+            # Check if camera is available
+            camera_info = self.camera.global_camera_info()
+            if not camera_info:
+                print("❌ No Pi Camera detected, trying OpenCV...")
                 self.camera = None
-                return
+            else:
+                print(f"   Found: {camera_info[0].get('Model', 'unknown')}")
 
-            # Set camera resolution (lower for Pi performance)
-            width = vision_config.get('camera_width', 640)
-            height = vision_config.get('camera_height', 480)
-            self.camera.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-            self.camera.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+                # Configure camera
+                config = self.camera.create_still_configuration(
+                    main={"size": (width, height), "format": "RGB888"}
+                )
+                self.camera.configure(config)
+                self.camera.start()
 
-            print(f"Camera initialized: {width}x{height}")
-
-            # Start vision session
-            session = self.vision_runtime.start_session(user_id=self.device_id)
-            self._vision_session_id = session.get('session_id')
-            print(f"Vision session started: {self._vision_session_id}")
-
-            # Start camera capture thread
-            self._camera_running = True
-            self.camera_thread = threading.Thread(target=self._camera_loop, daemon=True)
-            self.camera_thread.start()
+                # Test capture
+                import time
+                time.sleep(0.3)  # Let camera warm up
+                test_frame = self.camera.capture_array()
+                if test_frame is not None:
+                    actual_h, actual_w = test_frame.shape[:2]
+                    print(f"✅ Pi Camera OK: {actual_w}x{actual_h}")
+                    self._use_picamera = True
+                else:
+                    print("❌ Pi Camera test capture failed")
+                    self.camera.stop()
+                    self.camera = None
 
         except ImportError:
-            print("OpenCV not installed, vision disabled")
+            print("📷 picamera2 not available, trying OpenCV...")
         except Exception as e:
-            print(f"Camera initialization failed: {e}")
+            print(f"📷 Pi Camera init failed: {e}, trying OpenCV...")
+            self.camera = None
+
+        # Fallback to OpenCV (for USB webcams)
+        if self.camera is None:
+            try:
+                import cv2
+                import threading
+
+                camera_index = vision_config.get('camera_index', 0)
+                print(f"📷 Trying OpenCV camera {camera_index}...")
+
+                self.camera = cv2.VideoCapture(camera_index)
+
+                if not self.camera.isOpened():
+                    print(f"❌ Camera {camera_index} not available, vision disabled")
+                    self.camera = None
+                    return
+
+                self.camera.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+                self.camera.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+
+                ret, test_frame = self.camera.read()
+                if ret and test_frame is not None:
+                    actual_h, actual_w = test_frame.shape[:2]
+                    print(f"✅ OpenCV Camera OK: {actual_w}x{actual_h}")
+                    self._use_picamera = False
+                else:
+                    print(f"❌ OpenCV camera test capture failed!")
+                    self.camera.release()
+                    self.camera = None
+                    return
+
+            except ImportError:
+                print("❌ OpenCV not installed, vision disabled")
+                return
+            except Exception as e:
+                print(f"❌ OpenCV camera init failed: {e}")
+                return
+
+        if self.camera is None:
+            print("❌ No camera available, vision disabled")
+            return
+
+        # Start vision session
+        import threading
+        session = self.vision_runtime.start_session(user_id=self.device_id)
+        self._vision_session_id = session.get('session_id')
+        print(f"Vision session started: {self._vision_session_id}")
+
+        # Start camera capture thread
+        self._camera_running = True
+        self.camera_thread = threading.Thread(target=self._camera_loop, daemon=True)
+        self.camera_thread.start()
 
     def _camera_loop(self):
         """Background thread for camera capture and vision processing."""
@@ -312,12 +376,27 @@ class AdaptLightRaspi:
         # Use CV interval if CV is the primary engine
         capture_interval_ms = min(interval_ms, cv_interval_ms) if vision_config.get('cv', {}).get('enabled') else interval_ms
 
-        while self._camera_running and self.camera and self.camera.isOpened():
+        camera_type = "picamera2" if self._use_picamera else "OpenCV"
+        print(f"📹 Camera loop started ({camera_type}, interval: {capture_interval_ms}ms)")
+
+        while self._camera_running and self.camera:
             try:
-                ret, frame = self.camera.read()
-                if not ret:
-                    time.sleep(0.1)
-                    continue
+                # Capture frame based on camera type
+                if self._use_picamera:
+                    # picamera2 returns RGB, convert to BGR for OpenCV
+                    frame_rgb = self.camera.capture_array()
+                    if frame_rgb is None:
+                        time.sleep(0.1)
+                        continue
+                    frame = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
+                else:
+                    # OpenCV VideoCapture
+                    if not self.camera.isOpened():
+                        break
+                    ret, frame = self.camera.read()
+                    if not ret or frame is None:
+                        time.sleep(0.1)
+                        continue
 
                 # Encode frame as JPEG base64 data URL
                 _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
@@ -330,6 +409,10 @@ class AdaptLightRaspi:
                         session_id=self._vision_session_id,
                         image_data_url=image_data_url
                     )
+
+                    if self.verbose and result.get('processed'):
+                        vision_data = result.get('vision', {})
+                        print(f"[Vision] Processed: {vision_data}")
 
                     if result.get('processed') and result.get('emitted_events'):
                         if self.verbose:
@@ -660,7 +743,10 @@ class AdaptLightRaspi:
         if self.camera_thread and self.camera_thread.is_alive():
             self.camera_thread.join(timeout=2)
         if self.camera:
-            self.camera.release()
+            if self._use_picamera:
+                self.camera.stop()
+            else:
+                self.camera.release()
             print("Camera released")
 
         # Stop vision session

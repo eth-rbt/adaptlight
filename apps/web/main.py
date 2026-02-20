@@ -99,6 +99,7 @@ def create_app(config_path: str = None) -> Flask:
         'openai_api_key': config['openai']['api_key'],
         'storage_dir': config.get('storage', {}).get('dir', 'data/storage'),
         'representation_version': representation_version,
+        'vision_config': config.get('vision', {}),  # Pass vision capabilities to agent
     }
     smgen = SMgenerator(smgen_config)
 

@@ -25,21 +25,28 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 class VisionRuntime:
     """Web runtime for camera + OpenAI VLM processing."""
 
-    def __init__(self, smgen: "SMgenerator", config: dict = None, openai_api_key: str = None):
+    def __init__(self, smgen: "SMgenerator", config: dict = None, openai_api_key: str = None, verbose: bool = False):
         self.smgen = smgen
         self.state_machine = smgen.state_machine
         self.config = config or {}
         self.enabled = self.config.get('enabled', False)
+        self.verbose = verbose
         self.mode = str(self.config.get('mode', 'polling')).lower()
         self.latest_frame_only = bool(self.config.get('latest_frame_only', True))
-        self.default_model = self.config.get('model', 'gpt-4o-mini')
         self.default_interval_ms = max(2000, int(self.config.get('interval_ms', 2000)))
-        self.cv_config = self.config.get('cv', {}) if isinstance(self.config.get('cv', {}), dict) else {}
-        self.cv_enabled = bool(self.cv_config.get('enabled', True))
-        self.cv_default_interval_ms = max(100, int(self.cv_config.get('interval_ms', 200)))  # CV can be fast (100-200ms)
-        self.cv_default_detector = str(self.cv_config.get('detector', 'opencv_hog')).lower()
         self.default_cooldown_ms = int(self.config.get('cooldown_ms', 1500))
         self.max_image_chars = int(self.config.get('max_image_chars', 2_500_000))
+
+        # CV config
+        self.cv_config = self.config.get('cv', {}) if isinstance(self.config.get('cv', {}), dict) else {}
+        self.cv_enabled = bool(self.cv_config.get('enabled', False))
+        self.cv_default_interval_ms = max(100, int(self.cv_config.get('interval_ms', 200)))
+        self.cv_default_detector = str(self.cv_config.get('detector', 'opencv_hog')).lower()
+
+        # VLM config
+        self.vlm_config = self.config.get('vlm', {}) if isinstance(self.config.get('vlm', {}), dict) else {}
+        self.vlm_enabled = bool(self.vlm_config.get('enabled', False))
+        self.default_model = self.vlm_config.get('model', 'gpt-4o-mini')
 
         self._openai_api_key = openai_api_key
         self._openai_client = None
@@ -240,12 +247,16 @@ class VisionRuntime:
 
         watchers = self._get_active_watchers()
         if not watchers:
+            if self.verbose:
+                print(f"[Vision] No active watchers for state: {self.state_machine.get_state()}")
             return {
                 'success': True,
                 'processed': False,
                 'reason': 'no_active_vision_watchers',
                 'state': self.smgen.get_state(),
             }
+        elif self.verbose:
+            print(f"[Vision] Active watchers: {[w.get('name') for w in watchers]}")
 
         now_ms = int(time.time() * 1000)
         emitted_events = []
@@ -254,6 +265,11 @@ class VisionRuntime:
         for watcher in watchers:
             watcher_key = str(watcher.get('name') or watcher.get('event') or 'watcher')
             engine = self._resolve_engine(watcher)
+
+            # Skip if no engine available
+            if engine is None:
+                continue
+
             interval_ms = self._resolve_interval_ms(watcher, engine)
 
             # Check throttling
@@ -412,22 +428,50 @@ class VisionRuntime:
 
     def _resolve_engine(self, watcher: dict) -> str:
         """
-        Resolve which engine to use (simplified).
+        Resolve which engine to use based on request and availability.
 
-        - Explicit engine setting takes precedence
-        - Auto: use CV if prompt looks CV-friendly, otherwise VLM
+        - Explicit engine setting takes precedence (if enabled)
+        - Auto: use CV if available and prompt looks CV-friendly, otherwise VLM
+        - Returns None if no engine is available
         """
         requested = self._normalize_engine(watcher.get('engine', 'auto'))
-        if requested in ('cv', 'vlm', 'hybrid'):
-            return requested
 
-        # Auto mode: check if prompt looks CV-friendly
+        # Check explicit engine requests
+        if requested == 'cv':
+            if self.cv_enabled:
+                return 'cv'
+            if self.verbose:
+                print(f"[Vision] CV requested but not enabled, skipping")
+            return None
+        elif requested == 'vlm':
+            if self.vlm_enabled:
+                return 'vlm'
+            if self.verbose:
+                print(f"[Vision] VLM requested but not enabled, skipping")
+            return None
+        elif requested == 'hybrid':
+            if self.cv_enabled and self.vlm_enabled:
+                return 'hybrid'
+            if self.cv_enabled:
+                return 'cv'
+            if self.vlm_enabled:
+                return 'vlm'
+            return None
+
+        # Auto mode: prefer CV if available and appropriate
         detector = str(watcher.get('cv_detector') or self.cv_default_detector).lower()
         prompt = watcher.get('prompt', '')
 
-        if detector in ('opencv_hog', 'opencv_face', 'opencv_motion') and self._looks_cv_friendly(prompt):
+        if self.cv_enabled and detector in ('opencv_hog', 'opencv_face', 'opencv_motion') and self._looks_cv_friendly(prompt):
             return 'cv'
-        return 'vlm'
+        if self.vlm_enabled:
+            return 'vlm'
+        if self.cv_enabled:
+            return 'cv'
+
+        if self.verbose:
+            print(f"[Vision] No vision engine available (cv={self.cv_enabled}, vlm={self.vlm_enabled})")
+        return None
 
     def _resolve_interval_ms(self, watcher: dict, effective_engine: str) -> int:
         interval_value = watcher.get('interval_ms')
@@ -634,23 +678,33 @@ class VisionRuntime:
     def _analyze_with_cv(self, session_id: str, image_data_url: str, detector: str) -> dict:
         """Run CV detector and return raw JSON output."""
         if not self.cv_enabled:
+            if self.verbose:
+                print(f"[CV] CV runtime disabled")
             return {'_error': 'cv runtime disabled', '_detector': 'cv'}
 
         frame = self._decode_image_for_cv(image_data_url)
         if frame is None:
+            if self.verbose:
+                print(f"[CV] Failed to decode image")
             return {'_error': 'unable to decode image', '_detector': 'cv'}
 
         detector_name = str(detector or self.cv_default_detector).lower()
+        if self.verbose:
+            print(f"[CV] Running detector: {detector_name}, frame shape: {frame.shape}")
+
         if detector_name in ('hog', 'opencv_hog', 'person'):
-            return self._cv_opencv_hog(frame)
+            result = self._cv_opencv_hog(frame)
         elif detector_name in ('face', 'opencv_face'):
-            return self._cv_opencv_face(frame)
+            result = self._cv_opencv_face(frame)
         elif detector_name in ('motion', 'opencv_motion'):
-            return self._cv_opencv_motion(session_id, frame)
+            result = self._cv_opencv_motion(session_id, frame)
         else:
             result = self._cv_opencv_hog(frame)
             result['_fallback'] = f"unknown detector '{detector_name}', used opencv_hog"
-            return result
+
+        if self.verbose:
+            print(f"[CV] Result: {result}")
+        return result
 
     def _cv_opencv_hog(self, frame) -> dict:
         """Raw JSON output: person_count only."""

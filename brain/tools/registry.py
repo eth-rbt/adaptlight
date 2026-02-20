@@ -28,17 +28,24 @@ from brain.core.pipeline import PipelineExecutor
 class ToolRegistry:
     """Registry of tools available to the agent."""
 
-    def __init__(self, state_machine=None, api_key: str = None):
+    def __init__(self, state_machine=None, api_key: str = None, vision_config: dict = None):
         """
         Initialize tool registry.
 
         Args:
             state_machine: StateMachine instance to operate on
             api_key: Anthropic API key for LLM parsing in pipelines
+            vision_config: Vision configuration with cv/vlm enabled flags
         """
         self.state_machine = state_machine
         self.api_key = api_key
         self.tools: Dict[str, Dict[str, Any]] = {}
+
+        # Vision capabilities
+        vision_config = vision_config or {}
+        self.cv_enabled = vision_config.get('cv', {}).get('enabled', False)
+        self.vlm_enabled = vision_config.get('vlm', {}).get('enabled', False)
+        self.vision_enabled = vision_config.get('enabled', False) and (self.cv_enabled or self.vlm_enabled)
 
         # Custom tools executor for Claude-defined API integrations
         self.custom_tool_executor = CustomToolExecutor(timeout=30.0)
@@ -130,6 +137,126 @@ class ToolRegistry:
         inline.setdefault('enabled', True)
         return inline
 
+    def _build_create_state_tool(self) -> tuple:
+        """Build createState tool description and schema based on vision capabilities."""
+
+        # Base description
+        desc_parts = [
+            "Create a named light state. Two formats supported:",
+            "",
+            "1. Original format (r/g/b): Use expressions like 'sin(frame * 0.1) * 255' for animations.",
+            "2. Code format: Define render(prev, t) function that returns ((r,g,b), next_ms).",
+            "   - next_ms > 0: animation continues",
+            "   - next_ms = None: static state",
+            "   - next_ms = 0: state complete (triggers state_complete transition)",
+            "",
+            "Use voice_reactive for mic-reactive brightness.",
+        ]
+
+        # Add vision_reactive description based on capabilities
+        if self.vision_enabled:
+            desc_parts.append("Use vision_reactive for camera-reactive behavior:")
+            desc_parts.append("   - All vision output writes to getData('vision')")
+            if self.cv_enabled:
+                desc_parts.append("   - CV: fast (100ms+), outputs raw data (person_count, face_count, motion_score)")
+                desc_parts.append("     Detectors: opencv_hog (person), opencv_face, opencv_motion")
+            if self.vlm_enabled:
+                desc_parts.append("   - VLM: slow (2000ms+), semantic understanding, can emit events")
+
+        desc_parts.append("Use api_reactive for API-reactive behavior:")
+        desc_parts.append("   - Polls preset APIs or custom URLs at interval_ms")
+        desc_parts.append("   - Writes results to getData(key)")
+        desc_parts.append("   - Can emit events for rule transitions")
+
+        description = "\n".join(desc_parts)
+
+        # Build vision_reactive schema based on capabilities
+        vision_reactive_schema = None
+        if self.vision_enabled:
+            vision_props = {
+                "enabled": {"type": "boolean", "description": "Enable vision-reactive mode"}
+            }
+
+            engine_options = []
+            if self.cv_enabled:
+                engine_options.append("cv")
+                vision_props["cv_detector"] = {
+                    "type": "string",
+                    "enum": ["opencv_hog", "opencv_face", "opencv_motion"],
+                    "description": "opencv_hog (person detection), opencv_face, opencv_motion"
+                }
+            if self.vlm_enabled:
+                engine_options.append("vlm")
+                vision_props["prompt"] = {"type": "string", "description": "What to observe (required for VLM)"}
+                vision_props["model"] = {"type": "string", "description": "OpenAI vision model (default gpt-4o-mini)"}
+                vision_props["event"] = {"type": "string", "description": "Event name for VLM to emit"}
+            if self.cv_enabled and self.vlm_enabled:
+                engine_options.append("hybrid")
+
+            if engine_options:
+                vision_props["engine"] = {
+                    "type": "string",
+                    "enum": engine_options,
+                    "description": f"Vision engine: {' | '.join(engine_options)}"
+                }
+
+            vision_props["interval_ms"] = {"type": "number", "description": "Analyze interval (CV >=100ms, VLM >=2000ms)"}
+            vision_props["cooldown_ms"] = {"type": "number", "description": "Minimum time between event emissions"}
+
+            vision_reactive_schema = {
+                "type": ["object", "null"],
+                "description": f"Enable camera-reactive behavior. Available engines: {', '.join(engine_options)}",
+                "properties": vision_props
+            }
+
+        # Build full schema
+        schema = {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "State name"},
+                "r": {"type": ["number", "string", "null"], "description": "Red value (0-255) or expression (original format)"},
+                "g": {"type": ["number", "string", "null"], "description": "Green value (0-255) or expression (original format)"},
+                "b": {"type": ["number", "string", "null"], "description": "Blue value (0-255) or expression (original format)"},
+                "speed": {"type": ["number", "null"], "description": "Animation speed in ms (null for static, original format)"},
+                "code": {"type": ["string", "null"], "description": "Python code defining render(prev, t) function (code format)"},
+                "description": {"type": ["string", "null"], "description": "Human-readable description"},
+                "voice_reactive": {
+                    "type": ["object", "null"],
+                    "description": "Enable mic-reactive brightness. LED brightness follows audio input volume.",
+                    "properties": {
+                        "enabled": {"type": "boolean", "description": "Enable voice-reactive mode"},
+                        "color": {"type": "array", "items": {"type": "number"}, "description": "Optional [r,g,b] override color"},
+                        "smoothing_alpha": {"type": "number", "description": "Smoothing factor 0-1 (lower=smoother, default 0.6)"},
+                        "min_amplitude": {"type": "number", "description": "Noise floor threshold (default 100)"},
+                        "max_amplitude": {"type": "number", "description": "Full brightness threshold (default 5000)"}
+                    }
+                },
+                "api_reactive": {
+                    "type": ["object", "null"],
+                    "description": "Enable API-reactive behavior. Polls APIs and writes results to getData(key).",
+                    "properties": {
+                        "enabled": {"type": "boolean", "description": "Enable API-reactive mode"},
+                        "api": {"type": "string", "description": "Preset API name (weather, stock, crypto, etc.)"},
+                        "url": {"type": "string", "description": "Custom URL (overrides api if provided)"},
+                        "method": {"type": "string", "description": "HTTP method for custom URL (GET, POST, etc.)"},
+                        "headers": {"type": "object", "description": "Custom headers for URL requests"},
+                        "params": {"type": "object", "description": "API parameters or request body"},
+                        "interval_ms": {"type": "number", "description": "Polling interval in ms (min 1000ms)"},
+                        "key": {"type": "string", "description": "Key to write results to in state_data"},
+                        "event": {"type": "string", "description": "Event to emit when data updates"},
+                        "cooldown_ms": {"type": "number", "description": "Minimum time between event emissions"}
+                    }
+                }
+            },
+            "required": ["name"]
+        }
+
+        # Add vision_reactive to schema if enabled
+        if vision_reactive_schema:
+            schema["properties"]["vision_reactive"] = vision_reactive_schema
+
+        return description, schema
+
     def _register_agent_tools(self):
         """Register all agent tools."""
 
@@ -190,80 +317,12 @@ class ToolRegistry:
             handler=self._handle_get_docs
         )
 
-        # State management tools
+        # State management tools (dynamic based on vision capabilities)
+        create_state_desc, create_state_schema = self._build_create_state_tool()
         self.register_tool(
             name="createState",
-            description="""Create a named light state. Two formats supported:
-
-1. Original format (r/g/b): Use expressions like 'sin(frame * 0.1) * 255' for animations.
-2. Code format: Define render(prev, t) function that returns ((r,g,b), next_ms).
-   - next_ms > 0: animation continues
-   - next_ms = None: static state
-   - next_ms = 0: state complete (triggers state_complete transition)
-
-Use voice_reactive for mic-reactive brightness.
-Use vision_reactive for camera-reactive behavior:
-   - All vision output writes to getData('vision')
-   - CV: fast (100ms+), outputs raw data (person_count, hand_positions, etc.)
-   - VLM: slow (2000ms+), can emit events via _event field
-Use api_reactive for API-reactive behavior:
-   - Polls preset APIs or custom URLs at interval_ms
-   - Writes results to getData(key)
-   - Can emit events for rule transitions""",
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "name": {"type": "string", "description": "State name"},
-                    "r": {"type": ["number", "string", "null"], "description": "Red value (0-255) or expression (original format)"},
-                    "g": {"type": ["number", "string", "null"], "description": "Green value (0-255) or expression (original format)"},
-                    "b": {"type": ["number", "string", "null"], "description": "Blue value (0-255) or expression (original format)"},
-                    "speed": {"type": ["number", "null"], "description": "Animation speed in ms (null for static, original format)"},
-                    "code": {"type": ["string", "null"], "description": "Python code defining render(prev, t) function (code format)"},
-                    "description": {"type": ["string", "null"], "description": "Human-readable description"},
-                    "voice_reactive": {
-                        "type": ["object", "null"],
-                        "description": "Enable mic-reactive brightness. LED brightness follows audio input volume.",
-                        "properties": {
-                            "enabled": {"type": "boolean", "description": "Enable voice-reactive mode"},
-                            "color": {"type": "array", "items": {"type": "number"}, "description": "Optional [r,g,b] override color"},
-                            "smoothing_alpha": {"type": "number", "description": "Smoothing factor 0-1 (lower=smoother, default 0.6)"},
-                            "min_amplitude": {"type": "number", "description": "Noise floor threshold (default 100)"},
-                            "max_amplitude": {"type": "number", "description": "Full brightness threshold (default 5000)"}
-                        }
-                    },
-                    "vision_reactive": {
-                        "type": ["object", "null"],
-                        "description": "Enable camera-reactive behavior. Output writes to getData('vision'). CV outputs raw data, VLM can emit events.",
-                        "properties": {
-                            "enabled": {"type": "boolean", "description": "Enable vision-reactive mode"},
-                            "prompt": {"type": "string", "description": "What to observe (required for VLM, optional for CV)"},
-                            "model": {"type": "string", "description": "OpenAI vision model (default gpt-4o-mini)"},
-                            "engine": {"type": "string", "description": "cv | vlm | hybrid. CV is fast (100ms+), VLM is slow (2000ms+)"},
-                            "cv_detector": {"type": "string", "description": "opencv_hog | opencv_face | opencv_motion"},
-                            "interval_ms": {"type": "number", "description": "Analyze interval: CV >=100ms, VLM >=2000ms"},
-                            "event": {"type": "string", "description": "Event name for VLM to emit (VLM only, CV doesn't emit events)"},
-                            "cooldown_ms": {"type": "number", "description": "Minimum time between event emissions"}
-                        }
-                    },
-                    "api_reactive": {
-                        "type": ["object", "null"],
-                        "description": "Enable API-reactive behavior. Polls APIs and writes results to getData(key). Can emit events for rule transitions.",
-                        "properties": {
-                            "enabled": {"type": "boolean", "description": "Enable API-reactive mode"},
-                            "api": {"type": "string", "description": "Preset API name (weather, stock, crypto, etc.)"},
-                            "url": {"type": "string", "description": "Custom URL (overrides api if provided)"},
-                            "method": {"type": "string", "description": "HTTP method for custom URL (GET, POST, etc.)"},
-                            "headers": {"type": "object", "description": "Custom headers for URL requests"},
-                            "params": {"type": "object", "description": "API parameters or request body"},
-                            "interval_ms": {"type": "number", "description": "Polling interval in ms (min 1000ms)"},
-                            "key": {"type": "string", "description": "Key to write results to in state_data"},
-                            "event": {"type": "string", "description": "Event to emit when data updates (for rule transitions)"},
-                            "cooldown_ms": {"type": "number", "description": "Minimum time between event emissions"}
-                        }
-                    }
-                },
-                "required": ["name"]
-            },
+            description=create_state_desc,
+            input_schema=create_state_schema,
             handler=self._handle_create_state
         )
 

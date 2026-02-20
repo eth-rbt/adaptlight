@@ -110,11 +110,12 @@ class SMgenerator:
             representation_version=self.representation_version
         )
 
-        # Initialize tool registry
+        # Initialize tool registry with vision capabilities
         from brain.tools.registry import ToolRegistry
         self.tools = ToolRegistry(
             state_machine=self.state_machine,
-            api_key=config.get('anthropic_api_key')
+            api_key=config.get('anthropic_api_key'),
+            vision_config=config.get('vision_config')
         )
 
         # Initialize processor based on mode
