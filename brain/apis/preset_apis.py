@@ -161,9 +161,9 @@ PRESET_APIS = {
         "params": {
             "timezone": {
                 "type": "string",
-                "description": "Timezone (optional, defaults to local)",
+                "description": "Timezone based on current continent/city (Optional, will default to America/New_York)",
                 "required": False,
-                "default": "local",
+                "default": "America/New_York",
                 "examples": ["America/New_York", "Europe/London", "Asia/Tokyo"]
             }
         },
@@ -171,7 +171,7 @@ PRESET_APIS = {
             "hour": "Current hour (0-23)",
             "minute": "Current minute (0-59)",
             "second": "Current second (0-59)",
-            "weekday": "Day of week (0=Monday, 6=Sunday)",
+            "weekday": "Day of week (Monday=0, Tuesday=1, Wednesday=2, Thursday=3, Friday=4, Saturday=5, Sunday=6)",
             "is_weekend": "True if Saturday or Sunday",
             "is_business_hours": "True if 9am-5pm on weekday"
         },
