@@ -276,9 +276,9 @@ class APIExecutor:
         now = datetime.now(ZoneInfo(params.get('timezone', "Asia/Tokyo"))) #MUST SPECIFY TIMEZONE
         print("Your date and time is this =", now) #Checking if issue is with Datetime class
 
-        weekday = now.weekday() + 1
+        weekday = now.weekday()+1
         print("The weekday is ", weekday)
-        is_weekend = weekday >= 5
+        is_weekend = weekday >= 6
         is_business = not is_weekend and 9 <= now.hour < 17
 
         return {
