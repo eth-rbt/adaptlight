@@ -432,7 +432,7 @@ class AudioRuntime:
                 messages=[
                     {"role": "system", "content": instruction},
                     {"role": "user", "content": [
-                        {"type": "input_audio", "input_audio": {"data": audio_b64, "format": audio_format}},
+                        {"type": "audio", "audio": {"data": audio_b64, "format": audio_format}},
                         {"type": "text", "text": user_payload},
                     ]},
                 ],
