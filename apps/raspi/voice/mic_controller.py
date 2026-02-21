@@ -296,6 +296,14 @@ class MicController:
             print("[Mic] Not running, cannot start recording")
             return
 
+        # Warn if stream is unhealthy
+        if not self._stream_healthy:
+            print("[Mic] WARNING: Starting recording with unhealthy stream!")
+        if not self._stream_gate.is_set():
+            print("[Mic] WARNING: Starting recording while stream gate is closed (restart in progress)!")
+            # Wait briefly for restart to complete
+            self._stream_gate.wait(timeout=1.0)
+
         with self._lock:
             # Flush stale frames from queue
             flushed = 0
@@ -838,13 +846,19 @@ class MicController:
                 # Check for stall
                 silence_sec = time.monotonic() - self._last_frame_time
 
+                # Get current mode
+                with self._lock:
+                    mode = self._mode
+
                 # Debug log every 5 seconds
                 if tick_count % 10 == 0:
-                    with self._lock:
-                        mode = self._mode
                     print(f"[Mic] Watchdog: mode={mode.value}, silence={silence_sec:.1f}s, "
                           f"frames_in={self._frames_in}, frames_out={self._frames_out}, "
                           f"drops={self._drops}, healthy={self._stream_healthy}")
+
+                # Don't restart during recording - could lose audio!
+                if mode == MicMode.RECORDING:
+                    continue
 
                 if silence_sec > self._watchdog_stall_sec:
                     print(f"[Mic] Watchdog: {silence_sec:.1f}s stall detected, restarting...")
