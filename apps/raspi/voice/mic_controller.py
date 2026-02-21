@@ -304,8 +304,7 @@ class MicController:
             self._recording_buffer = bytearray()
             self._recording_callback = on_audio_data
 
-            if self.verbose:
-                print(f"[Mic] RECORDING started (flushed {flushed} stale frames)")
+            print(f"[Mic] RECORDING started (flushed {flushed} stale frames, frames_in={self._frames_in})")
 
         # Lock state machine transitions
         if self.state_machine:
@@ -553,6 +552,9 @@ class MicController:
         """Main processing loop - pulls frames from queue and dispatches."""
         print("[Mic] Processor thread started")
 
+        last_mode = None
+        frame_log_interval = 100  # Log every N frames
+
         while self._running:
             try:
                 # Get frame from queue with timeout
@@ -572,6 +574,15 @@ class MicController:
                     mode = self._mode
                     recording_callback = self._recording_callback
 
+                # Log mode changes
+                if mode != last_mode:
+                    print(f"[Mic] Mode changed: {last_mode.value if last_mode else 'None'} -> {mode.value}")
+                    last_mode = mode
+
+                # Periodic frame count log
+                if self._frames_out % frame_log_interval == 0:
+                    print(f"[Mic] Processor: {self._frames_out} frames processed, mode={mode.value}")
+
                 # Dispatch based on mode
                 if mode == MicMode.RECORDING:
                     self._handle_recording(frame, recording_callback)
@@ -583,8 +594,7 @@ class MicController:
                         with self._lock:
                             if self._mode == MicMode.IDLE:
                                 self._mode = MicMode.LISTENING
-                                if self.verbose:
-                                    print("[Mic] Watchers active -> LISTENING")
+                                print("[Mic] Watchers active -> LISTENING")
                     # Otherwise discard frame (IDLE mode)
 
             except Exception as e:
@@ -605,14 +615,13 @@ class MicController:
             try:
                 callback(frame)
             except Exception as e:
-                if self.verbose:
-                    print(f"[Mic] Recording callback error: {e}")
+                print(f"[Mic] Recording callback error: {e}")
 
         # Log progress periodically (~every second)
         buffer_chunks = len(self._recording_buffer) // (self._chunk_size * 2)
         if buffer_chunks > 0 and buffer_chunks % 43 == 0:  # ~1s at 44100Hz/1024
-            if self.verbose:
-                print(f"[Mic] Recording: {len(self._recording_buffer)} bytes")
+            duration_sec = len(self._recording_buffer) / (self._sample_rate * 2)
+            print(f"[Mic] Recording: {len(self._recording_buffer)} bytes ({duration_sec:.1f}s)")
 
     def _handle_listening(self, frame: bytes):
         """Handle frame in listening mode."""
@@ -790,23 +799,38 @@ class MicController:
 
         print(f"[Mic] Watchdog active (stall threshold: {self._watchdog_stall_sec}s)")
 
+        tick_count = 0
         while self._running:
             try:
+                tick_count += 1
+
                 # Skip if unhealthy (already gave up)
                 if not self._stream_healthy:
+                    if tick_count % 10 == 0:  # Log every 5s
+                        print(f"[Mic] Watchdog: stream unhealthy, waiting...")
                     time.sleep(1.0)
                     continue
 
                 # Check if stream is active
-                if self._stream and not self._stream.is_active():
+                stream_active = self._stream.is_active() if self._stream else False
+                if self._stream and not stream_active:
                     print("[Mic] Watchdog: stream not active, restarting...")
                     self._restart_stream()
                     continue
 
                 # Check for stall
                 silence_sec = time.monotonic() - self._last_frame_time
+
+                # Debug log every 5 seconds
+                if tick_count % 10 == 0:
+                    with self._lock:
+                        mode = self._mode
+                    print(f"[Mic] Watchdog: mode={mode.value}, silence={silence_sec:.1f}s, "
+                          f"frames_in={self._frames_in}, frames_out={self._frames_out}, "
+                          f"drops={self._drops}, healthy={self._stream_healthy}")
+
                 if silence_sec > self._watchdog_stall_sec:
-                    print(f"[Mic] Watchdog: {silence_sec:.1f}s stall, restarting...")
+                    print(f"[Mic] Watchdog: {silence_sec:.1f}s stall detected, restarting...")
                     self._restart_stream()
 
                 time.sleep(0.5)
