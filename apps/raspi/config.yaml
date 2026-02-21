@@ -40,12 +40,12 @@ hardware:
   led_pin: 2
 
   # Feedback buttons (Yes/No for Supabase logging)
-  feedback_yes_pin: 24
-  feedback_no_pin: 25
+  feedback_yes_pin: 12
+  feedback_no_pin: 24
 
 
   # COB LED GPIO PWM pins (for led_type: cob)
-  cob_red_pin: 12
+  cob_red_pin: 16
   cob_green_pin: 13
   cob_blue_pin: 19
   cob_max_duty_cycle: 2.0
@@ -59,7 +59,7 @@ hardware:
 reactive_lights:
   enabled: true
   type: neopixel
-  led_count: 35
+  led_count: 45
   spi_bus: 0                       # 0 = SPI0 (GPIO10), 1 = SPI1 (GPIO20)
   brightness: 0.5
 
@@ -146,3 +146,31 @@ api:
   min_interval_ms: 1000          # Minimum allowed interval (rate limit protection)
   timeout: 15.0                  # HTTP request timeout in seconds
   cooldown_ms: 1000              # Minimum time between emitting same event
+
+# Mic controller settings
+mic:
+  chunk_size: 1024               # Samples per audio frame
+  queue_size: 1000               # Max frames in buffer queue
+  watchdog_grace_sec: 3.0        # Wait before watchdog starts monitoring
+  watchdog_stall_sec: 5.0        # Silence threshold before restart
+  max_restarts: 3                # Give up after N restarts
+  restart_cooldown_sec: 0.5      # Wait between restarts
+
+# Audio LLM watcher runtime
+# Continuous mic -> transcription -> LLM analysis -> getData('audio') + events
+audio:
+  enabled: true
+  mode: transcribe               # 'transcribe' (audio → Whisper → GPT-4o-mini)
+  analysis_model: gpt-4o-mini    # Model for text analysis
+  interval_ms: 3000              # Seconds between analyses
+  cooldown_ms: 1500              # Min time between same event
+  max_transcript_chars: 20000    # Max transcript length
+
+# Volume watcher runtime (mic level processing)
+# Writes to getData('volume') for state render code to use
+volume:
+  enabled: true
+  interval_ms: 80
+  smoothing_alpha: 0.35
+  floor: 0.0
+  ceiling: 1.0
