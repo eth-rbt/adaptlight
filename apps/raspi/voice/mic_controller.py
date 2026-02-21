@@ -715,8 +715,7 @@ class MicController:
             if not transcript:
                 return
 
-            if self.verbose:
-                print(f"[Mic] Transcript: {transcript[:50]}...")
+            print(f"[Mic] Transcript: {transcript}")
 
             # Send to AudioRuntime
             result = self.audio_runtime.process_chunk(
@@ -737,12 +736,16 @@ class MicController:
     def _transcribe_audio(self, audio_data: bytes) -> str:
         """Transcribe audio using Replicate Whisper."""
         if not self.replicate_token:
+            print("[Mic] Transcription skipped: no Replicate token")
             return ""
 
         try:
             import wave
             import tempfile
             import replicate
+
+            duration_sec = len(audio_data) / (self._sample_rate * 2)
+            print(f"[Mic] Transcribing {len(audio_data)} bytes ({duration_sec:.1f}s)...")
 
             # Write to temp WAV file
             with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
@@ -770,18 +773,20 @@ class MicController:
                     )
 
                 if isinstance(output, dict):
-                    return output.get('transcription', '').strip()
+                    result = output.get('transcription', '').strip()
                 elif isinstance(output, str):
-                    return output.strip()
+                    result = output.strip()
                 else:
-                    return str(output).strip()
+                    result = str(output).strip()
+
+                print(f"[Mic] Transcription complete: '{result}'")
+                return result
 
             finally:
                 os.unlink(tmp_path)
 
         except Exception as e:
-            if self.verbose:
-                print(f"[Mic] Transcription error: {e}")
+            print(f"[Mic] Transcription error: {e}")
             return ""
 
     # =========================================================================
