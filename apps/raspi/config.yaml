@@ -64,8 +64,8 @@ reactive_lights:
   brightness: 0.5
 
   # Voice reactive sensitivity settings
-  min_amplitude: 5000             # Noise floor (below this = silence)
-  max_amplitude: 30000             # Max RMS for full brightness (lower = more sensitive)
+  min_amplitude: 2000             # Noise floor (below this = silence)
+  max_amplitude: 10000             # Max RMS for full brightness (lower = more sensitive)
   smoothing_alpha: 0.25            # Smoothing (0.1 = smooth/slow, 0.5 = responsive/jittery)
 
 # Voice input
@@ -87,9 +87,9 @@ speech:
   provider: openai               # 'openai' or 'edge'
   voice: nova                    # OpenAI: alloy, echo, fable, onyx, nova, shimmer
   instructions: |
-    Your response message will be spoken aloud. Keep it under 1 sentences.
-    VERY VEYR IMPORTANT:Be direct. Explain what you did technially. Explaing only the crucial information.
-    KEEP IT UNDER 1 SENTENCE.
+    Your response message will be spoken aloud. Keep in 1 sentences!!! ONLY ONE SENTENCE!!! ONLY ONE!!!
+    VERY VERY IMPORTANT:Be direct. Explain what you did technially. Explaing only the crucial information.
+    KEEP IT UNDER 1 SENTENCE. 
     Example: "Done, I've set it to warm orange" or "Party mode is on, now it will change colors", "stock up is red, down is green, yellow means no change."
 
 # Button timing
@@ -151,20 +151,26 @@ api:
 mic:
   chunk_size: 1024               # Samples per audio frame
   queue_size: 1000               # Max frames in buffer queue
+  watchdog_enabled: false        # Disable watchdog (restarts can cause issues)
   watchdog_grace_sec: 3.0        # Wait before watchdog starts monitoring
   watchdog_stall_sec: 5.0        # Silence threshold before restart
   max_restarts: 3                # Give up after N restarts
   restart_cooldown_sec: 0.5      # Wait between restarts
 
 # Audio LLM watcher runtime
-# Continuous mic -> transcription -> LLM analysis -> getData('audio') + events
+# Continuous mic -> LLM analysis -> getData('audio') + events
+# Two modes:
+#   - transcript: audio → Whisper transcription → GPT-4o-mini text analysis (default)
+#   - direct: audio → GPT-4o audio model (no transcription, faster but more API cost)
 audio:
   enabled: true
-  mode: transcribe               # 'transcribe' (audio → Whisper → GPT-4o-mini)
-  analysis_model: gpt-4o-mini    # Model for text analysis
-  interval_ms: 3000              # Seconds between analyses
+  mode: direct               # 'transcript' or 'direct'
+  model: gpt-4o-mini             # Model for text analysis (transcript mode)
+  direct_audio_model: gpt-audio-mini-2025-12-15  # Model for direct audio (direct mode)
+  interval_ms: 3000              # Milliseconds between analyses
   cooldown_ms: 1500              # Min time between same event
-  max_transcript_chars: 20000    # Max transcript length
+  max_transcript_chars: 20000    # Max transcript length (transcript mode)
+  max_audio_bytes: 5000000       # Max audio size in bytes (direct mode, ~5MB)
 
 # Volume watcher runtime (mic level processing)
 # Writes to getData('volume') for state render code to use

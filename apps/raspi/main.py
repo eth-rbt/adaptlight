@@ -263,9 +263,11 @@ class AdaptLightRaspi:
                     max_amp = reactive_config.get('max_amplitude')
                     if min_amp is not None or max_amp is not None:
                         self.voice_reactive.set_amplitude_range(min_amp, max_amp)
-                    print(f"Voice reactive initialized (min={min_amp}, max={max_amp}, smooth={smoothing})")
+                    if self.verbose:
+                        print(f"Voice reactive initialized (min={min_amp}, max={max_amp}, smooth={smoothing})")
                 except Exception as e:
-                    print(f"Voice reactive init failed: {e}")
+                    if self.verbose:
+                        print(f"Voice reactive init failed: {e}")
 
             print("Hardware initialized")
 
@@ -522,13 +524,16 @@ class AdaptLightRaspi:
 
             # Start the controller
             if self.mic_controller.start():
-                print("Mic controller initialized")
+                if self.verbose:
+                    print("Mic controller initialized")
             else:
-                print("Mic controller failed to start")
+                if self.verbose:
+                    print("Mic controller failed to start")
                 self.mic_controller = None
 
         except Exception as e:
-            print(f"Mic controller initialization failed: {e}")
+            if self.verbose:
+                print(f"Mic controller initialization failed: {e}")
             import traceback
             traceback.print_exc()
             self.mic_controller = None
@@ -583,10 +588,12 @@ class AdaptLightRaspi:
 
             # Wait for any existing TTS to finish first
             if self.tts_thread and self.tts_thread.is_alive():
-                print(f"🔊 Waiting for previous TTS to finish...")
+                if self.verbose:
+                    print(f"🔊 Waiting for previous TTS to finish...")
                 self.tts_thread.join(timeout=10)
 
-            print(f"🔊 Starting early TTS generation...")
+            if self.verbose:
+                print(f"🔊 Starting early TTS generation...")
             # Start TTS generation in background thread (non-daemon so it completes)
             self.tts_thread = threading.Thread(
                 target=self.tts.speak,
@@ -606,7 +613,11 @@ class AdaptLightRaspi:
 
     def _handle_record_button(self):
         """Handle record button press."""
-        print(f"Record button pressed (is_recording={self.is_recording})")
+        if self.verbose:
+            mic_status = "none"
+            if self.mic_controller:
+                mic_status = f"running={self.mic_controller._running}, healthy={self.mic_controller._stream_healthy}"
+            print(f"Record button pressed (is_recording={self.is_recording}, mic={mic_status})")
 
         # Check if we have a mic controller or voice input
         if not self.mic_controller and not self.voice:
@@ -634,30 +645,37 @@ class AdaptLightRaspi:
                 transcribed_text = self.voice.stop_recording()
 
             if transcribed_text:
-                print(f"Transcribed: {transcribed_text}")
+                if self.verbose:
+                    print(f"Transcribed: {transcribed_text}")
                 # Reset TTS thread before processing
                 self.tts_thread = None
                 result = self.smgen.process(transcribed_text)
                 if result.message:
-                    print(f"Response: {result.message}")
+                    if self.verbose:
+                        print(f"Response: {result.message}")
 
                     # Wait for early TTS thread if it was started, otherwise speak now
                     if self.tts_thread:
                         if self.tts_thread.is_alive():
-                            print("🔊 Waiting for TTS to finish...")
+                            if self.verbose:
+                                print("🔊 Waiting for TTS to finish...")
                             self.tts_thread.join()
-                            print("🔊 TTS thread completed")
+                            if self.verbose:
+                                print("🔊 TTS thread completed")
                         else:
-                            print("🔊 TTS thread already finished")
+                            if self.verbose:
+                                print("🔊 TTS thread already finished")
                     elif self.tts:
                         # Fallback: TTS wasn't started early, speak now
-                        print("🔊 Fallback: speaking now...")
+                        if self.verbose:
+                            print("🔊 Fallback: speaking now...")
                         self.tts.speak(result.message)
 
                 # Log to Supabase
                 self._log_command_to_supabase(transcribed_text, result)
             else:
-                print("No transcription result")
+                if self.verbose:
+                    print("No transcription result")
                 if self.reactive_led:
                     self.reactive_led.stop_loading_animation()
         else:
@@ -689,7 +707,8 @@ class AdaptLightRaspi:
             else:
                 self.voice.start_recording(audio_callback=audio_callback)
 
-            print("Recording... Speak now!")
+            if self.verbose:
+                print("Recording... Speak now!")
 
     def _transcribe_audio(self, audio_bytes: bytes) -> str:
         """Transcribe audio bytes using Replicate Whisper."""
@@ -723,7 +742,8 @@ class AdaptLightRaspi:
                 if replicate_token:
                     os.environ['REPLICATE_API_TOKEN'] = replicate_token
 
-                print(f"Transcribing {len(audio_bytes)} bytes with Replicate Whisper...")
+                if self.verbose:
+                    print(f"Transcribing {len(audio_bytes)} bytes with Replicate Whisper...")
 
                 with open(tmp_path, 'rb') as audio_file:
                     output = replicate.run(

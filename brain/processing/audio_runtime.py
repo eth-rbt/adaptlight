@@ -3,8 +3,13 @@ Audio Runtime for AdaptLight.
 
 Processes microphone chunks for LLM-based audio watchers, writes parsed output to
 state_data['audio'], and optionally emits audio_* events.
+
+Supports two modes:
+- transcript: Whisper transcription → GPT-4o-mini text analysis (default)
+- direct: Send audio directly to GPT-4o audio model (faster, no transcription step)
 """
 
+import base64
 import json
 import os
 import threading
@@ -28,9 +33,15 @@ class AudioRuntime:
         self.default_interval_ms = max(1000, int(self.config.get("interval_ms", 3000)))
         self.default_cooldown_ms = max(0, int(self.config.get("cooldown_ms", 1500)))
         self.max_transcript_chars = int(self.config.get("max_transcript_chars", 20_000))
+        self.max_audio_bytes = int(self.config.get("max_audio_bytes", 5_000_000))  # 5MB max
         self.debug_llm_output = bool(self.config.get("debug_llm_output", False)) or os.getenv(
             "ADAPTLIGHT_DEBUG_AUDIO_LLM", ""
         ).strip().lower() in {"1", "true", "yes", "on"}
+
+        # Mode: "transcript" (Whisper → GPT text) or "direct" (audio → GPT-4o audio)
+        self.mode = str(self.config.get("mode", "transcript")).lower()
+        # Model for direct audio mode (must support audio input)
+        self.direct_audio_model = str(self.config.get("direct_audio_model", "gpt-audio-mini-2025-12-15"))
 
         self._openai_api_key = openai_api_key
         self._openai_client = None
@@ -83,6 +94,104 @@ class AudioRuntime:
                 "last_result": session.get("last_result"),
                 "watchers": self._get_active_watchers(),
             }
+
+    def process_audio_direct(self, session_id: str, audio_bytes: bytes, chunk_meta: dict = None) -> dict:
+        """Process raw audio bytes directly with GPT-4o audio model (no Whisper transcription)."""
+        if not self.enabled:
+            return {"success": False, "error": "audio runtime disabled"}
+        if not isinstance(audio_bytes, bytes) or len(audio_bytes) == 0:
+            return {"success": False, "error": "audio_bytes is required"}
+        if len(audio_bytes) > self.max_audio_bytes:
+            return {"success": False, "error": "audio_bytes too large"}
+
+        with self._lock:
+            session = self._sessions.get(session_id)
+            if not session:
+                return {"success": False, "error": "session not found"}
+            if not session.get("active"):
+                return {"success": False, "error": "session not active"}
+
+        watchers = self._get_active_watchers()
+        if not watchers:
+            return {
+                "success": True,
+                "processed": False,
+                "reason": "no_active_audio_watchers",
+                "state": self.smgen.get_state(),
+                "watchers": [],
+            }
+
+        now_ms = int(time.time() * 1000)
+        emitted_events = []
+        processed = False
+
+        for watcher in watchers:
+            watcher_key = str(watcher.get("name") or watcher.get("event") or "audio_watcher")
+            interval_ms = max(1000, int(watcher.get("interval_ms", self.default_interval_ms)))
+            cooldown_ms = max(0, int(watcher.get("cooldown_ms", self.default_cooldown_ms)))
+
+            with self._lock:
+                session = self._sessions.get(session_id) or {}
+                watcher_last_ms = int(session.get("last_watcher_analysis_ms", {}).get(watcher_key, 0) or 0)
+
+            if watcher_last_ms and (now_ms - watcher_last_ms) < interval_ms:
+                continue
+
+            output = self._analyze_with_llm_audio(
+                audio_bytes=audio_bytes,
+                prompt=str(watcher.get("prompt", "")).strip(),
+                model=str(watcher.get("model", self.direct_audio_model)),
+                expected_event=watcher.get("event"),
+                chunk_meta=chunk_meta or {},
+            )
+
+            if self.debug_llm_output:
+                print(
+                    "[audio_llm_direct] watcher="
+                    f"{watcher_key} expected_event={watcher.get('event')} "
+                    f"audio_size={len(audio_bytes)} output={json.dumps(output, ensure_ascii=False)}"
+                )
+
+            output["_timestamp"] = now_ms
+            self.state_machine.set_data("audio", output)
+            processed = True
+
+            if "_event" in output:
+                event_name = str(output["_event"])
+                if not event_name.startswith("audio_"):
+                    event_name = f"audio_{event_name}"
+                with self._lock:
+                    last_event_ms = int(session.get("last_event_ms", {}).get(event_name, 0) or 0)
+                    can_emit = (now_ms - last_event_ms) >= cooldown_ms
+                if can_emit:
+                    from_state = self.state_machine.get_state()
+                    next_state = self.smgen.trigger(event_name)
+                    emitted_events.append(event_name)
+                    if self.debug_llm_output:
+                        print(
+                            "[audio_llm_direct] emitted_event="
+                            f"{event_name} watcher={watcher_key} source={(chunk_meta or {}).get('source')} "
+                            f"from={from_state} to={next_state.get('name') if isinstance(next_state, dict) else None}"
+                        )
+                    with self._lock:
+                        session.setdefault("last_event_ms", {})[event_name] = now_ms
+
+            with self._lock:
+                session = self._sessions.get(session_id)
+                if session is not None:
+                    session.setdefault("last_watcher_analysis_ms", {})[watcher_key] = now_ms
+                    session["last_analysis_ms"] = now_ms
+                    session["last_result"] = output
+            break
+
+        return {
+            "success": True,
+            "processed": processed,
+            "audio": self.state_machine.get_data("audio"),
+            "emitted_events": emitted_events,
+            "state": self.smgen.get_state(),
+            "watchers": watchers,
+        }
 
     def process_chunk(self, session_id: str, transcript: str, chunk_meta: dict = None) -> dict:
         if not self.enabled:
@@ -280,6 +389,65 @@ class AudioRuntime:
             return parsed
         except Exception as e:
             return {"_error": str(e), "_detector": "audio_llm"}
+
+    def _analyze_with_llm_audio(self, audio_bytes: bytes, prompt: str, model: str, expected_event: str = None, chunk_meta: dict = None) -> dict:
+        """Send raw audio directly to GPT-4o audio model for analysis."""
+        chunk_meta = chunk_meta or {}
+        try:
+            client = self._get_client()
+
+            # Build instruction for audio analysis
+            event_instruction = ""
+            if expected_event:
+                event_instruction = f"If the condition in the prompt is met, include '_event': '{expected_event}'. "
+            instruction = (
+                "Analyze this audio based on the user's prompt. "
+                "Listen to what is being said or played and extract relevant information. "
+                "Return only valid JSON with observed fields. "
+                f"{event_instruction}"
+                "Always include '_detector': 'audio_llm_direct'. "
+                "No markdown, no explanation, only JSON."
+            )
+
+            # Encode audio as base64
+            audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+
+            # Determine audio format from chunk_meta or default to wav
+            audio_format = chunk_meta.get("format", "wav")
+
+            user_payload = f"Prompt: {prompt or 'Analyze this audio.'}\nChunk meta: {json.dumps(chunk_meta)}"
+
+            if self.debug_llm_output:
+                duration_sec = len(audio_bytes) / (44100 * 2) if len(audio_bytes) > 0 else 0  # Assume 44100Hz 16-bit
+                print(f"[audio_llm_direct] SENDING to {model}: {len(audio_bytes)} bytes ({duration_sec:.1f}s), format={audio_format}")
+                print(f"[audio_llm_direct] prompt={prompt!r} expected_event={expected_event}")
+
+            response = client.responses.create(
+                model=model,
+                max_output_tokens=180,
+                input=[
+                    {"role": "system", "content": [{"type": "input_text", "text": instruction}]},
+                    {"role": "user", "content": [
+                        {"type": "input_audio", "input_audio": {"data": audio_b64, "format": audio_format}},
+                        {"type": "input_text", "text": user_payload},
+                    ]},
+                ],
+            )
+            text = getattr(response, "output_text", "") or ""
+            parsed = self._parse_json_object(text)
+
+            if self.debug_llm_output:
+                print(f"[audio_llm_direct] RESPONSE raw_output={text!r}")
+
+            if not parsed:
+                return {"_error": "unable to parse audio LLM JSON output", "_detector": "audio_llm_direct"}
+            if "_detector" not in parsed:
+                parsed["_detector"] = "audio_llm_direct"
+            if self.debug_llm_output:
+                parsed["_raw_output"] = text
+            return parsed
+        except Exception as e:
+            return {"_error": str(e), "_detector": "audio_llm_direct"}
 
     @staticmethod
     def _parse_json_object(text: str):

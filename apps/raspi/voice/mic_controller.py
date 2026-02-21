@@ -96,6 +96,7 @@ class MicController:
         self._queue_size = self.mic_config.get('queue_size', 1000)
 
         # Watchdog config
+        self._watchdog_enabled = self.mic_config.get('watchdog_enabled', True)
         self._watchdog_grace_sec = self.mic_config.get('watchdog_grace_sec', 3.0)
         self._watchdog_stall_sec = self.mic_config.get('watchdog_stall_sec', 5.0)
         self._max_restarts = self.mic_config.get('max_restarts', 3)
@@ -215,12 +216,15 @@ class MicController:
             )
             self._processor_thread.start()
 
-            self._watchdog_thread = threading.Thread(
-                target=self._watchdog_loop,
-                name="MicWatchdog",
-                daemon=True
-            )
-            self._watchdog_thread.start()
+            if self._watchdog_enabled:
+                self._watchdog_thread = threading.Thread(
+                    target=self._watchdog_loop,
+                    name="MicWatchdog",
+                    daemon=True
+                )
+                self._watchdog_thread.start()
+            else:
+                print("[Mic] Watchdog disabled")
 
             print(f"[Mic] Started ({self._sample_rate}Hz, chunk={self._chunk_size})")
             return True
@@ -292,6 +296,9 @@ class MicController:
         Args:
             on_audio_data: Callback for real-time audio (VoiceReactive LED)
         """
+        print(f"[Mic] start_recording called (running={self._running}, healthy={self._stream_healthy}, "
+              f"gate={self._stream_gate.is_set()}, stream={self._stream is not None})")
+
         if not self._running:
             print("[Mic] Not running, cannot start recording")
             return
@@ -303,6 +310,7 @@ class MicController:
             print("[Mic] WARNING: Starting recording while stream gate is closed (restart in progress)!")
             # Wait briefly for restart to complete
             self._stream_gate.wait(timeout=1.0)
+            print(f"[Mic] Gate wait complete, gate now={self._stream_gate.is_set()}")
 
         with self._lock:
             # Flush stale frames from queue
@@ -318,8 +326,9 @@ class MicController:
             self._mode = MicMode.RECORDING
             self._recording_buffer = bytearray()
             self._recording_callback = on_audio_data
+            self._recording_start_frames = self._frames_in  # Track for debug
 
-            print(f"[Mic] RECORDING started (flushed {flushed} stale frames, frames_in={self._frames_in})")
+            print(f"[Mic] RECORDING started (flushed {flushed} stale frames, frames_in={self._frames_in}, queue_size={self._queue.qsize()})")
 
         # Lock state machine transitions
         if self.state_machine:
@@ -337,6 +346,7 @@ class MicController:
                 # Capture buffer
                 audio_bytes = bytes(self._recording_buffer)
                 buffer_chunks = len(self._recording_buffer) // (self._chunk_size * 2)
+                current_mode = self._mode
 
                 # Reset state
                 self._recording_buffer = bytearray()
@@ -346,7 +356,9 @@ class MicController:
                 # Reset transcription timer
                 self._last_transcription_ms = int(time.time() * 1000)
 
-            print(f"[Mic] RECORDING stopped: {len(audio_bytes)} bytes ({buffer_chunks} chunks)")
+            frames_during = self._frames_in - getattr(self, '_recording_start_frames', self._frames_in)
+            print(f"[Mic] RECORDING stopped: {len(audio_bytes)} bytes ({buffer_chunks} chunks), "
+                  f"was_mode={current_mode.value}, frames_during_recording={frames_during}")
             return audio_bytes
 
         finally:
@@ -600,6 +612,8 @@ class MicController:
 
                 # Dispatch based on mode
                 if mode == MicMode.RECORDING:
+                    if self._frames_out % 20 == 0:  # Log every 20 frames during recording
+                        print(f"[Mic] Recording frame, buffer={len(self._recording_buffer)} bytes")
                     self._handle_recording(frame, recording_callback)
                 elif mode == MicMode.LISTENING:
                     self._handle_listening(frame)
@@ -712,7 +726,7 @@ class MicController:
         return False
 
     def _process_audio_buffer(self):
-        """Transcribe accumulated audio and send to AudioRuntime."""
+        """Process accumulated audio and send to AudioRuntime (transcript or direct mode)."""
         if not self._audio_buffer:
             return
 
@@ -725,22 +739,21 @@ class MicController:
             if len(audio_data) < min_bytes:
                 return
 
-            # Transcribe
-            transcript = self._transcribe_audio(audio_data)
-            if not transcript:
-                return
+            # Check audio runtime mode
+            audio_mode = getattr(self.audio_runtime, 'mode', 'transcript')
+            duration_sec = len(audio_data) / (self._sample_rate * 2)
 
             if self.verbose:
-                print(f"[Mic] Transcript: {transcript}")
+                print(f"[Mic] Processing {duration_sec:.1f}s audio in '{audio_mode}' mode")
 
-            # Send to AudioRuntime
-            result = self.audio_runtime.process_chunk(
-                session_id=self._audio_session_id,
-                transcript=transcript,
-                chunk_meta={'source': 'mic_controller'}
-            )
+            if audio_mode == 'direct':
+                # Direct mode: send raw audio to GPT-4o
+                result = self._process_audio_direct(audio_data)
+            else:
+                # Transcript mode: transcribe first, then send text
+                result = self._process_audio_transcript(audio_data)
 
-            if result.get('emitted_events') and self._on_state_change:
+            if result and result.get('emitted_events') and self._on_state_change:
                 if self.verbose:
                     print(f"[Mic] Events: {result.get('emitted_events')}")
                 self._on_state_change()
@@ -748,6 +761,67 @@ class MicController:
         except Exception as e:
             if self.verbose:
                 print(f"[Mic] Audio buffer processing error: {e}")
+
+    def _process_audio_transcript(self, audio_data: bytes) -> dict:
+        """Process audio via transcription mode (Whisper → GPT text)."""
+        # Transcribe
+        transcript = self._transcribe_audio(audio_data)
+        if not transcript:
+            return {}
+
+        if self.verbose:
+            print(f"[Mic] Transcript: {transcript}")
+
+        # Send to AudioRuntime
+        return self.audio_runtime.process_chunk(
+            session_id=self._audio_session_id,
+            transcript=transcript,
+            chunk_meta={'source': 'mic_controller'}
+        )
+
+    def _process_audio_direct(self, audio_data: bytes) -> dict:
+        """Process audio via direct mode (raw audio → GPT-4o audio)."""
+        duration_sec = len(audio_data) / (self._sample_rate * 2)
+
+        if self.verbose:
+            print(f"[Mic] Direct audio: {len(audio_data)} bytes ({duration_sec:.1f}s) -> sending to audio model")
+
+        # Convert raw PCM to WAV bytes for the API
+        wav_bytes = self._pcm_to_wav(audio_data)
+
+        if self.verbose:
+            print(f"[Mic] WAV encoded: {len(wav_bytes)} bytes")
+
+        # Send to AudioRuntime direct
+        result = self.audio_runtime.process_audio_direct(
+            session_id=self._audio_session_id,
+            audio_bytes=wav_bytes,
+            chunk_meta={'source': 'mic_controller', 'format': 'wav'}
+        )
+
+        if self.verbose:
+            audio_data = result.get('audio', {})
+            print(f"[Mic] Direct response: success={result.get('success')} processed={result.get('processed')}")
+            if audio_data:
+                print(f"[Mic] Audio data: {audio_data}")
+            if result.get('emitted_events'):
+                print(f"[Mic] Emitted events: {result.get('emitted_events')}")
+
+        return result
+
+    def _pcm_to_wav(self, pcm_data: bytes) -> bytes:
+        """Convert raw PCM data to WAV format bytes."""
+        import io
+        import wave
+
+        wav_buffer = io.BytesIO()
+        with wave.open(wav_buffer, 'wb') as wav_file:
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)  # 16-bit
+            wav_file.setframerate(self._sample_rate)
+            wav_file.writeframes(pcm_data)
+
+        return wav_buffer.getvalue()
 
     def _transcribe_audio(self, audio_data: bytes) -> str:
         """Transcribe audio using Replicate Whisper."""

@@ -493,6 +493,10 @@ def create_app(config_path: str = None) -> Flask:
         result = runtime.get_status(session_id)
         if not result.get('success'):
             return jsonify(result), 404
+
+        # Add helper flag for frontend to know if it should send frames
+        watchers = result.get('watchers', [])
+        result['has_active_watchers'] = len(watchers) > 0
         return jsonify(result)
 
     @app.route('/api/vision/frame', methods=['POST'])
@@ -572,6 +576,45 @@ def create_app(config_path: str = None) -> Flask:
         if debug_audio_llm:
             print(
                 f"[audio_chunk] success={result.get('success')} processed={result.get('processed')} "
+                f"emitted={result.get('emitted_events')} audio={result.get('audio')}"
+            )
+
+        if not result.get('success'):
+            if result.get('error') in ('session not found',):
+                return jsonify(result), 404
+            return jsonify(result), 400
+        return jsonify(result)
+
+    @app.route('/api/audio/direct', methods=['POST'])
+    def audio_direct():
+        """Process raw audio directly with GPT-4o audio model (no transcription step)."""
+        data = request.get_json(silent=True) or {}
+        session_id = data.get('session_id')
+        audio_base64 = data.get('audio_base64')  # Base64-encoded audio bytes
+        chunk_meta = data.get('chunk_meta') or {}
+        debug_audio_llm = str(os.environ.get('ADAPTLIGHT_DEBUG_AUDIO_LLM', '')).strip().lower() in {'1', 'true', 'yes', 'on'}
+
+        if not session_id:
+            return jsonify({'success': False, 'error': 'session_id required'}), 400
+        if not audio_base64:
+            return jsonify({'success': False, 'error': 'audio_base64 required'}), 400
+
+        # Decode base64 audio
+        import base64
+        try:
+            audio_bytes = base64.b64decode(audio_base64)
+        except Exception as e:
+            return jsonify({'success': False, 'error': f'invalid base64: {e}'}), 400
+
+        if debug_audio_llm:
+            print(f"[audio_direct] session={session_id} audio_size={len(audio_bytes)} chunk_meta={chunk_meta}")
+
+        runtime: AudioRuntime = app.config['audio_runtime']
+        result = runtime.process_audio_direct(session_id=session_id, audio_bytes=audio_bytes, chunk_meta=chunk_meta)
+
+        if debug_audio_llm:
+            print(
+                f"[audio_direct] success={result.get('success')} processed={result.get('processed')} "
                 f"emitted={result.get('emitted_events')} audio={result.get('audio')}"
             )
 
