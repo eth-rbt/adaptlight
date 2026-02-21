@@ -18,6 +18,7 @@ load_dotenv(ROOT_DIR / '.env')
 
 import yaml
 from flask import Flask, request, jsonify, send_from_directory
+from flask_cors import CORS
 from brain import SMgenerator
 
 # Add web app directory to path for local imports
@@ -130,6 +131,7 @@ def create_app(config_path: str = None) -> Flask:
 
     # Create Flask app
     app = Flask(__name__, static_folder='static')
+    CORS(app)  # Enable CORS for all routes
     app.config['smgen'] = smgen
     app.config['vision_runtime'] = vision_runtime
     app.config['api_runtime'] = api_runtime
