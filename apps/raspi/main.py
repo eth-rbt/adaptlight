@@ -23,6 +23,8 @@ load_dotenv(ROOT_DIR / '.env')
 from brain import SMgenerator
 from brain.processing.vision_runtime import VisionRuntime
 from brain.processing.api_runtime import APIRuntime
+from brain.processing.audio_runtime import AudioRuntime
+from brain.processing.volume_runtime import VolumeRuntime
 from brain.apis.api_executor import APIExecutor
 
 # Import supabase client for logging
@@ -117,6 +119,21 @@ class AdaptLightRaspi:
         # Track API tick timing
         self._last_api_tick_ms = 0
         self._api_tick_interval_ms = api_config.get('tick_interval_ms', 1000)
+
+        # Initialize Audio Runtime (for audio-reactive features via LLM)
+        audio_config = self.config.get('audio', {})
+        self.audio_runtime = AudioRuntime(
+            smgen=self.smgen,
+            config=audio_config,
+            openai_api_key=self.config['openai']['api_key']
+        ) if audio_config.get('enabled') else None
+
+        # Initialize Volume Runtime (for volume-reactive features)
+        volume_config = self.config.get('volume', {})
+        self.volume_runtime = VolumeRuntime(
+            smgen=self.smgen,
+            config=volume_config
+        ) if volume_config.get('enabled') else None
 
         # Register hooks for RASPi-specific feedback
         self.smgen.on('processing_start', self._on_processing_start)
@@ -490,8 +507,8 @@ class AdaptLightRaspi:
 
             self.mic_controller = MicController(
                 config=self.config,
-                volume_runtime=None,  # TODO: Add if needed
-                audio_runtime=None,   # TODO: Add if needed
+                volume_runtime=self.volume_runtime,
+                audio_runtime=self.audio_runtime,
                 state_machine=self.smgen.state_machine,
                 replicate_token=self.config['replicate'].get('api_token'),
                 device_id=self.device_id,
