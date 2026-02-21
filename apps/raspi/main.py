@@ -582,6 +582,15 @@ class AdaptLightRaspi:
             # Start recording
             self.is_recording = True
 
+            # Flash yellow twice to indicate recording started
+            if self.reactive_led:
+                for _ in range(2):
+                    self.reactive_led.fill((255, 200, 0))  # Yellow flash
+                    self.reactive_led.show()
+                    time.sleep(0.15)
+                    self.reactive_led.off()
+                    time.sleep(0.1)
+
             # Transition COB LED to 'off' state when recording starts
             self.smgen.state_machine.set_state('off')
             self._execute_state(self.smgen.get_state())
