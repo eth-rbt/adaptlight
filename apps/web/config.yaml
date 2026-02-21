@@ -64,7 +64,7 @@ audio:
   enabled: true
   mode: transcript               # 'transcript' or 'direct'
   model: gpt-4o-mini             # Model for text analysis (transcript mode)
-  direct_audio_model: gpt-4o-mini-audio-preview-2024-12-17  # Model for direct audio
+  direct_audio_model: gpt-4o-audio-preview-2024-12-17  # Model for direct audio input
   interval_ms: 3000
   cooldown_ms: 1500
   max_transcript_chars: 20000

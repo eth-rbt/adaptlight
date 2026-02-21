@@ -159,9 +159,9 @@ mic:
 #   - direct: audio → GPT-4o audio model (no transcription, faster but more API cost)
 audio:
   enabled: true
-  mode: direct               # 'transcript' or 'direct'
+  mode: transcript               # 'transcript' or 'direct'
   model: gpt-4o-mini             # Model for text analysis (transcript mode)
-  direct_audio_model: gpt-4o-mini-audio-preview-2024-12-17  # Model for direct audio
+  direct_audio_model: gpt-4o-audio-preview-2024-12-17  # Model for direct audio input
   interval_ms: 3000              # Milliseconds between analyses
   cooldown_ms: 1500              # Min time between same event
   max_transcript_chars: 20000    # Max transcript length (transcript mode)
