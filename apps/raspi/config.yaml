@@ -2,7 +2,7 @@
 
 # Device identity (for Supabase logging)
 device:
-  id: lamp1  # Change this for each device (lamp1, lamp2, etc.)
+  id: realtests  # Change this for each device (lamp1, lamp2, etc.)
 
 # Brain settings (passed to Brain())
 brain:
