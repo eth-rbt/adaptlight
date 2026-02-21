@@ -422,19 +422,17 @@ class AudioRuntime:
                 print(f"[audio_llm_direct] SENDING to {model}: {len(audio_bytes)} bytes ({duration_sec:.1f}s), format={audio_format}")
                 print(f"[audio_llm_direct] prompt={prompt!r} expected_event={expected_event}")
 
-            # Use Chat Completions API for audio input (not Responses API)
-            # Must include "audio" in modalities to enable audio input
+            # Use Chat Completions API for audio input
+            # Audio is passed at top level, not in message content
             response = client.chat.completions.create(
                 model=model,
                 modalities=["text", "audio"],
-                audio={"voice": "alloy", "format": "wav"},  # Required when audio modality enabled
+                audio=audio_bytes,  # Pass raw audio bytes at top level
+                audio_format=audio_format,  # Format of the audio
                 max_completion_tokens=180,
                 messages=[
                     {"role": "system", "content": instruction},
-                    {"role": "user", "content": [
-                        {"type": "audio", "audio": {"data": audio_b64, "format": audio_format}},
-                        {"type": "text", "text": user_payload},
-                    ]},
+                    {"role": "user", "content": user_payload},
                 ],
             )
             text = response.choices[0].message.content if response.choices else ""
