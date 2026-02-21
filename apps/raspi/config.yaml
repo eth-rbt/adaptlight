@@ -147,15 +147,10 @@ api:
   timeout: 15.0                  # HTTP request timeout in seconds
   cooldown_ms: 1000              # Minimum time between emitting same event
 
-# Mic controller settings
+# Mic controller settings (on-demand: stream opens when needed)
 mic:
   chunk_size: 1024               # Samples per audio frame
-  queue_size: 1000               # Max frames in buffer queue
-  watchdog_enabled: false        # Disable watchdog (restarts can cause issues)
-  watchdog_grace_sec: 3.0        # Wait before watchdog starts monitoring
-  watchdog_stall_sec: 5.0        # Silence threshold before restart
-  max_restarts: 3                # Give up after N restarts
-  restart_cooldown_sec: 0.5      # Wait between restarts
+  buffer_max_chunks: 200         # Max frames in deque buffer (~4.6s at 44.1kHz)
 
 # Audio LLM watcher runtime
 # Continuous mic -> LLM analysis -> getData('audio') + events

@@ -616,7 +616,7 @@ class AdaptLightRaspi:
         if self.verbose:
             mic_status = "none"
             if self.mic_controller:
-                mic_status = f"running={self.mic_controller._running}, healthy={self.mic_controller._stream_healthy}"
+                mic_status = f"stream_open={self.mic_controller._stream_open}, recording={self.mic_controller.is_recording}"
             print(f"Record button pressed (is_recording={self.is_recording}, mic={mic_status})")
 
         # Check if we have a mic controller or voice input
@@ -883,6 +883,11 @@ class AdaptLightRaspi:
             while self.running:
                 # Tick API runtime if enabled
                 self._tick_api_runtime()
+
+                # Tick mic controller (manages stream lifecycle + processes frames)
+                if self.mic_controller:
+                    self.mic_controller.tick()
+
                 time.sleep(0.1)
         except KeyboardInterrupt:
             pass
