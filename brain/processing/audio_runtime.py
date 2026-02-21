@@ -41,7 +41,7 @@ class AudioRuntime:
         # Mode: "transcript" (Whisper → GPT text) or "direct" (audio → GPT-4o audio)
         self.mode = str(self.config.get("mode", "transcript")).lower()
         # Model for direct audio mode (must support audio input)
-        self.direct_audio_model = str(self.config.get("direct_audio_model", "gpt-4o-audio-preview-2024-12-17"))
+        self.direct_audio_model = str(self.config.get("direct_audio_model", "gpt-4o-mini-audio-preview-2024-12-17"))
 
         self._openai_api_key = openai_api_key
         self._openai_client = None
@@ -423,9 +423,11 @@ class AudioRuntime:
                 print(f"[audio_llm_direct] prompt={prompt!r} expected_event={expected_event}")
 
             # Use Chat Completions API for audio input (not Responses API)
+            # Must include "audio" in modalities to enable audio input
             response = client.chat.completions.create(
                 model=model,
-                modalities=["text"],  # We only need text output
+                modalities=["text", "audio"],
+                audio={"voice": "alloy", "format": "wav"},  # Required when audio modality enabled
                 max_completion_tokens=180,
                 messages=[
                     {"role": "system", "content": instruction},
