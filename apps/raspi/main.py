@@ -135,9 +135,11 @@ class AdaptLightRaspi:
         self.tts_thread = None  # Background TTS thread for early generation
         self.feedback_no_button = None
         self.voice = None
+        self.mic_controller = None  # Unified mic controller
 
         self._init_hardware()
         self._init_voice()
+        self._init_mic()
         self._init_camera()
 
         # Set up signal handlers
@@ -372,6 +374,7 @@ class AdaptLightRaspi:
         vision_config = self.config.get('vision', {})
         interval_ms = vision_config.get('interval_ms', 2000)
         cv_interval_ms = vision_config.get('cv', {}).get('interval_ms', 200)
+        idle_check_ms = 1000  # Check for watchers every 1s when idle
 
         # Use CV interval if CV is the primary engine
         capture_interval_ms = min(interval_ms, cv_interval_ms) if vision_config.get('cv', {}).get('enabled') else interval_ms
@@ -379,8 +382,23 @@ class AdaptLightRaspi:
         camera_type = "picamera2" if self._use_picamera else "OpenCV"
         print(f"📹 Camera loop started ({camera_type}, interval: {capture_interval_ms}ms)")
 
+        was_idle = False
+
         while self._camera_running and self.camera:
             try:
+                # Check if there are active vision watchers before capturing
+                watchers = self.vision_runtime._get_active_watchers()
+                if not watchers:
+                    if not was_idle and self.verbose:
+                        print(f"[Vision] No active watchers, camera idle")
+                    was_idle = True
+                    time.sleep(idle_check_ms / 1000.0)
+                    continue
+
+                if was_idle and self.verbose:
+                    print(f"[Vision] Watchers active, camera resuming: {[w.get('name') for w in watchers]}")
+                was_idle = False
+
                 # Capture frame based on camera type
                 if self._use_picamera:
                     # picamera2 returns RGB, convert to BGR for OpenCV
@@ -462,6 +480,42 @@ class AdaptLightRaspi:
             except Exception as e:
                 print(f"TTS initialization failed: {e}")
 
+    def _init_mic(self):
+        """Initialize the unified microphone controller."""
+        if not self.config['voice']['enabled']:
+            return
+
+        try:
+            from .voice.mic_controller import MicController
+
+            self.mic_controller = MicController(
+                config=self.config,
+                volume_runtime=None,  # TODO: Add if needed
+                audio_runtime=None,   # TODO: Add if needed
+                state_machine=self.smgen.state_machine,
+                replicate_token=self.config['replicate'].get('api_token'),
+                device_id=self.device_id,
+                verbose=self.verbose,
+            )
+
+            # Set callback for state changes
+            self.mic_controller.set_on_state_change(
+                lambda: self._execute_state(self.smgen.get_state())
+            )
+
+            # Start the controller
+            if self.mic_controller.start():
+                print("Mic controller initialized")
+            else:
+                print("Mic controller failed to start")
+                self.mic_controller = None
+
+        except Exception as e:
+            print(f"Mic controller initialization failed: {e}")
+            import traceback
+            traceback.print_exc()
+            self.mic_controller = None
+
     # ─────────────────────────────────────────────────────────────
     # Hook Handlers
     # ─────────────────────────────────────────────────────────────
@@ -537,12 +591,13 @@ class AdaptLightRaspi:
         """Handle record button press."""
         print(f"Record button pressed (is_recording={self.is_recording})")
 
-        if not self.voice:
+        # Check if we have a mic controller or voice input
+        if not self.mic_controller and not self.voice:
             print("Voice input not enabled")
             return
 
         if self.is_recording:
-            # Stop recording
+            # ─── STOP RECORDING ───
             self.is_recording = False
 
             # Stop voice reactive
@@ -553,8 +608,14 @@ class AdaptLightRaspi:
             if self.reactive_led:
                 self.reactive_led.start_loading_animation()
 
-            # Transcribe and process
-            transcribed_text = self.voice.stop_recording()
+            # Get audio bytes and transcribe
+            if self.mic_controller:
+                audio_bytes = self.mic_controller.stop_recording()
+                transcribed_text = self._transcribe_audio(audio_bytes) if audio_bytes else None
+            else:
+                # Fallback to old VoiceInput
+                transcribed_text = self.voice.stop_recording()
+
             if transcribed_text:
                 print(f"Transcribed: {transcribed_text}")
                 # Reset TTS thread before processing
@@ -578,8 +639,12 @@ class AdaptLightRaspi:
 
                 # Log to Supabase
                 self._log_command_to_supabase(transcribed_text, result)
+            else:
+                print("No transcription result")
+                if self.reactive_led:
+                    self.reactive_led.stop_loading_animation()
         else:
-            # Start recording
+            # ─── START RECORDING ───
             self.is_recording = True
 
             # Flash yellow twice to indicate recording started
@@ -595,14 +660,81 @@ class AdaptLightRaspi:
             self.smgen.state_machine.set_state('off')
             self._execute_state(self.smgen.get_state())
 
-            # Start voice reactive in non-standalone mode (uses VoiceInput's audio stream)
+            # Get voice reactive callback
             audio_callback = None
             if self.voice_reactive:
                 self.voice_reactive.start(standalone=False)
                 audio_callback = self.voice_reactive.process_audio_data
 
-            self.voice.start_recording(audio_callback=audio_callback)
+            # Start recording with mic controller or fallback to voice
+            if self.mic_controller:
+                self.mic_controller.start_recording(on_audio_data=audio_callback)
+            else:
+                self.voice.start_recording(audio_callback=audio_callback)
+
             print("Recording... Speak now!")
+
+    def _transcribe_audio(self, audio_bytes: bytes) -> str:
+        """Transcribe audio bytes using Replicate Whisper."""
+        if not audio_bytes:
+            return ""
+
+        try:
+            import wave
+            import tempfile
+            import os
+            import replicate
+
+            # Get sample rate from mic controller
+            sample_rate = 44100
+            if self.mic_controller:
+                sample_rate = self.mic_controller.get_sample_rate()
+
+            # Write to temp WAV file
+            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
+                tmp_path = tmp.name
+
+            with wave.open(tmp_path, 'wb') as wav_file:
+                wav_file.setnchannels(1)
+                wav_file.setsampwidth(2)  # 16-bit
+                wav_file.setframerate(sample_rate)
+                wav_file.writeframes(audio_bytes)
+
+            try:
+                # Set Replicate API token
+                replicate_token = self.config['replicate'].get('api_token')
+                if replicate_token:
+                    os.environ['REPLICATE_API_TOKEN'] = replicate_token
+
+                print(f"Transcribing {len(audio_bytes)} bytes with Replicate Whisper...")
+
+                with open(tmp_path, 'rb') as audio_file:
+                    output = replicate.run(
+                        "openai/whisper:4d50797290df275329f202e48c76360b3f22b08d28c196cbc54600319435f8d2",
+                        input={
+                            "audio": audio_file,
+                            "model": "large-v3",
+                            "translate": False,
+                            "temperature": 0,
+                            "transcription": "plain text",
+                        }
+                    )
+
+                if isinstance(output, dict):
+                    return output.get('transcription', '').strip()
+                elif isinstance(output, str):
+                    return output.strip()
+                else:
+                    return str(output).strip()
+
+            finally:
+                os.unlink(tmp_path)
+
+        except Exception as e:
+            print(f"Transcription error: {e}")
+            import traceback
+            traceback.print_exc()
+            return ""
 
     def _log_command_to_supabase(self, command: str, result):
         """Log a processed command to Supabase."""
@@ -761,6 +893,10 @@ class AdaptLightRaspi:
         # Stop vision session
         if self._vision_session_id and self.vision_runtime:
             self.vision_runtime.stop_session(self._vision_session_id)
+
+        # Stop mic controller
+        if self.mic_controller:
+            self.mic_controller.stop()
 
         if self.voice and self.is_recording:
             self.voice.stop_recording()

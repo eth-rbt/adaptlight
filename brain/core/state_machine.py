@@ -54,6 +54,9 @@ class StateMachine:
         self.render_timer = None  # Timer for next render call
         self._on_render_callback = None  # Callback for RGB updates
 
+        # Transition lock (e.g., during recording)
+        self.lock_transitions = False
+
         # Add default rules
         if default_rules:
             self._setup_default_rules()
@@ -534,6 +537,11 @@ class StateMachine:
         Returns:
             True if transition was executed, False otherwise
         """
+        # Skip transitions when locked (e.g., during recording)
+        if self.lock_transitions:
+            print(f"Transition '{action}' blocked - state machine locked")
+            return False
+
         # Find all matching rules (state + transition match, enabled only)
         candidate_rules = [r for r in self.rules if r.matches(self.current_state, action)]
 
