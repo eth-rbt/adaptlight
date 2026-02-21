@@ -41,7 +41,7 @@ class AudioRuntime:
         # Mode: "transcript" (Whisper → GPT text) or "direct" (audio → GPT-4o audio)
         self.mode = str(self.config.get("mode", "transcript")).lower()
         # Model for direct audio mode (must support audio input)
-        self.direct_audio_model = str(self.config.get("direct_audio_model", "gpt-audio-mini-2025-12-15"))
+        self.direct_audio_model = str(self.config.get("direct_audio_model", "gpt-4o-mini-audio-preview-2024-12-17"))
 
         self._openai_api_key = openai_api_key
         self._openai_client = None
@@ -422,18 +422,20 @@ class AudioRuntime:
                 print(f"[audio_llm_direct] SENDING to {model}: {len(audio_bytes)} bytes ({duration_sec:.1f}s), format={audio_format}")
                 print(f"[audio_llm_direct] prompt={prompt!r} expected_event={expected_event}")
 
-            response = client.responses.create(
+            # Use Chat Completions API for audio input (not Responses API)
+            response = client.chat.completions.create(
                 model=model,
-                max_output_tokens=180,
-                input=[
-                    {"role": "system", "content": [{"type": "input_text", "text": instruction}]},
+                modalities=["text"],  # We only need text output
+                max_completion_tokens=180,
+                messages=[
+                    {"role": "system", "content": instruction},
                     {"role": "user", "content": [
                         {"type": "input_audio", "input_audio": {"data": audio_b64, "format": audio_format}},
-                        {"type": "input_text", "text": user_payload},
+                        {"type": "text", "text": user_payload},
                     ]},
                 ],
             )
-            text = getattr(response, "output_text", "") or ""
+            text = response.choices[0].message.content if response.choices else ""
             parsed = self._parse_json_object(text)
 
             if self.debug_llm_output:
