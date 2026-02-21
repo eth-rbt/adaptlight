@@ -529,6 +529,7 @@ class StateMachine:
         Execute a transition based on an action.
 
         Rules are evaluated in priority order (highest first).
+        When priorities are equal, the most recently added rule wins.
         First matching rule with a passing condition wins.
 
         Args:
@@ -545,8 +546,9 @@ class StateMachine:
         # Find all matching rules (state + transition match, enabled only)
         candidate_rules = [r for r in self.rules if r.matches(self.current_state, action)]
 
-        # Sort by priority (highest first)
-        candidate_rules.sort(key=lambda r: r.priority, reverse=True)
+        # Sort by priority (highest first), then by id (highest/newest first)
+        # This ensures that when priorities are equal, the most recently added rule wins
+        candidate_rules.sort(key=lambda r: (r.priority, r.id), reverse=True)
 
         # Find first rule whose condition is true
         matching_rule = None

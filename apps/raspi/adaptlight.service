@@ -7,9 +7,7 @@ Wants=dev-ttyAMA0.device
 Type=simple
 User=root
 WorkingDirectory=/home/lamp/adaptlight
-EnvironmentFile=/home/lamp/adaptlight/.env
-Environment=PYTHONUNBUFFERED=1
-ExecStart=/home/lamp/adaptlight/venv/bin/python -m raspi.main
+ExecStart=/bin/bash /home/lamp/adaptlight/scripts/run_raspi.sh
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
