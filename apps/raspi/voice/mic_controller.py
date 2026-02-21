@@ -238,7 +238,10 @@ class MicController:
             return
 
         print("[Mic] Stopping...")
+
+        # Signal shutdown - order matters!
         self._running = False
+        self._stream_healthy = False  # Prevent watchdog restarts
         self._stream_gate.clear()
 
         # Send sentinel to unblock processor
@@ -247,17 +250,7 @@ class MicController:
         except queue.Full:
             pass
 
-        # Wait for threads
-        if self._processor_thread and self._processor_thread.is_alive():
-            self._processor_thread.join(timeout=2.0)
-
-        if self._watchdog_thread and self._watchdog_thread.is_alive():
-            self._watchdog_thread.join(timeout=2.0)
-
-        # Stop sessions
-        self._stop_sessions()
-
-        # Close stream
+        # Stop stream BEFORE waiting for threads (unblocks callback)
         if self._stream:
             try:
                 self._stream.stop_stream()
@@ -266,6 +259,20 @@ class MicController:
                 if self.verbose:
                     print(f"[Mic] Stream close error: {e}")
             self._stream = None
+
+        # Wait for threads
+        if self._processor_thread and self._processor_thread.is_alive():
+            self._processor_thread.join(timeout=2.0)
+            if self._processor_thread.is_alive():
+                print("[Mic] Warning: processor thread didn't stop")
+
+        if self._watchdog_thread and self._watchdog_thread.is_alive():
+            self._watchdog_thread.join(timeout=2.0)
+            if self._watchdog_thread.is_alive():
+                print("[Mic] Warning: watchdog thread didn't stop")
+
+        # Stop sessions
+        self._stop_sessions()
 
         # Cleanup PyAudio
         self._cleanup_pyaudio()
@@ -853,7 +860,15 @@ class MicController:
 
     def _restart_stream(self):
         """Restart the audio stream after a stall or error."""
+        # Don't restart during shutdown
+        if not self._running:
+            return
+
         with self._restart_lock:
+            # Double-check after acquiring lock
+            if not self._running:
+                return
+
             # Check restart limit
             self._restart_count += 1
             if self._restart_count > self._max_restarts:
