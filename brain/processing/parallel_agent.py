@@ -18,6 +18,7 @@ from anthropic import Anthropic
 
 from brain.tools.registry import ToolRegistry
 from brain.prompts.agent.agent_prompt_with_examples import get_agent_system_prompt_with_examples
+from brain.prompts.agent.agent_prompt_all_leds import get_agent_system_prompt_all_leds
 
 
 @dataclass
@@ -48,7 +49,10 @@ class ParallelAgentExecutor:
                  verbose: bool = False, prompt_variant: str = "examples",
                  speech_instructions: str = None,
                  representation_version: str = "stdlib",
-                 on_message_ready: Callable = None):
+                 on_message_ready: Callable = None,
+                 vision_config: dict = None,
+                 control_mode: str = "default",
+                 num_pixels: int = 0):
         """
         Initialize parallel agent executor.
 
@@ -61,6 +65,9 @@ class ParallelAgentExecutor:
             speech_instructions: Extra instructions for speech output
             representation_version: State representation version
             on_message_ready: Callback when message is ready (fires early!)
+            vision_config: Vision configuration with cv/vlm enabled flags
+            control_mode: LED control mode ('default', 'cobbled_only', 'all')
+            num_pixels: Ring LED pixel count for 'all' mode
         """
         self.state_machine = state_machine
         self.api_key = api_key
@@ -70,9 +77,12 @@ class ParallelAgentExecutor:
         self.speech_instructions = speech_instructions
         self.representation_version = representation_version
         self.on_message_ready = on_message_ready
+        self.vision_config = vision_config
+        self.control_mode = control_mode
+        self.num_pixels = num_pixels
 
         # Initialize tool registry
-        self.tools = ToolRegistry(state_machine, api_key=api_key)
+        self.tools = ToolRegistry(state_machine, api_key=api_key, vision_config=vision_config)
 
         # Initialize Anthropic client
         self.client = Anthropic(api_key=api_key)
@@ -196,10 +206,19 @@ Respond ONLY with the JSON object, no other text.
 Available states: {', '.join(available_states) if available_states else 'none (only default on/off)'}
 Current rules: {len(current_rules)} rules defined"""
 
-        base_prompt = get_agent_system_prompt_with_examples(
-            system_state=system_state,
-            representation_version=self.representation_version
-        )
+        if self.control_mode == 'all':
+            base_prompt = get_agent_system_prompt_all_leds(
+                system_state=system_state,
+                representation_version=self.representation_version,
+                vision_config=self.vision_config,
+                num_pixels=self.num_pixels
+            )
+        else:
+            base_prompt = get_agent_system_prompt_with_examples(
+                system_state=system_state,
+                representation_version=self.representation_version,
+                vision_config=self.vision_config
+            )
 
         # Add speech instructions if provided
         if self.speech_instructions:

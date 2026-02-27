@@ -36,13 +36,13 @@ def suppress_alsa_errors():
 class VoiceReactiveLight:
     """Real-time voice-reactive lighting with smooth exponential smoothing."""
 
-    def __init__(self, led_controller, color=(255, 255, 255), smoothing_alpha=0.25, debug=False):
+    def __init__(self, led_controller, color=(255, 200, 0), smoothing_alpha=0.25, debug=False):
         """
         Initialize voice-reactive light.
 
         Args:
             led_controller: LEDController instance to control lights
-            color: RGB tuple for the reactive color (default: green)
+            color: RGB tuple for the reactive color (default: yellow)
             smoothing_alpha: Alpha value for exponential smoothing (0.0-1.0)
                            Lower = smoother but slower response
                            Higher = faster but more jittery
@@ -181,39 +181,24 @@ class VoiceReactiveLight:
 
         return smoothed_brightness
 
-    def update_leds_with_bubbles(self, brightness):
+    def update_leds_uniform(self, brightness):
         """
-        Update LEDs with a random bubble pattern.
-        More brightness = more random pixels lit up.
+        Update all LEDs to a uniform color at the given brightness.
+        A low base brightness keeps the ring glowing even when silent.
 
         Args:
-            brightness: Overall brightness level (0-255) based on audio amplitude
+            brightness: Brightness level (0-255) based on audio amplitude
         """
-        led_count = getattr(self.led_controller, 'led_count', 16)
+        # Ensure a minimum base glow so the ring is always visible
+        min_brightness = 25
+        effective = max(min_brightness, brightness)
+        scale = effective / 255.0
 
-        # Calculate how many pixels should be lit based on brightness
-        # At full brightness (255), all pixels lit; at 0, none lit
-        lit_ratio = brightness / 255.0
-        num_lit = int(led_count * lit_ratio)
+        r = int(self.base_color[0] * scale)
+        g = int(self.base_color[1] * scale)
+        b = int(self.base_color[2] * scale)
 
-        # Generate random brightness for each pixel
-        # Each pixel has a chance to be "on" based on the lit_ratio
-        for i in range(led_count):
-            if self.rng.random() < lit_ratio:
-                # Random brightness between 50% and 100% for lit pixels
-                pixel_brightness = 0.5 + 0.5 * self.rng.random()
-
-                r = int(self.base_color[0] * pixel_brightness)
-                g = int(self.base_color[1] * pixel_brightness)
-                b = int(self.base_color[2] * pixel_brightness)
-
-                self.led_controller.set_pixel(i, r, g, b)
-            else:
-                # Pixel is off
-                self.led_controller.set_pixel(i, 0, 0, 0)
-
-        # Show the updated pixels
-        self.led_controller.show()
+        self.led_controller.set_color(r, g, b)
 
     def _audio_loop(self):
         """Main audio processing loop (runs in separate thread)."""
@@ -247,7 +232,7 @@ class VoiceReactiveLight:
                 brightness = self.map_amplitude_to_brightness(rms)
 
                 # Update LEDs with wave pattern
-                self.update_leds_with_bubbles(brightness)
+                self.update_leds_uniform(brightness)
 
         except Exception as e:
             print(f"Error in voice reactive loop: {e}")
@@ -282,7 +267,7 @@ class VoiceReactiveLight:
         brightness = self.map_amplitude_to_brightness(rms)
 
         # Update LEDs with wave pattern
-        self.update_leds_with_bubbles(brightness)
+        self.update_leds_uniform(brightness)
 
         # Debug timing
         self.update_count += 1

@@ -22,13 +22,14 @@ from .state_executor import StateExecutor
 class StateMachine:
     """Main state machine for managing light behavior."""
 
-    def __init__(self, debug=False, default_rules=True, representation_version="stdlib"):
+    def __init__(self, debug=False, default_rules=True, representation_version="stdlib", num_pixels: int = 0):
         """Initialize the state machine.
 
         Args:
             debug: Enable debug output (FPS timing)
             default_rules: If True, add default on/off toggle rules
             representation_version: State representation version ("original", "pure_python", "stdlib")
+            num_pixels: Number of ring LED pixels for 'all' control mode (0 = no ring)
         """
         self.rules: List[Rule] = []
         self.current_state = 'off'
@@ -44,7 +45,7 @@ class StateMachine:
 
         # State rendering
         self.representation_version = representation_version
-        self.state_executor = StateExecutor(representation_version)
+        self.state_executor = StateExecutor(representation_version, num_pixels=num_pixels)
         self.state_executor.set_on_state_complete(self._on_state_complete)
         # Wire up getData/setData so render code can access shared state_data
         self.state_executor.set_data_accessors(
@@ -53,6 +54,7 @@ class StateMachine:
         )
         self.render_timer = None  # Timer for next render call
         self._on_render_callback = None  # Callback for RGB updates
+        self._on_state_change = None  # Callback when state changes (for LED updates)
 
         # Transition lock (e.g., during recording)
         self.lock_transitions = False
@@ -380,6 +382,16 @@ class StateMachine:
         self.active_timers[rule.id] = timer
         print(f"Schedule set: {target_hour:02d}:{target_minute:02d} ({'daily' if repeat_daily else 'once'}), firing in {delay:.0f}s")
 
+    def set_on_state_change(self, callback):
+        """
+        Set callback for when the current state changes.
+        Called with the state name so the app can drive LEDs.
+
+        Args:
+            callback: Function that takes (state_name: str)
+        """
+        self._on_state_change = callback
+
     def set_on_render_callback(self, callback):
         """
         Set callback for RGB updates during rendering.
@@ -454,6 +466,13 @@ class StateMachine:
 
             # Execute onEnter callback (for app-specific behavior)
             state_object.enter(params)
+
+        # Notify listener so app can drive LEDs (important for timer/schedule transitions)
+        if self._on_state_change:
+            try:
+                self._on_state_change(state_name)
+            except Exception as e:
+                print(f"State change callback error: {e}")
 
     def evaluate_rule_expression(self, expr: str, expr_type: str = 'condition'):
         """
@@ -655,8 +674,9 @@ class StateMachine:
             interval_thread = self.interval
             self.interval = None
             self.interval_callback = None
-            # Wait briefly for thread to finish
-            if interval_thread.is_alive():
+            # Wait briefly for thread to finish (but don't join from own thread)
+            import threading
+            if interval_thread.is_alive() and interval_thread is not threading.current_thread():
                 interval_thread.join(timeout=0.5)
             print("State machine interval stopped")
 

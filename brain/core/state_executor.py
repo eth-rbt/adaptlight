@@ -21,14 +21,16 @@ from brain.utils.state_representations import (
 class StateExecutor:
     """Manages state rendering for all three representation versions."""
 
-    def __init__(self, representation_version: str = "stdlib"):
+    def __init__(self, representation_version: str = "stdlib", num_pixels: int = 0):
         """
         Initialize the state executor.
 
         Args:
             representation_version: "original", "pure_python", or "stdlib"
+            num_pixels: Number of ring LED pixels (0 = no ring)
         """
         self.version = representation_version
+        self.num_pixels = num_pixels
         self.current_renderer = None
         self.current_state = None
         self.state_start_time = None
@@ -87,14 +89,16 @@ class StateExecutor:
                     self.current_renderer = PurePythonRenderer(
                         state.code,
                         get_data_fn=self._get_data_fn,
-                        set_data_fn=self._set_data_fn
+                        set_data_fn=self._set_data_fn,
+                        num_pixels=self.num_pixels
                     )
                 else:
                     # Default to stdlib for code-based states
                     self.current_renderer = StdlibRenderer(
                         state.code,
                         get_data_fn=self._get_data_fn,
-                        set_data_fn=self._set_data_fn
+                        set_data_fn=self._set_data_fn,
+                        num_pixels=self.num_pixels
                     )
             else:
                 # Original r/g/b expression state
@@ -131,6 +135,7 @@ class StateExecutor:
 
         Returns:
             ((r, g, b), next_ms) or None if no renderer
+            For dict returns from 'all' mode: ({"cobbled": (r,g,b), "ring": [...], "next_ms": N}, next_ms)
 
         If next_ms == 0, calls on_state_complete callback.
         If RGB changes, calls on_rgb_update callback.
@@ -139,7 +144,28 @@ class StateExecutor:
             return None
 
         t = time.time() - self.state_start_time
-        rgb, next_ms = self.current_renderer.render(self.prev_rgb, t)
+        result = self.current_renderer.render(self.prev_rgb, t)
+
+        # Handle dict return from 'all' mode render functions
+        if isinstance(result, dict):
+            rgb = result.get("cobbled", self.prev_rgb)
+            next_ms = result.get("next_ms")
+            ring_pixels = result.get("ring")
+
+            old_rgb = self.prev_rgb
+            self.prev_rgb = rgb
+
+            if self.on_rgb_update and rgb != old_rgb:
+                self.on_rgb_update(rgb)
+
+            if next_ms == 0 and self.on_state_complete:
+                self.on_state_complete()
+
+            # Return the full dict so light_states can dispatch ring pixels
+            return result, next_ms
+
+        # Standard tuple return: ((r,g,b), next_ms)
+        rgb, next_ms = result
 
         # Update prev_rgb for next render
         old_rgb = self.prev_rgb

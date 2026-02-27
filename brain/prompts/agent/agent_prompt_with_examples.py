@@ -149,8 +149,14 @@ def render(prev, t):
 """
 
 
-def get_quick_examples(representation_version: str = "stdlib") -> str:
-    """Get quick examples based on representation version."""
+def get_quick_examples(representation_version: str = "stdlib", vision_config: dict = None) -> str:
+    """Get quick examples based on representation version and vision capabilities."""
+    # Determine vision capabilities
+    vision_config = vision_config or {}
+    cv_enabled = vision_config.get('cv', {}).get('enabled', False)
+    vlm_enabled = vision_config.get('vlm', {}).get('enabled', False)
+    vision_enabled = vision_config.get('enabled', False) and (cv_enabled or vlm_enabled)
+
     if representation_version == "stdlib_js":
         return """## QUICK EXAMPLES
 
@@ -182,37 +188,6 @@ createState(name="music", code='function render(prev, t) { return [[0, 255, 0], 
 
 ### "Turn red when a hand wave is detected" (VLM emits event)
 appendRules([{{"from": "*", "on": "vision_hand_wave", "to": "red", "trigger_config": {{"vision": {{"enabled": true, "engine": "vlm", "prompt": "Detect a hand wave. If waving, return _event: hand_wave", "event": "vision_hand_wave", "interval_ms": 2000, "cooldown_ms": 1500}}}}}}]) → done()
-
-### "Brightness based on people count" (state-level CV, fast tracking)
-createState(name="crowd_reactive", code=`
-// vision.enabled = true
-// vision.engine = cv
-// vision.cv_detector = opencv_hog
-// vision.interval_ms = 200
-
-function render(prev, t) {
-    const vision = getData("vision") || {{}};
-    const count = vision.person_count || 0;
-    // More people = brighter
-    const brightness = clamp(0.2 + count * 0.2, 0.2, 1.0);
-    return [hsv(0.1, 0.8, brightness), 50];
-}}
-`) → setState(name="crowd_reactive") → done()
-
-### "Party mode + alert when someone enters" (CV data + VLM event)
-createState(name="party", code=`
-// vision.enabled = true
-// vision.engine = cv
-// vision.cv_detector = opencv_hog
-// vision.interval_ms = 200
-
-function render(prev, t) {
-    const vision = getData("vision") || {{}};
-    const n = vision.person_count || 0;
-    const v = clamp(0.2 + n * 0.15, 0.2, 1.0);
-    return [hsv((t * 0.1 + n * 0.05) % 1, 1, v), 50];
-}}
-`) → appendRules([{{"from": "party", "on": "vision_person_entered", "to": "red_alert", "priority": 90, "trigger_config": {{"vision": {{"enabled": true, "engine": "vlm", "prompt": "Detect person entering. If entering, return _event: person_entered", "event": "vision_person_entered", "interval_ms": 2000, "cooldown_ms": 2500}}}}}}]) → done()
 
 For more examples, use: getDocs("examples")"""
     else:
@@ -258,36 +233,97 @@ def render(prev, t):
     return (warmth, 50, 50), 100
 ''') → setState(name="proximity_warm") → done()
 
-### "Party mode + alert when someone enters" (CV data + VLM event)
-createState(name="party", code='''
-# vision.enabled = true
-# vision.engine = cv
-# vision.cv_detector = opencv_hog
-# vision.interval_ms = 200
-
-def render(prev, t):
-    vision = getData("vision") or {{}}
-    n = vision.get("person_count", 0)
-    v = clamp(0.2 + n * 0.15, 0.2, 1.0)
-    return hsv((t * 0.1 + n * 0.05) % 1, 1, v), 50
-''') → appendRules([{{"from": "party", "on": "vision_person_entered", "to": "red_alert", "priority": 90, "trigger_config": {{"vision": {{"enabled": true, "engine": "vlm", "prompt": "Detect person entering. If entering, return _event: person_entered", "event": "vision_person_entered", "interval_ms": 2000, "cooldown_ms": 2500}}}}}}]) → done()
-
 For more examples, use: getDocs("examples")"""
 
 
-def get_agent_system_prompt_with_examples(system_state: str = "", representation_version: str = "stdlib") -> str:
+def get_vision_docs(vision_config: dict = None) -> str:
+    """Get vision system documentation based on what's enabled."""
+    vision_config = vision_config or {}
+    cv_enabled = vision_config.get('cv', {}).get('enabled', False)
+    vlm_enabled = vision_config.get('vlm', {}).get('enabled', False)
+    vision_enabled = vision_config.get('enabled', False) and (cv_enabled or vlm_enabled)
+
+    if not vision_enabled:
+        return """### Vision System
+**VISION IS DISABLED** - No camera features available. If user requests vision/camera features, inform them that vision is not enabled in the current configuration."""
+
+    parts = [
+        "### Vision System",
+        "All vision output writes to `getData('vision')`. Render code reads what it needs.",
+        "",
+        "**Vision watcher format:** trigger_config.vision={enabled, engine, cv_detector?, prompt?, event?, model?, interval_ms?, cooldown_ms?}",
+        "",
+    ]
+
+    # Available engines
+    engines = []
+    if cv_enabled:
+        engines.append("cv")
+    if vlm_enabled:
+        engines.append("vlm")
+    if cv_enabled and vlm_enabled:
+        engines.append("hybrid")
+
+    parts.append(f"**Available engines:** {', '.join(engines)}")
+    parts.append("")
+
+    if cv_enabled:
+        parts.extend([
+            "**CV (fast, data only):**",
+            "- engine=\"cv\", interval_ms >=100ms",
+            "- Outputs: {person_count, face_count, motion_score, pose_positions, hand_positions, _detector}",
+            "- CV does NOT emit events - use for continuous data in render code",
+            "- Detectors: opencv_hog (person), opencv_face, opencv_motion",
+            "",
+        ])
+    else:
+        parts.extend([
+            "**CV: NOT AVAILABLE** - CV is disabled in config. Use VLM for vision features.",
+            "",
+        ])
+
+    if vlm_enabled:
+        parts.extend([
+            "**VLM (slow, can emit events):**",
+            "- engine=\"vlm\", interval_ms >=2000ms",
+            "- Outputs: raw JSON with optional _event field",
+            "- VLM emits vision_{_event} to trigger rule transitions",
+            "",
+        ])
+    else:
+        parts.extend([
+            "**VLM: NOT AVAILABLE** - VLM is disabled in config.",
+            "",
+        ])
+
+    parts.extend([
+        "**Render code reads from getData('vision'):**",
+        "```python",
+        "def render(prev, t):",
+        "    vision = getData(\"vision\") or {}",
+        "    count = vision.get(\"person_count\", 0)",
+        "    ...",
+        "```",
+    ])
+
+    return "\n".join(parts)
+
+
+def get_agent_system_prompt_with_examples(system_state: str = "", representation_version: str = "stdlib", vision_config: dict = None) -> str:
     """
     Get the system prompt for the agent executor.
 
     Args:
         system_state: Current system state (states, rules, variables, current state)
         representation_version: State representation version ("original", "pure_python", "stdlib", "stdlib_js")
+        vision_config: Vision configuration with cv/vlm enabled flags
 
     Returns:
         Complete system prompt string
     """
     state_docs = get_state_docs(representation_version)
-    quick_examples = get_quick_examples(representation_version)
+    quick_examples = get_quick_examples(representation_version, vision_config)
+    vision_docs = get_vision_docs(vision_config)
 
     return f"""You are a smart light controller agent. Configure a lamp by calling tools.
 
@@ -322,29 +358,7 @@ Users speak voice commands to configure their smart lamp. You interpret what the
   - pipeline: pipeline name to execute
     - trigger_config: for timer/interval/schedule OR vision watcher config
 
-### Vision System (Simplified)
-All vision output writes to `getData('vision')`. Render code reads what it needs.
-
-**Vision watcher format:** trigger_config.vision={{enabled, engine, cv_detector?, prompt?, event?, model?, interval_ms?, cooldown_ms?}}
-
-**CV (fast, data only):**
-- engine="cv", interval_ms >=100ms
-- Outputs: {{person_count, face_count, motion_score, pose_positions, hand_positions, _detector}}
-- CV does NOT emit events - use for continuous data in render code
-
-**VLM (slow, can emit events):**
-- engine="vlm", interval_ms >=2000ms
-- Outputs: raw JSON with optional _event field
-- VLM emits vision_{{_event}} to trigger rule transitions
-
-**Render code reads from getData('vision'):**
-```python
-def render(prev, t):
-    vision = getData("vision") or {{}}
-    hands = vision.get("hand_positions", [])
-    count = vision.get("person_count", 0)
-    ...
-```
+{vision_docs}
 
   - **state_complete**: fires when a state's render returns next_ms=0 (animation finished)
 - **deleteRules(indices?, transition?, from_state?, to_state?, all?)** - Delete rules

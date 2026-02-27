@@ -1,13 +1,23 @@
 # AdaptLight RASPi Configuration
 
+# LED control mode:
+#   'default'      - Ring LED handles feedback (loading, success/error, voice reactive).
+#                    COB LED is controlled by the state machine only.
+#   'cobbled_only' - Ring LED is disabled entirely. All feedback (loading,
+#                    success/error, voice reactive) is routed to the COB LED.
+#   'all'          - GSM controls BOTH the COB LED and the ring LED with per-pixel
+#                    patterns. Ring still handles voice reactive/feedback when active.
+#                    Render functions return a dict: {"cobbled": (r,g,b), "ring": [...], "next_ms": N}
+control_mode: all
+
 # Device identity (for Supabase logging)
 device:
   id: realtests  # Change this for each device (lamp1, lamp2, etc.)
 
 # Brain settings (passed to Brain())
 brain:
-  mode: agent                    # 'agent' (Claude multi-turn) or 'parser' (OpenAI single-shot)
-  model: claude-sonnet-4-5-20250929 #claude-haiku-4-5-20251001
+  mode: agent                    # 'agent' (Claude multi-turn), 'parser' (OpenAI single-shot), or 'realtime' (GPT Realtime API)
+  model: claude-sonnet-4-5-20250929 #claude-haiku-4-5-20251001  # For realtime mode use: gpt-4o-realtime-preview
   prompt_variant: examples       # 'concise' or 'examples'
   max_turns: 10
   verbose: false
@@ -32,7 +42,7 @@ replicate:
 
 # Hardware (RASPi-specific)
 hardware:
-  led_type: cob_serial           # 'neopixel', 'cob' (GPIO PWM), or 'cob_serial' (Arduino)
+  led_type: cob_serial                   # 'neopixel', 'cob' (GPIO PWM), or 'cob_serial' (Arduino)
   led_count: 16
   led_brightness: 0.3
   button_pin: 23
@@ -45,9 +55,9 @@ hardware:
 
 
   # COB LED GPIO PWM pins (for led_type: cob)
-  cob_red_pin: 16
-  cob_green_pin: 13
-  cob_blue_pin: 19
+  cob_red_pin: 5
+  cob_green_pin: 20
+  cob_blue_pin: 26
   cob_max_duty_cycle: 2.0
   cob_pwm_frequency: 1000
 
@@ -59,7 +69,7 @@ hardware:
 reactive_lights:
   enabled: true
   type: neopixel
-  led_count: 45
+  led_count: 40 #32 for another one
   spi_bus: 0                       # 0 = SPI0 (GPIO10), 1 = SPI1 (GPIO20)
   brightness: 0.5
 
@@ -77,7 +87,7 @@ voice:
 speaker:
   type: i2s                      # 'usb', 'i2s', or 'hdmi'
   device: plughw:3,0             # ALSA device (MAX98357A is card 3)
-  volume: 4.0                    # Volume multiplier (1.0 = normal, 2.0 = 2x louder)
+  volume: 2.0                    # Volume multiplier (1.0 = normal, 2.0 = 2x louder)
   # For MAX98357A I2S DAC: uses GPIO 18 (BCLK), GPIO 19 (LRCLK), GPIO 21 (DIN)
 
 # Text-to-speech output

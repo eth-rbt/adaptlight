@@ -33,6 +33,7 @@ class AgentStep:
     tool_result: Optional[Dict[str, Any]] = None
     duration_ms: Optional[float] = None
 from brain.prompts.agent import get_agent_system_prompt, get_agent_system_prompt_with_examples
+from brain.prompts.agent.agent_prompt_all_leds import get_agent_system_prompt_all_leds
 
 
 class AgentExecutor:
@@ -41,7 +42,8 @@ class AgentExecutor:
     def __init__(self, state_machine=None, api_key: str = None, model: str = "claude-sonnet-4-20250514",
                  max_turns: int = 10, verbose: bool = False, prompt_variant: str = "examples",
                  speech_instructions: str = None, representation_version: str = "stdlib",
-                 on_message_ready: callable = None):
+                 on_message_ready: callable = None, vision_config: dict = None,
+                 control_mode: str = "default", num_pixels: int = 0):
         """
         Initialize agent executor.
 
@@ -55,6 +57,9 @@ class AgentExecutor:
             speech_instructions: Extra instructions for speech output (e.g., "Keep responses under 2 sentences")
             representation_version: State representation ('original', 'pure_python', 'stdlib')
             on_message_ready: Callback when message is ready (before safety check completes)
+            vision_config: Vision configuration with cv/vlm enabled flags
+            control_mode: LED control mode ('default', 'cobbled_only', 'all')
+            num_pixels: Ring LED pixel count for 'all' mode
         """
         self.state_machine = state_machine
         self.api_key = api_key
@@ -65,9 +70,12 @@ class AgentExecutor:
         self.speech_instructions = speech_instructions
         self.representation_version = representation_version
         self.on_message_ready = on_message_ready
+        self.vision_config = vision_config
+        self.control_mode = control_mode
+        self.num_pixels = num_pixels
 
         # Initialize tool registry
-        self.tools = ToolRegistry(state_machine, api_key=api_key)
+        self.tools = ToolRegistry(state_machine, api_key=api_key, vision_config=vision_config)
 
         # Step collection for verbose output
         self.steps: List[AgentStep] = []
@@ -108,9 +116,13 @@ Variables: {json.dumps(variables, indent=2)}"""
     def _build_system_prompt(self) -> str:
         """Build the full system prompt with current state."""
         system_state = self._get_system_state()
-        print(f"[AgentExecutor] representation_version={self.representation_version}, prompt_variant={self.prompt_variant}")
-        if self.prompt_variant == "examples":
-            prompt = get_agent_system_prompt_with_examples(system_state, self.representation_version)
+        print(f"[AgentExecutor] representation_version={self.representation_version}, prompt_variant={self.prompt_variant}, control_mode={self.control_mode}")
+
+        # Use dedicated 'all' mode prompt when control_mode is 'all'
+        if self.control_mode == 'all':
+            prompt = get_agent_system_prompt_all_leds(system_state, self.representation_version, self.vision_config, self.num_pixels)
+        elif self.prompt_variant == "examples":
+            prompt = get_agent_system_prompt_with_examples(system_state, self.representation_version, self.vision_config)
         else:
             prompt = get_agent_system_prompt(system_state)
 

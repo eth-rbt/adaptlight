@@ -72,6 +72,7 @@ class AdaptLightRaspi:
         self.is_recording = False
         self.voice_reactive = None
         self.running = True
+        self.control_mode = self.config.get('control_mode', 'default')
 
         # Session tracking for Supabase feedback
         self.last_session_id = None
@@ -82,6 +83,10 @@ class AdaptLightRaspi:
         speech_config = self.config.get('speech', {})
         representation_config = self.config.get('representation', {})
         vision_config = self.config.get('vision', {})
+        # In 'all' mode, pass ring pixel count so renderers get NUM_PIXELS
+        reactive_config = self.config.get('reactive_lights', {})
+        num_pixels = reactive_config.get('led_count', 0) if self.control_mode == 'all' else 0
+
         brain_config = {
             'mode': self.config['brain']['mode'],
             'model': self.config['brain']['model'],
@@ -95,6 +100,9 @@ class AdaptLightRaspi:
             'representation_version': representation_config.get('version', 'stdlib'),
             'speech_mode': speech_config.get('mode', 'default'),
             'vision_config': vision_config,  # Pass vision capabilities to agent
+            'control_mode': self.control_mode,
+            'num_pixels': num_pixels,
+            'mic_sample_rate': 44100,  # PyAudio default, matches mic_controller
         }
         self.smgen = SMgenerator(brain_config)
 
@@ -141,6 +149,12 @@ class AdaptLightRaspi:
         self.smgen.on('tool_end', self._on_tool_end)
         self.smgen.on('error', self._on_error)
         self.smgen.on('message_ready', self._on_message_ready)
+
+        # Listen for state changes from internal transitions (timer/schedule/interval)
+        # so LEDs update even when main.py didn't initiate the change
+        self.smgen.state_machine.set_on_state_change(
+            lambda name: self._execute_state(self.smgen.get_state())
+        )
 
         # Initialize hardware (lazy load to avoid import errors on non-Pi)
         self.led = None
@@ -211,7 +225,8 @@ class AdaptLightRaspi:
                     button_pin=hw_config['record_button_pin'],
                     bounce_time=self.config['button']['bounce_time']
                 )
-                self.record_button.on_single_click = self._handle_record_button
+                self.record_button.on_hold = self._handle_record_button_hold
+                self.record_button.on_release = self._handle_record_button_release
 
             # Initialize feedback buttons (Yes/No for Supabase)
             if hw_config.get('feedback_yes_pin'):
@@ -231,8 +246,9 @@ class AdaptLightRaspi:
                 print(f"Feedback NO button on GPIO {hw_config['feedback_no_pin']}")
 
             # Initialize reactive lights (NeoPixel for voice feedback)
+            # In cobbled_only mode, skip ring LED entirely
             reactive_config = self.config.get('reactive_lights', {})
-            if reactive_config.get('enabled', False):
+            if self.control_mode != 'cobbled_only' and reactive_config.get('enabled', False):
                 from .hardware.led_controller import LEDController
                 self.reactive_led = LEDController(
                     led_count=reactive_config.get('led_count', 35),
@@ -240,22 +256,33 @@ class AdaptLightRaspi:
                     spi_bus_id=reactive_config.get('spi_bus', 1)
                 )
                 print(f"Reactive NeoPixel initialized: {reactive_config.get('led_count')} LEDs on GPIO {reactive_config.get('pin')}")
+            elif self.control_mode == 'cobbled_only':
+                print(f"Control mode: cobbled_only - ring LED disabled, all feedback on COB")
 
             # Initialize light_states globals
-            from .output.light_states import set_led_controller, set_state_machine
+            from .output.light_states import set_led_controller, set_ring_controller, set_state_machine
             set_led_controller(self.led)
             set_state_machine(self.smgen.state_machine)
 
+            # In 'all' mode, register ring LED with light_states for per-pixel control
+            if self.control_mode == 'all' and self.reactive_led:
+                ring_pixel_count = reactive_config.get('led_count', 40)
+                set_ring_controller(self.reactive_led, ring_pixel_count)
+                print(f"Control mode: all - ring LED registered for per-pixel GSM control ({ring_pixel_count} pixels)")
+
+            # feedback_led: the LED used for status indicators (loading, success/error, recording)
+            # In cobbled_only mode this is the COB LED; otherwise the ring LED (or COB as fallback)
+            self.feedback_led = self.reactive_led if self.reactive_led else self.led
+
             # Initialize voice reactive controller
-            # Use reactive_led for voice reactive if available, else fall back to main led
-            reactive_led_target = self.reactive_led if self.reactive_led else self.led
-            if reactive_led_target and self.config['voice'].get('reactive_enabled', True):
+            # Voice reactive uses feedback_led (ring in default mode, cobbled in cobbled_only)
+            if self.feedback_led and self.config['voice'].get('reactive_enabled', True):
                 try:
                     from .voice.reactive import VoiceReactiveLight
                     # Get voice reactive settings from config
                     smoothing = reactive_config.get('smoothing_alpha', 0.25)
                     self.voice_reactive = VoiceReactiveLight(
-                        reactive_led_target,
+                        self.feedback_led,
                         smoothing_alpha=smoothing
                     )
                     # Set amplitude range from config
@@ -544,20 +571,16 @@ class AdaptLightRaspi:
 
     def _on_processing_start(self, data):
         """Called when brain starts processing."""
-        if self.reactive_led:
-            self.reactive_led.start_loading_animation()
-        elif self.led:
-            self.led.start_loading_animation()
+        if self.feedback_led:
+            self.feedback_led.start_loading_animation()
         if self.verbose:
             print(f"Processing: {data.get('input', '')[:50]}...")
 
     def _on_processing_end(self, data):
         """Called when brain finishes processing."""
-        if self.reactive_led:
-            self.reactive_led.stop_loading_animation()
-            self.reactive_led.flash_success()
-        elif self.led:
-            self.led.stop_loading_animation()
+        if self.feedback_led:
+            self.feedback_led.stop_loading_animation()
+            self.feedback_led.flash_success()
         if self.verbose:
             print(f"Done in {data.get('total_ms', 0):.0f}ms")
 
@@ -574,11 +597,9 @@ class AdaptLightRaspi:
     def _on_error(self, data):
         """Called on processing error."""
         print(f"Error: {data.get('error', 'Unknown error')}")
-        if self.reactive_led:
-            self.reactive_led.stop_loading_animation()
-            self.reactive_led.flash_error()
-        elif self.led:
-            self.led.stop_loading_animation()
+        if self.feedback_led:
+            self.feedback_led.stop_loading_animation()
+            self.feedback_led.flash_error()
 
     def _on_message_ready(self, data):
         """Called when agent's done() message is ready - start TTS early."""
@@ -611,37 +632,114 @@ class AdaptLightRaspi:
         state = self.smgen.trigger(event)
         self._execute_state(state)
 
-    def _handle_record_button(self):
-        """Handle record button press."""
+    def _handle_record_button_hold(self):
+        """Handle record button held down - start recording."""
+        if self.is_recording:
+            return
+
         if self.verbose:
             mic_status = "none"
             if self.mic_controller:
                 mic_status = f"stream_open={self.mic_controller._stream_open}, recording={self.mic_controller.is_recording}"
-            print(f"Record button pressed (is_recording={self.is_recording}, mic={mic_status})")
+            print(f"Record button held (mic={mic_status})")
 
         # Check if we have a mic controller or voice input
         if not self.mic_controller and not self.voice:
             print("Voice input not enabled")
             return
 
-        if self.is_recording:
-            # ─── STOP RECORDING ───
-            self.is_recording = False
+        # ─── START RECORDING ───
+        self.is_recording = True
 
-            # Stop voice reactive
-            if self.voice_reactive:
-                self.voice_reactive.stop()
+        # Flash yellow twice to indicate recording started
+        if self.feedback_led:
+            for _ in range(2):
+                self.feedback_led.set_color(255, 200, 0)  # Yellow flash
+                time.sleep(0.15)
+                self.feedback_led.off()
+                time.sleep(0.1)
 
-            # Start loading animation while transcribing
-            if self.reactive_led:
-                self.reactive_led.start_loading_animation()
+        # Transition COB LED to 'off' state when recording starts
+        self.smgen.state_machine.set_state('off')
+        self._execute_state(self.smgen.get_state())
 
-            # Get audio bytes and transcribe
+        # Get voice reactive callback
+        audio_callback = None
+        if self.voice_reactive:
+            self.voice_reactive.start(standalone=False)
+            audio_callback = self.voice_reactive.process_audio_data
+
+        # In realtime mode, also stream audio to the Realtime API
+        if self.config['brain']['mode'] == 'realtime':
+            base_callback = audio_callback
+            def realtime_audio_callback(data):
+                if base_callback:
+                    base_callback(data)
+                self.smgen.stream_audio_chunk(data)
+            audio_callback = realtime_audio_callback
+
+        # Start recording with mic controller or fallback to voice
+        if self.mic_controller:
+            self.mic_controller.start_recording(on_audio_data=audio_callback)
+        else:
+            self.voice.start_recording(audio_callback=audio_callback)
+
+        if self.verbose:
+            print("Recording... Speak now!")
+
+    def _handle_record_button_release(self):
+        """Handle record button released - stop recording."""
+        if not self.is_recording:
+            return
+
+        if self.verbose:
+            print("Record button released, stopping recording...")
+
+        # ─── STOP RECORDING ───
+        self.is_recording = False
+
+        # Stop voice reactive
+        if self.voice_reactive:
+            self.voice_reactive.stop()
+
+        # Start loading animation while processing
+        if self.feedback_led:
+            self.feedback_led.start_loading_animation()
+
+        is_realtime = self.config['brain']['mode'] == 'realtime'
+
+        if is_realtime:
+            # Realtime mode: audio already streamed, just stop recording and process
+            if self.mic_controller:
+                self.mic_controller.stop_recording()  # discard bytes, already streamed
+            elif self.voice:
+                self.voice.stop_recording()
+
+            # Reset TTS thread before processing
+            self.tts_thread = None
+            result = self.smgen.process_audio()
+
+            if result.message:
+                if self.verbose:
+                    print(f"Response: {result.message}")
+
+                # Wait for early TTS thread if it was started, otherwise speak now
+                if self.tts_thread:
+                    if self.tts_thread.is_alive():
+                        if self.verbose:
+                            print("Waiting for TTS to finish...")
+                        self.tts_thread.join()
+                elif self.tts:
+                    self.tts.speak(result.message)
+
+            # Log to Supabase
+            self._log_command_to_supabase("[audio]", result)
+        else:
+            # Standard mode: transcribe then process
             if self.mic_controller:
                 audio_bytes = self.mic_controller.stop_recording()
                 transcribed_text = self._transcribe_audio(audio_bytes) if audio_bytes else None
             else:
-                # Fallback to old VoiceInput
                 transcribed_text = self.voice.stop_recording()
 
             if transcribed_text:
@@ -658,17 +756,17 @@ class AdaptLightRaspi:
                     if self.tts_thread:
                         if self.tts_thread.is_alive():
                             if self.verbose:
-                                print("🔊 Waiting for TTS to finish...")
+                                print("Waiting for TTS to finish...")
                             self.tts_thread.join()
                             if self.verbose:
-                                print("🔊 TTS thread completed")
+                                print("TTS thread completed")
                         else:
                             if self.verbose:
-                                print("🔊 TTS thread already finished")
+                                print("TTS thread already finished")
                     elif self.tts:
                         # Fallback: TTS wasn't started early, speak now
                         if self.verbose:
-                            print("🔊 Fallback: speaking now...")
+                            print("Fallback: speaking now...")
                         self.tts.speak(result.message)
 
                 # Log to Supabase
@@ -676,39 +774,8 @@ class AdaptLightRaspi:
             else:
                 if self.verbose:
                     print("No transcription result")
-                if self.reactive_led:
-                    self.reactive_led.stop_loading_animation()
-        else:
-            # ─── START RECORDING ───
-            self.is_recording = True
-
-            # Flash yellow twice to indicate recording started
-            if self.reactive_led:
-                for _ in range(2):
-                    self.reactive_led.fill((255, 200, 0))  # Yellow flash
-                    self.reactive_led.show()
-                    time.sleep(0.15)
-                    self.reactive_led.off()
-                    time.sleep(0.1)
-
-            # Transition COB LED to 'off' state when recording starts
-            self.smgen.state_machine.set_state('off')
-            self._execute_state(self.smgen.get_state())
-
-            # Get voice reactive callback
-            audio_callback = None
-            if self.voice_reactive:
-                self.voice_reactive.start(standalone=False)
-                audio_callback = self.voice_reactive.process_audio_data
-
-            # Start recording with mic controller or fallback to voice
-            if self.mic_controller:
-                self.mic_controller.start_recording(on_audio_data=audio_callback)
-            else:
-                self.voice.start_recording(audio_callback=audio_callback)
-
-            if self.verbose:
-                print("Recording... Speak now!")
+                if self.feedback_led:
+                    self.feedback_led.stop_loading_animation()
 
     def _transcribe_audio(self, audio_bytes: bytes) -> str:
         """Transcribe audio bytes using Replicate Whisper."""
@@ -820,12 +887,12 @@ class AdaptLightRaspi:
         if success:
             self.feedback_pending = False
 
-            # Visual feedback on reactive LED
-            if self.reactive_led:
+            # Visual feedback
+            if self.feedback_led:
                 if worked:
-                    self.reactive_led.flash_success()
+                    self.feedback_led.flash_success()
                 else:
-                    self.reactive_led.flash_error()
+                    self.feedback_led.flash_error()
 
             print(f"Feedback submitted: {'worked' if worked else 'did not work'}")
         else:
@@ -869,9 +936,18 @@ class AdaptLightRaspi:
         print(f"Mode: {self.config['brain']['mode']}")
         print(f"Model: {self.config['brain']['model']}")
         print(f"LED type: {self.config['hardware']['led_type']}")
+        print(f"Control mode: {self.control_mode}")
         print(f"Vision: {'enabled' if self.vision_runtime and self.camera else 'disabled'}")
         print(f"API Reactive: {'enabled' if self.api_runtime else 'disabled'}")
         print("=" * 60)
+
+        # Flash white twice to indicate startup complete
+        if self.feedback_led:
+            for _ in range(2):
+                self.feedback_led.set_color(255, 255, 255)
+                time.sleep(0.15)
+                self.feedback_led.off()
+                time.sleep(0.1)
 
         # Show initial state
         self._execute_state(self.smgen.get_state())
@@ -921,6 +997,11 @@ class AdaptLightRaspi:
         """Clean up resources."""
         print("Cleaning up...")
 
+        # Disconnect realtime WebSocket if active
+        if self.config['brain']['mode'] == 'realtime' and hasattr(self.smgen, 'processor'):
+            if hasattr(self.smgen.processor, '_disconnect'):
+                self.smgen.processor._disconnect()
+
         # Stop camera capture
         self._camera_running = False
         if self.camera_thread and self.camera_thread.is_alive():
@@ -943,7 +1024,7 @@ class AdaptLightRaspi:
         if self.voice and self.is_recording:
             self.voice.stop_recording()
 
-        if self.reactive_led:
+        if self.reactive_led and self.reactive_led is not self.led:
             self.reactive_led.off()
 
         if self.led:

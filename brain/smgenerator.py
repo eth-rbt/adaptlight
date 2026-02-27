@@ -6,9 +6,10 @@ The SMgenerator class provides a single entry point for:
 - Managing state machine
 - Emitting events via hooks for app-specific feedback
 
-Supports two processing modes:
+Supports three processing modes:
 - agent: Multi-turn Claude conversation with tool calls
 - parser: Single-shot OpenAI parsing to tool calls
+- realtime: GPT Realtime API with streamed audio over WebSocket
 """
 
 import asyncio
@@ -50,9 +51,10 @@ class SMgenerator:
     """
     State Machine Generator - unified interface to the AdaptLight state machine.
 
-    Supports two processing modes:
+    Supports three processing modes:
     - agent: Multi-turn Claude conversation with tool calls
     - parser: Single-shot OpenAI parsing to tool calls
+    - realtime: GPT Realtime API with streamed audio over WebSocket
 
     Emits events via hooks for app-specific feedback.
 
@@ -107,7 +109,8 @@ class SMgenerator:
         from brain.core.state_machine import StateMachine
         self.state_machine = StateMachine(
             debug=config.get('verbose', False),
-            representation_version=self.representation_version
+            representation_version=self.representation_version,
+            num_pixels=config.get('num_pixels', 0)
         )
 
         # Initialize tool registry with vision capabilities
@@ -124,7 +127,22 @@ class SMgenerator:
         self.mode = mode
         self.speech_mode = speech_mode
 
-        if mode == 'agent':
+        if mode == 'realtime':
+            from brain.processing.realtime_agent import RealtimeAgentExecutor
+            self.processor = RealtimeAgentExecutor(
+                state_machine=self.state_machine,
+                openai_api_key=config.get('openai_api_key'),
+                model=config.get('model', 'gpt-4o-realtime-preview'),
+                verbose=config.get('verbose', False),
+                speech_instructions=config.get('speech_instructions'),
+                representation_version=self.representation_version,
+                on_message_ready=lambda msg: self._emit('message_ready', {'message': msg}),
+                vision_config=config.get('vision_config'),
+                control_mode=config.get('control_mode', 'default'),
+                num_pixels=config.get('num_pixels', 0),
+                mic_sample_rate=config.get('mic_sample_rate', 44100),
+            )
+        elif mode == 'agent':
             # Check if parallel speech mode is enabled
             if speech_mode == 'parallel':
                 from brain.processing.parallel_agent import ParallelAgentExecutor
@@ -136,7 +154,10 @@ class SMgenerator:
                     prompt_variant=config.get('prompt_variant', 'examples'),
                     speech_instructions=config.get('speech_instructions'),
                     representation_version=self.representation_version,
-                    on_message_ready=lambda msg: self._emit('message_ready', {'message': msg})
+                    on_message_ready=lambda msg: self._emit('message_ready', {'message': msg}),
+                    vision_config=config.get('vision_config'),
+                    control_mode=config.get('control_mode', 'default'),
+                    num_pixels=config.get('num_pixels', 0)
                 )
             else:
                 from brain.processing.agent import AgentExecutor
@@ -149,7 +170,10 @@ class SMgenerator:
                     prompt_variant=config.get('prompt_variant', 'examples'),
                     speech_instructions=config.get('speech_instructions'),
                     representation_version=self.representation_version,
-                    on_message_ready=lambda msg: self._emit('message_ready', {'message': msg})
+                    on_message_ready=lambda msg: self._emit('message_ready', {'message': msg}),
+                    vision_config=config.get('vision_config'),
+                    control_mode=config.get('control_mode', 'default'),
+                    num_pixels=config.get('num_pixels', 0)
                 )
         else:
             from brain.processing.parser import CommandParser
@@ -204,6 +228,88 @@ class SMgenerator:
                 print(f"Hook error ({event}): {e}")
 
     # ─────────────────────────────────────────────────────────────
+    # Realtime Audio Interface
+    # ─────────────────────────────────────────────────────────────
+
+    def stream_audio_chunk(self, pcm_data: bytes):
+        """
+        Stream a PCM audio chunk to the Realtime API (realtime mode only).
+
+        Called from the mic callback during recording.
+
+        Args:
+            pcm_data: Raw 16-bit mono PCM bytes at mic sample rate
+        """
+        if self.mode != 'realtime':
+            return
+        self.processor.stream_audio_chunk(pcm_data)
+
+    def process_audio(self) -> 'SMResult':
+        """
+        Commit streamed audio and process via Realtime API (realtime mode only).
+
+        Called after recording stops. Commits the audio buffer, runs tool
+        call loop, and returns the result.
+
+        Returns:
+            SMResult with state, message, tool_calls, timing
+        """
+        run_id = str(uuid.uuid4())[:8]
+        start_time = time.time()
+        timing = {}
+        self._last_tool_calls = []
+
+        self._emit('processing_start', {'input': '[audio]', 'run_id': run_id})
+
+        try:
+            # Update session with fresh state before processing
+            self.processor.update_session()
+
+            agent_start = time.time()
+            message = self.processor.process_audio()
+            timing['agent_ms'] = (time.time() - agent_start) * 1000
+
+            steps = self.processor.get_steps() if hasattr(self.processor, 'get_steps') else []
+
+            total_ms = (time.time() - start_time) * 1000
+            timing['total_ms'] = total_ms
+
+            result = SMResult(
+                success=True,
+                state=self._get_state_dict(),
+                message=message,
+                tool_calls=self._last_tool_calls,
+                timing=timing,
+                run_id=run_id,
+                agent_steps=steps
+            )
+
+            self._emit('processing_end', {
+                'result': result,
+                'total_ms': total_ms,
+                'run_id': run_id
+            })
+
+            return result
+
+        except Exception as e:
+            self._emit('error', {'error': str(e), 'run_id': run_id})
+
+            total_ms = (time.time() - start_time) * 1000
+            timing['total_ms'] = total_ms
+
+            result = SMResult.from_error(e, self._get_state_dict(), run_id)
+            result.timing = timing
+
+            self._emit('processing_end', {
+                'result': result,
+                'total_ms': total_ms,
+                'run_id': run_id
+            })
+
+            return result
+
+    # ─────────────────────────────────────────────────────────────
     # Main Interface
     # ─────────────────────────────────────────────────────────────
 
@@ -229,8 +335,8 @@ class SMgenerator:
         try:
             # Run the processor
             agent_steps = []
-            if self.mode == 'agent':
-                # Agent mode is async
+            if self.mode in ('agent', 'realtime'):
+                # Agent and realtime modes are async
                 message, agent_steps = asyncio.run(self._run_agent(text, run_id, timing))
             else:
                 # Parser mode is sync

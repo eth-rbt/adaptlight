@@ -746,6 +746,36 @@ class ToolRegistry:
             for tool in self.tools.values()
         ]
 
+    # Core tools for the GPT Realtime API (drops heavy lookup tools)
+    REALTIME_TOOLS = {
+        "createState", "setState", "deleteState",
+        "appendRules", "deleteRules",
+        "getStates", "getRules",
+        "setVariable", "getVariables",
+        "fetchAPI",
+        "remember", "recall",
+        "done",
+    }
+
+    def get_openai_tool_definitions(self) -> List[Dict]:
+        """
+        Get tool definitions in OpenAI function-calling format.
+
+        Converts Claude format (input_schema) to OpenAI format (parameters)
+        and filters to core tools only for the Realtime API's token budget.
+        """
+        definitions = []
+        for tool in self.tools.values():
+            if tool["name"] not in self.REALTIME_TOOLS:
+                continue
+            definitions.append({
+                "type": "function",
+                "name": tool["name"],
+                "description": tool["description"],
+                "parameters": tool["input_schema"],
+            })
+        return definitions
+
     async def execute(self, tool_name: str, tool_input: Dict) -> Dict[str, Any]:
         """Execute a tool and return result."""
         if tool_name not in self.tools:

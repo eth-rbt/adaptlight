@@ -132,11 +132,12 @@ def render(prev, t):
     # Only basic Python allowed - no imports except math/random
     ALLOWED_IMPORTS = {'math', 'random'}
 
-    def __init__(self, code: str, get_data_fn=None, set_data_fn=None):
+    def __init__(self, code: str, get_data_fn=None, set_data_fn=None, num_pixels: int = 0):
         self.code = code
         self.render_fn = None
         self._get_data_fn = get_data_fn
         self._set_data_fn = set_data_fn
+        self._num_pixels = num_pixels
         self._compile()
 
     def _compile(self):
@@ -168,6 +169,8 @@ def render(prev, t):
             'zip': zip,
             'sum': sum,
             'round': round,
+            'list': list,
+            'tuple': tuple,
             'True': True,
             'False': False,
             'None': None,
@@ -179,6 +182,7 @@ def render(prev, t):
             'random': random_module,
             'getData': get_data,
             'setData': set_data,
+            'NUM_PIXELS': self._num_pixels,
         }
 
         try:
@@ -340,11 +344,12 @@ def render(prev, t):
         else:
             return 1 - pow(-2 * t + 2, 2) / 2
 
-    def __init__(self, code: str, get_data_fn=None, set_data_fn=None):
+    def __init__(self, code: str, get_data_fn=None, set_data_fn=None, num_pixels: int = 0):
         self.code = code
         self.render_fn = None
         self._get_data_fn = get_data_fn
         self._set_data_fn = set_data_fn
+        self._num_pixels = num_pixels
         self._compile()
 
     def _compile(self):
@@ -398,6 +403,9 @@ def render(prev, t):
             'PI': math.pi,
             'E': math.e,
 
+            # Ring LED pixel count (0 = no ring available)
+            'NUM_PIXELS': self._num_pixels,
+
             # Data access (shared state)
             'getData': get_data,
             'setData': set_data,
@@ -408,6 +416,8 @@ def render(prev, t):
             'bool': bool,
             'len': len,
             'range': range,
+            'list': list,
+            'tuple': tuple,
             'True': True,
             'False': False,
             'None': None,

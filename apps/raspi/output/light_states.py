@@ -14,16 +14,25 @@ import time
 
 # Global references (set by main.py)
 led_controller: LEDController = None
+ring_controller: LEDController = None  # Ring LED for 'all' control mode
 state_machine_ref = None
+_num_pixels = 0  # Ring LED pixel count
 
 # Duration timer for states with duration_ms
 _duration_timer = None
 
 
 def set_led_controller(controller: LEDController):
-    """Set the global LED controller instance."""
+    """Set the global LED controller instance (cobbled/main LED)."""
     global led_controller
     led_controller = controller
+
+
+def set_ring_controller(controller: LEDController, num_pixels: int = 0):
+    """Set the ring LED controller for 'all' control mode."""
+    global ring_controller, _num_pixels
+    ring_controller = controller
+    _num_pixels = num_pixels
 
 
 def set_state_machine(machine):
@@ -94,8 +103,12 @@ def execute_unified_state(params):
     # Cancel any existing duration timer (new state entry cancels old timers)
     _cancel_duration_timer()
 
-    # Note: Voice reactive lighting is now handled separately by the NeoPixel strip
-    # via the reactive_led controller in main.py. This module only handles COB LED states.
+    # Clear ring LEDs on every state entry so old patterns don't linger.
+    # Code-based 'all' mode states will set ring pixels in their render loop.
+    if ring_controller:
+        for i in range(getattr(ring_controller, 'led_count', _num_pixels)):
+            ring_controller.set_pixel(i, 0, 0, 0)
+        ring_controller.show()
 
     # Check for code-based state (stdlib mode)
     code = params.get('code')
@@ -290,7 +303,9 @@ def _create_renderer_with_data(code: str):
         'ease_in': _ease_in, 'ease_out': _ease_out, 'ease_in_out': _ease_in_out,
         'random': random_module.random, 'randint': random_module.randint,
         'PI': math.pi, 'E': math.e,
+        'NUM_PIXELS': _num_pixels,
         'int': int, 'float': float, 'bool': bool, 'len': len, 'range': range,
+        'list': list, 'tuple': tuple,
         'True': True, 'False': False, 'None': None,
         # State machine data functions
         'getData': getData, 'setData': setData,
@@ -347,18 +362,47 @@ def _execute_code_state(params):
         elapsed_s = time.time() - start_time
 
         try:
-            # Call render(prev, t) and get (r,g,b), next_ms
+            # Call render(prev, t) — may return tuple or dict
             result = render_fn(prev_color, elapsed_s)
-            rgb, next_ms = result
 
-            # Update color
-            r, g, b = rgb
-            r = max(0, min(255, int(r)))
-            g = max(0, min(255, int(g)))
-            b = max(0, min(255, int(b)))
+            # Handle dict return from 'all' mode: {"cobbled": (r,g,b), "ring": [...], "next_ms": N}
+            if isinstance(result, dict):
+                rgb = result.get("cobbled", prev_color)
+                next_ms = result.get("next_ms")
+                ring_pixels = result.get("ring")
 
-            led_controller.set_color(r, g, b)
-            prev_color = (r, g, b)
+                # Update cobbled LED
+                r, g, b = rgb
+                r = max(0, min(255, int(r)))
+                g = max(0, min(255, int(g)))
+                b = max(0, min(255, int(b)))
+                led_controller.set_color(r, g, b)
+                prev_color = (r, g, b)
+
+                # Update ring LED per-pixel if available
+                if ring_pixels and ring_controller:
+                    for i, pixel in enumerate(ring_pixels):
+                        if i >= ring_controller.led_count:
+                            break
+                        pr, pg, pb = pixel
+                        ring_controller.set_pixel(i,
+                            max(0, min(255, int(pr))),
+                            max(0, min(255, int(pg))),
+                            max(0, min(255, int(pb))))
+                    ring_controller.show()
+
+            else:
+                # Standard tuple return: ((r,g,b), next_ms)
+                rgb, next_ms = result
+
+                # Update color
+                r, g, b = rgb
+                r = max(0, min(255, int(r)))
+                g = max(0, min(255, int(g)))
+                b = max(0, min(255, int(b)))
+
+                led_controller.set_color(r, g, b)
+                prev_color = (r, g, b)
 
             # Handle state_complete transition (next_ms = 0 signals completion)
             if next_ms == 0:

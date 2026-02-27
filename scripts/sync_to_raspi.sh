@@ -15,8 +15,8 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 cd "$PROJECT_ROOT"
 
 # Configuration
-RASPI_HOST="${RASPI_HOST:-lamp@100.114.12.83}" # 100.108.65.92
-#RASPI_HOST="${RASPI_HOST:-pi@raspberrypi.local}"
+RASPI_HOST="${RASPI_HOST:-lamp@100.108.65.92}" #   100.114.12.83
+#RASPI_HOST="${RASPI_HOST:-lamp@100.114.12.83}"
 RASPI_PATH="${RASPI_PATH:-/home/lamp/adaptlight}"
 
 echo "=============================================="
